@@ -47,7 +47,11 @@ import HeaderLink from './HeaderLink.astro';
 	document.getElementById('theme-toggle')?.addEventListener('click', () => {
 		const root = document.documentElement;
 		root.classList.toggle('dark');
-		localStorage.setItem('theme', root.classList.contains('dark') ? 'dark' : 'light');
+		const theme = root.classList.contains('dark') ? 'dark' : 'light';
+		localStorage.setItem('theme', theme);
+		document
+			.querySelector('iframe.giscus-frame')
+			?.contentWindow?.postMessage({ giscus: { setConfig: { theme } } }, 'https://giscus.app');
 	});
 </script>
 

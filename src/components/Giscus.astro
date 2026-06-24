@@ -1,0 +1,41 @@
+---
+// GitHub Discussions 기반 댓글 (giscus).
+// 초기 테마는 현재 다크모드 상태(html.dark)에 맞추고,
+// 이후 테마 전환은 Header의 토글 핸들러가 postMessage로 동기화한다.
+---
+
+<section class="giscus-comments">
+	<hr />
+</section>
+
+<script is:inline>
+	(function () {
+		const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+		const attrs = {
+			'data-repo': 'pythonstrup/myvelop',
+			'data-repo-id': 'R_kgDOTDYsjA',
+			'data-category': 'Announcements',
+			'data-category-id': 'DIC_kwDOTDYsjM4C_xSJ',
+			'data-mapping': 'pathname',
+			'data-strict': '0',
+			'data-reactions-enabled': '1',
+			'data-emit-metadata': '0',
+			'data-input-position': 'bottom',
+			'data-theme': theme,
+			'data-lang': 'en',
+			'data-loading': 'lazy',
+		};
+		const s = document.createElement('script');
+		s.src = 'https://giscus.app/client.js';
+		Object.entries(attrs).forEach(([k, v]) => s.setAttribute(k, v));
+		s.crossOrigin = 'anonymous';
+		s.async = true;
+		document.querySelector('.giscus-comments')?.appendChild(s);
+	})();
+</script>
+
+<style>
+	.giscus-comments {
+		margin-top: 3em;
+	}
+</style>
