@@ -7,9 +7,9 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "astro build && pagefind --site dist",
     "preview": "astro preview",
-    "deploy": "astro build && wrangler pages deploy ./dist",
+    "deploy": "npm run build && wrangler pages deploy ./dist",
     "astro": "astro"
   },
   "dependencies": {
@@ -22,6 +22,7 @@
     "tailwindcss": "^4.3.1"
   },
   "devDependencies": {
+    "pagefind": "^1.5.2",
     "wrangler": "^4.103.0"
   }
 }
