@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import 'pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css';
 
 /*
   The CSS in this style tag is based off of Bear Blog's default CSS.
@@ -37,7 +38,9 @@ html.dark body {
 	background-color: #0d1117;
 }
 body {
-	font-family: var(--font-atkinson);
+	font-family:
+		'Pretendard Variable', var(--font-atkinson), -apple-system, BlinkMacSystemFont, system-ui,
+		sans-serif;
 	margin: 0;
 	padding: 0;
 	text-align: left;
