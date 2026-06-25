@@ -114,7 +114,9 @@ if (blogMatch) {
 		display: flex;
 	}
 	@media (max-width: 720px) {
-		.social-links {
+		/* 모바일에서는 외부 소셜 링크(GitHub·LinkedIn)만 숨기고,
+		   언어 스위처와 다크모드 토글은 그대로 표시한다. */
+		.social-links a[target='_blank'] {
 			display: none;
 		}
 	}
