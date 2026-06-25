@@ -1,0 +1,29 @@
+---
+import BaseHead from '../../components/BaseHead.astro';
+import Footer from '../../components/Footer.astro';
+import Header from '../../components/Header.astro';
+import { SITE_DESCRIPTION, SITE_TITLE } from '../../consts';
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
+	</head>
+	<body>
+		<Header />
+		<main>
+			<h1>👋 Welcome to MyVelop</h1>
+			<p>
+				A place where I write down what I learn and the problems I run into while building things —
+				the daily questions, how I solved them, and notes worth revisiting.
+			</p>
+			<p>
+				Recent posts are on the <a href="/en/blog">blog</a>, and a bit about me is on the
+				<a href="/en/about">About</a> page.
+			</p>
+			<p>Thanks for stopping by. 🚀</p>
+		</main>
+		<Footer />
+	</body>
+</html>
