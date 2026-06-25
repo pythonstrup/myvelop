@@ -1,28 +1,145 @@
 ---
+import { getCollection } from 'astro:content';
 import BaseHead from '../../components/BaseHead.astro';
 import Footer from '../../components/Footer.astro';
+import FormattedDate from '../../components/FormattedDate.astro';
 import Header from '../../components/Header.astro';
 import { SITE_DESCRIPTION, SITE_TITLE } from '../../consts';
+
+const posts = (await getCollection('blog', ({ id }) => id.startsWith('en/')))
+	.sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
+	.slice(0, 3);
 ---
 
 <!doctype html>
 <html lang="en">
 	<head>
 		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
+		<style>
+			.hero {
+				padding: 1rem 0 2.5rem;
+				border-bottom: 1px solid rgb(var(--gray-light));
+			}
+			.hero .eyebrow {
+				margin: 0 0 0.6rem;
+				font-size: 0.85rem;
+				font-weight: 600;
+				letter-spacing: 0.04em;
+				text-transform: uppercase;
+				color: var(--accent);
+			}
+			.hero h1 {
+				margin: 0 0 0.8rem;
+				font-size: 2.6rem;
+				letter-spacing: -0.03em;
+			}
+			.hero p {
+				margin: 0 0 1.4rem;
+				font-size: 1.1rem;
+				color: rgb(var(--gray-dark));
+				max-width: 38rem;
+			}
+			.hero .actions a {
+				display: inline-block;
+				margin-right: 1.2rem;
+				font-size: 0.95rem;
+				font-weight: 600;
+				text-decoration: none;
+			}
+			.hero .actions a::after {
+				content: ' →';
+				color: rgb(var(--gray));
+			}
+
+			.recent {
+				margin-top: 2.5rem;
+			}
+			.recent .section-head {
+				display: flex;
+				align-items: baseline;
+				justify-content: space-between;
+				margin-bottom: 0.5rem;
+			}
+			.recent .section-head h2 {
+				margin: 0;
+				font-size: 1.2rem;
+				letter-spacing: -0.01em;
+			}
+			.recent .section-head a {
+				font-size: 0.85rem;
+				color: rgb(var(--gray));
+				text-decoration: none;
+			}
+			.recent .section-head a:hover {
+				color: var(--accent);
+			}
+			.recent ul {
+				list-style: none;
+				margin: 0;
+				padding: 0;
+			}
+			.recent li a {
+				display: flex;
+				align-items: baseline;
+				justify-content: space-between;
+				gap: 1rem;
+				padding: 0.85rem 0;
+				border-bottom: 1px solid rgb(var(--gray-light));
+				text-decoration: none;
+			}
+			.recent li .t {
+				color: rgb(var(--black));
+				font-weight: 500;
+				transition: color 0.2s ease;
+			}
+			.recent li a:hover .t {
+				color: var(--accent);
+			}
+			.recent li .d {
+				flex-shrink: 0;
+				font-size: 0.82rem;
+				color: rgb(var(--gray));
+			}
+		</style>
 	</head>
 	<body>
 		<Header />
 		<main>
-			<h1>👋 Welcome to MyVelop</h1>
-			<p>
-				A place where I write down what I learn and the problems I run into while building things —
-				the daily questions, how I solved them, and notes worth revisiting.
-			</p>
-			<p>
-				Recent posts are on the <a href="/en/blog">blog</a>, and a bit about me is on the
-				<a href="/en/about">About</a> page.
-			</p>
-			<p>Thanks for stopping by. 🚀</p>
+			<section class="hero">
+				<p class="eyebrow">My + Develop</p>
+				<h1>Notes from a journey<br />of growing one step at a time</h1>
+				<p>
+					A place where I write down what I learn and the problems I run into while building
+					things — the daily questions, how I solved them, and notes worth revisiting.
+				</p>
+				<div class="actions">
+					<a href="/en/blog">Blog</a>
+					<a href="/en/about">About</a>
+				</div>
+			</section>
+
+			{
+				posts.length > 0 && (
+					<section class="recent">
+						<div class="section-head">
+							<h2>Recent posts</h2>
+							<a href="/en/blog">View all</a>
+						</div>
+						<ul>
+							{posts.map((post) => (
+								<li>
+									<a href={`/en/blog/${post.id.replace(/^en\//, '')}/`}>
+										<span class="t">{post.data.title}</span>
+										<span class="d">
+											<FormattedDate date={post.data.pubDate} />
+										</span>
+									</a>
+								</li>
+							))}
+						</ul>
+					</section>
+				)
+			}
 		</main>
 		<Footer />
 	</body>
