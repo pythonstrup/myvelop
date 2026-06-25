@@ -1,11 +1,28 @@
 ---
+import { getCollection } from 'astro:content';
 import { SITE_TITLE } from '../consts';
 import HeaderLink from './HeaderLink.astro';
 
 const { pathname } = Astro.url;
 const isEn = pathname === '/en' || pathname.startsWith('/en/');
-const langSwitchHref = isEn ? '/' : '/en';
 const langLabel = isEn ? 'KO' : 'EN';
+
+// 언어 스위처: 같은 위치의 다른 언어로 이동한다.
+// 글 상세 페이지는 번역본이 있으면 그 글로, 없으면 해당 언어의 글 목록으로 보낸다.
+let langSwitchHref;
+const blogMatch = pathname.match(/^\/(?:en\/)?blog\/(.+?)\/?$/);
+if (blogMatch) {
+	const slug = blogMatch[1];
+	const targetLang = isEn ? 'ko' : 'en';
+	const posts = await getCollection('blog');
+	const hasTranslation = posts.some((p) => p.id === `${targetLang}/${slug}`);
+	const base = isEn ? '/blog' : '/en/blog';
+	langSwitchHref = hasTranslation ? `${base}/${slug}/` : base;
+} else if (isEn) {
+	langSwitchHref = pathname.replace(/^\/en/, '') || '/';
+} else {
+	langSwitchHref = pathname === '/' ? '/en' : `/en${pathname}`;
+}
 ---
 
 <header>
