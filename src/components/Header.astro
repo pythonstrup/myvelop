@@ -109,9 +109,14 @@ if (blogMatch) {
 		text-decoration: none;
 		border-bottom-color: var(--accent);
 	}
-	.social-links,
+	.social-links {
+		display: flex;
+		align-items: center;
+		gap: 0.25em;
+	}
 	.social-links a {
 		display: flex;
+		align-items: center;
 	}
 	@media (max-width: 720px) {
 		/* 모바일에서는 외부 소셜 링크(GitHub·LinkedIn)만 숨기고,
