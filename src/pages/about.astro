@@ -5,40 +5,41 @@ import Layout from '../layouts/BlogPost.astro';
 
 <Layout
 	title="About"
-	description="터지지 않는 서버를 만드는 백엔드 개발자 박종혁입니다."
+	description="Jonghyeok Park — a backend engineer who cares about reliable, large-scale systems."
 	pubDate={new Date('2026-06-23')}
 	heroImage={AboutHeroImage}
+	lang="en"
 >
-	<p>박종혁, 백엔드 개발자입니다.</p>
+	<p>I'm Jonghyeok Park, a backend engineer.</p>
 
 	<p>
-		알림톡처럼 한 번에 많은 양이 나가는 메시지를 다루는 일을 해왔습니다. 많은 메시지가
-		누락이나 지연 없이 제때 도착하게 만드는 건 생각보다 손이 많이 가는 일이라, 오히려 그
-		점이 재미있습니다.
+		I've worked on systems that send large volumes of messages — things like Kakao alert-talk.
+		Making sure a huge number of messages arrive on time without loss or delay is trickier than it
+		sounds, and that's exactly the part I enjoy.
 	</p>
 
 	<p>
-		코드가 돌아간다는 사실보다 왜 그렇게 도는지가 더 궁금한 편입니다. 그래서 당장 일에
-		쓰지 않는 것도 종종 혼자 파봅니다. 한번은 “10만 QPS가 들어오는 티켓팅 서버라면 어떻게
-		안 죽게 만들까”를 혼자 설계해보며 Redis를 이리저리 굴려봤습니다. 실제로 운영해 본 건
-		아니지만, 대용량을 어디서부터 의심해야 하는지 감을 잡는 데는 꽤 도움이 됐습니다.
+		I'm more curious about <em>why</em> code works than the fact that it runs, so I often dig into
+		things I don't use at work. Once, just as a thought experiment, I designed how a ticketing server
+		taking 100k QPS might stay alive — pushing Redis around in different ways. I've never run it in
+		production, but it gave me a feel for where to start looking when things get big.
 	</p>
 
 	<p>
-		배운 건 블로그에 적습니다. <a href="https://myvelop.tistory.com/">MYVELOP</a>에 Spring,
-		NestJS, Redis, 쿠버네티스, CS 이론 같은 주제로 200편 넘게 썼습니다. 남에게 설명하려고
-		정리하다 보면 결국 제가 제일 많이 배웁니다.
+		I write down what I learn. On <a href="https://myvelop.tistory.com/">MYVELOP</a> I've published
+		200+ posts on Spring, NestJS, Redis, Kubernetes, and CS fundamentals. Explaining things to others
+		is how I end up learning the most.
 	</p>
 
-	<h2>기술 스택</h2>
+	<h2>Tech Stack</h2>
 	<p>
-		Java · Spring · NestJS / Redis · MySQL · RabbitMQ / 쿠버네티스 · Docker · Jenkins · AWS
+		Java · Spring · NestJS / Redis · MySQL · RabbitMQ / Kubernetes · Docker · Jenkins · AWS
 	</p>
 
-	<h2>연락</h2>
+	<h2>Contact</h2>
 	<p>
 		<a href="https://github.com/pythonstrup">GitHub</a> ·
 		<a href="https://www.linkedin.com/in/%EC%A2%85%ED%98%81-%EB%B0%95-6b062821a/">LinkedIn</a> ·
-		<a href="https://myvelop.tistory.com/">블로그</a>
+		<a href="https://myvelop.tistory.com/">Blog</a>
 	</p>
 </Layout>

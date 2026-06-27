@@ -3,14 +3,14 @@ import rss from '@astrojs/rss';
 import { SITE_DESCRIPTION, SITE_TITLE } from '../../consts';
 
 export async function GET(context) {
-	const posts = await getCollection('blog', ({ id }) => id.startsWith('en/'));
+	const posts = await getCollection('blog', ({ id }) => id.startsWith('ko/'));
 	return rss({
 		title: SITE_TITLE,
 		description: SITE_DESCRIPTION,
 		site: context.site,
 		items: posts.map((post) => ({
 			...post.data,
-			link: `/en/blog/${post.id.replace(/^en\//, '')}/`,
+			link: `/ko/blog/${post.id.replace(/^ko\//, '')}/`,
 		})),
 	});
 }

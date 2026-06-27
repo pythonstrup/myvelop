@@ -6,13 +6,13 @@ import FormattedDate from '../components/FormattedDate.astro';
 import Header from '../components/Header.astro';
 import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
 
-const posts = (await getCollection('blog', ({ id }) => id.startsWith('ko/')))
+const posts = (await getCollection('blog', ({ id }) => id.startsWith('en/')))
 	.sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
 	.slice(0, 3);
 ---
 
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 	<head>
 		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
 		<style>
@@ -107,13 +107,13 @@ const posts = (await getCollection('blog', ({ id }) => id.startsWith('ko/')))
 		<main>
 			<section class="hero">
 				<p class="eyebrow">My + Develop</p>
-				<h1>한 걸음씩 성장하는<br />개발 여정을 기록합니다</h1>
+				<h1>Notes from a journey<br />of growing one step at a time</h1>
 				<p>
-					개발하며 배우고 부딪힌 것들을 남기는 공간입니다. 그날그날의 고민과 해결 과정,
-					그리고 다시 꺼내 볼 만한 내용을 차곡차곡 정리합니다.
+					A place where I write down what I learn and the problems I run into while building
+					things — the daily questions, how I solved them, and notes worth revisiting.
 				</p>
 				<div class="actions">
-					<a href="/blog">블로그</a>
+					<a href="/blog">Blog</a>
 					<a href="/about">About</a>
 				</div>
 			</section>
@@ -122,13 +122,13 @@ const posts = (await getCollection('blog', ({ id }) => id.startsWith('ko/')))
 				posts.length > 0 && (
 					<section class="recent">
 						<div class="section-head">
-							<h2>최근 글</h2>
-							<a href="/blog">전체 보기</a>
+							<h2>Recent posts</h2>
+							<a href="/blog">View all</a>
 						</div>
 						<ul>
 							{posts.map((post) => (
 								<li>
-									<a href={`/blog/${post.id.replace(/^ko\//, '')}/`}>
+									<a href={`/blog/${post.id.replace(/^en\//, '')}/`}>
 										<span class="t">{post.data.title}</span>
 										<span class="d">
 											<FormattedDate date={post.data.pubDate} />

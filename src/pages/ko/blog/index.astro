@@ -6,13 +6,13 @@ import FormattedDate from '../../../components/FormattedDate.astro';
 import Header from '../../../components/Header.astro';
 import { SITE_DESCRIPTION, SITE_TITLE } from '../../../consts';
 
-const posts = (await getCollection('blog', ({ id }) => id.startsWith('en/'))).sort(
+const posts = (await getCollection('blog', ({ id }) => id.startsWith('ko/'))).sort(
 	(a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
 );
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="ko">
 	<head>
 		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
 		<style>
@@ -61,7 +61,7 @@ const posts = (await getCollection('blog', ({ id }) => id.startsWith('en/'))).so
 				{
 					posts.map((post) => (
 						<li class="post-item">
-							<a href={`/en/blog/${post.id.replace(/^en\//, '')}/`}>
+							<a href={`/ko/blog/${post.id.replace(/^ko\//, '')}/`}>
 								<h2 class="title">{post.data.title}</h2>
 								<p class="date">
 									<FormattedDate date={post.data.pubDate} />

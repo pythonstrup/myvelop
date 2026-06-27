@@ -4,24 +4,24 @@ import { SITE_TITLE } from '../consts';
 import HeaderLink from './HeaderLink.astro';
 
 const { pathname } = Astro.url;
-const isEn = pathname === '/en' || pathname.startsWith('/en/');
-const langLabel = isEn ? 'KO' : 'EN';
+const isKo = pathname === '/ko' || pathname.startsWith('/ko/');
+const langLabel = isKo ? 'EN' : 'KO';
 
 // 언어 스위처: 같은 위치의 다른 언어로 이동한다.
 // 글 상세 페이지는 번역본이 있으면 그 글로, 없으면 해당 언어의 글 목록으로 보낸다.
 let langSwitchHref;
-const blogMatch = pathname.match(/^\/(?:en\/)?blog\/(.+?)\/?$/);
+const blogMatch = pathname.match(/^\/(?:ko\/)?blog\/(.+?)\/?$/);
 if (blogMatch) {
 	const slug = blogMatch[1];
-	const targetLang = isEn ? 'ko' : 'en';
+	const targetLang = isKo ? 'en' : 'ko';
 	const posts = await getCollection('blog');
 	const hasTranslation = posts.some((p) => p.id === `${targetLang}/${slug}`);
-	const base = isEn ? '/blog' : '/en/blog';
+	const base = isKo ? '/blog' : '/ko/blog';
 	langSwitchHref = hasTranslation ? `${base}/${slug}/` : base;
-} else if (isEn) {
-	langSwitchHref = pathname.replace(/^\/en/, '') || '/';
+} else if (isKo) {
+	langSwitchHref = pathname.replace(/^\/ko/, '') || '/';
 } else {
-	langSwitchHref = pathname === '/' ? '/en' : `/en${pathname}`;
+	langSwitchHref = pathname === '/' ? '/ko' : `/ko${pathname}`;
 }
 ---
 
@@ -29,9 +29,9 @@ if (blogMatch) {
 	<nav>
 		<h2><a href="/">{SITE_TITLE}</a></h2>
 		<div class="internal-links">
-			<HeaderLink href={isEn ? '/en' : '/'}>Home</HeaderLink>
-			<HeaderLink href={isEn ? '/en/blog' : '/blog'}>Blog</HeaderLink>
-			<HeaderLink href={isEn ? '/en/about' : '/about'}>About</HeaderLink>
+			<HeaderLink href={isKo ? '/ko' : '/'}>Home</HeaderLink>
+			<HeaderLink href={isKo ? '/ko/blog' : '/blog'}>Blog</HeaderLink>
+			<HeaderLink href={isKo ? '/ko/about' : '/about'}>About</HeaderLink>
 			<HeaderLink href="/search">Search</HeaderLink>
 		</div>
 		<div class="social-links">

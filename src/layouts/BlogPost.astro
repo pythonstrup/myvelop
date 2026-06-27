@@ -9,10 +9,10 @@ import Header from '../components/Header.astro';
 
 type Props = CollectionEntry<'blog'>['data'] & { lang?: string };
 
-const { title, description, pubDate, updatedDate, heroImage, lang = 'ko' } = Astro.props;
-const backHref = lang === 'en' ? '/en/blog' : '/blog';
-const backLabel = lang === 'en' ? '← Back to blog' : '← 목록으로';
-const updatedLabel = lang === 'en' ? 'Updated' : '수정됨';
+const { title, description, pubDate, updatedDate, heroImage, lang = 'en' } = Astro.props;
+const backHref = lang === 'ko' ? '/ko/blog' : '/blog';
+const backLabel = lang === 'ko' ? '← 목록으로' : '← Back to blog';
+const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 ---
 
 <html lang={lang}>

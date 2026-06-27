@@ -6,15 +6,15 @@ import { SITE_TITLE } from '../consts';
 ---
 
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 	<head>
-		<BaseHead title={`검색 · ${SITE_TITLE}`} description="블로그 글을 검색합니다." />
+		<BaseHead title={`Search · ${SITE_TITLE}`} description="Search posts on the blog." />
 		<link rel="stylesheet" href="/pagefind/pagefind-ui.css" />
 	</head>
 	<body>
 		<Header />
 		<main>
-			<h1>검색</h1>
+			<h1>Search</h1>
 			<div id="search"></div>
 		</main>
 		<Footer />
@@ -26,8 +26,8 @@ import { SITE_TITLE } from '../consts';
 					element: '#search',
 					showSubResults: true,
 					translations: {
-						placeholder: '검색어를 입력하세요',
-						zero_results: '"[SEARCH_TERM]"에 대한 결과가 없습니다.',
+						placeholder: 'Search posts',
+						zero_results: 'No results for "[SEARCH_TERM]".',
 					},
 				});
 			});
