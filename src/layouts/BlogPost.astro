@@ -7,9 +7,10 @@ import FormattedDate from '../components/FormattedDate.astro';
 import Giscus from '../components/Giscus.astro';
 import Header from '../components/Header.astro';
 
-type Props = CollectionEntry<'blog'>['data'] & { lang?: string };
+type Props = CollectionEntry<'blog'>['data'] & { lang?: string; alternatePath?: string };
 
-const { title, description, pubDate, updatedDate, heroImage, lang = 'en' } = Astro.props;
+const { title, description, pubDate, updatedDate, heroImage, lang = 'en', alternatePath } =
+	Astro.props;
 const backHref = lang === 'ko' ? '/ko/blog' : '/blog';
 const backLabel = lang === 'ko' ? '← 목록으로' : '← Back to blog';
 const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
@@ -17,7 +18,12 @@ const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 
 <html lang={lang}>
 	<head>
-		<BaseHead title={title} description={description} />
+		<BaseHead
+			title={title}
+			description={description}
+			image={heroImage}
+			alternatePath={alternatePath}
+		/>
 		<style>
 			main {
 				width: 720px;

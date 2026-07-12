@@ -14,7 +14,11 @@ const posts = (await getCollection('blog', ({ id }) => id.startsWith('ko/'))).so
 <!doctype html>
 <html lang="ko">
 	<head>
-		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION_KO} />
+		<BaseHead
+			title={`블로그 · ${SITE_TITLE}`}
+			description={SITE_DESCRIPTION_KO}
+			alternatePath="/blog/"
+		/>
 		<style>
 			.post-list {
 				list-style: none;
@@ -57,6 +61,7 @@ const posts = (await getCollection('blog', ({ id }) => id.startsWith('ko/'))).so
 	<body>
 		<Header />
 		<main>
+			<h1>블로그</h1>
 			<ul class="post-list">
 				{
 					posts.map((post) => (

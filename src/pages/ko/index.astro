@@ -14,7 +14,7 @@ const posts = (await getCollection('blog', ({ id }) => id.startsWith('ko/')))
 <!doctype html>
 <html lang="ko">
 	<head>
-		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION_KO} />
+		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION_KO} alternatePath="/" />
 		<style>
 			.hero {
 				padding: 1rem 0 2.5rem;

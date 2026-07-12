@@ -10,11 +10,14 @@ interface Props {
 	title: string;
 	description: string;
 	image?: ImageMetadata;
+	alternatePath?: string;
 }
 
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 
-const { title, description, image = FallbackImage } = Astro.props;
+const { title, description, image = FallbackImage, alternatePath } = Astro.props;
+const englishURL = alternatePath && new URL(alternatePath, Astro.site);
+const koreanURL = alternatePath && new URL(`/ko${alternatePath}`, Astro.site);
 ---
 
 <!-- Theme: apply before paint to avoid flash -->
@@ -41,6 +44,15 @@ const { title, description, image = FallbackImage } = Astro.props;
 
 <!-- Canonical URL -->
 <link rel="canonical" href={canonicalURL} />
+{
+	alternatePath && (
+		<>
+			<link rel="alternate" hreflang="en" href={englishURL} />
+			<link rel="alternate" hreflang="ko" href={koreanURL} />
+			<link rel="alternate" hreflang="x-default" href={englishURL} />
+		</>
+	)
+}
 
 <!-- Primary Meta Tags -->
 <title>{title}</title>
