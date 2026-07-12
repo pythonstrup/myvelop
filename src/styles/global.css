@@ -40,7 +40,6 @@ body {
   background-color: rgb(var(--bg));
   font-family:
     "Pretendard Variable",
-    var(--font-atkinson),
     -apple-system,
     BlinkMacSystemFont,
     system-ui,

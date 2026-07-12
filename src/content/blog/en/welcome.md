@@ -1,6 +1,6 @@
 ---
-title: 'Welcome to MyVelop'
-description: 'The first English post on MyVelop.'
+title: 'Welcome to pythonstrup'
+description: 'The first English post on pythonstrup.'
 pubDate: 'Jun 25 2026'
 ---
 

@@ -67,6 +67,9 @@ const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 			.prose :global(h3) {
 				scroll-margin-top: 2rem;
 			}
+			.prose :global(a) {
+				font-weight: 600;
+			}
 			.post-footer {
 				margin-top: 3rem;
 				padding-top: 2rem;
@@ -99,7 +102,7 @@ const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 				{
 					heroImage && (
 						<div class="hero-image">
-							<Image width={1020} height={510} src={heroImage} alt="" />
+							<Image width={1020} height={510} src={heroImage} alt="" priority />
 						</div>
 					)
 				}
