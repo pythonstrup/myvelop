@@ -84,6 +84,19 @@ const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 			.prose :global(a) {
 				font-weight: 600;
 			}
+			.prose :global(pre.mermaid) {
+				display: flex;
+				justify-content: center;
+				margin: 2rem 0;
+				padding: 1rem;
+				background: transparent;
+				white-space: pre-wrap;
+			}
+			.prose :global(pre.mermaid svg) {
+				width: auto;
+				max-width: 100%;
+				height: auto;
+			}
 			.post-footer {
 				margin-top: 3rem;
 				padding-top: 2rem;
@@ -132,7 +145,8 @@ const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 
 		<script>
 			document.querySelectorAll<HTMLPreElement>('article pre').forEach((pre) => {
-				if (pre.parentElement?.classList.contains('code-block')) return;
+				if (pre.classList.contains('mermaid') || pre.parentElement?.classList.contains('code-block'))
+					return;
 				const wrapper = document.createElement('div');
 				wrapper.className = 'code-block';
 				pre.parentNode?.insertBefore(wrapper, pre);
@@ -158,6 +172,67 @@ const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 				});
 				wrapper.appendChild(btn);
 			});
+
+			const diagrams = Array.from(document.querySelectorAll<HTMLPreElement>('pre.mermaid'));
+			if (diagrams.length > 0) {
+				const sources = new Map(diagrams.map((diagram) => [diagram, diagram.textContent ?? '']));
+				const renderedThemes = new Map<HTMLPreElement, boolean>();
+				let mermaid: (typeof import('mermaid'))['default'] | undefined;
+				let renderQueue = Promise.resolve();
+
+				const renderDiagram = (diagram: HTMLPreElement) => {
+					renderQueue = renderQueue.then(async () => {
+						const darkMode = document.documentElement.classList.contains('dark');
+						if (renderedThemes.get(diagram) === darkMode) return;
+
+						mermaid ??= (await import('mermaid')).default;
+						diagram.removeAttribute('data-processed');
+						delete diagram.dataset.mermaidError;
+						diagram.textContent = sources.get(diagram) ?? '';
+						mermaid.initialize({
+							startOnLoad: false,
+							securityLevel: 'strict',
+							theme: darkMode ? 'dark' : 'default',
+						});
+						await mermaid.run({ nodes: [diagram] });
+						renderedThemes.set(diagram, darkMode);
+
+						if (document.documentElement.classList.contains('dark') !== darkMode) {
+							void renderDiagram(diagram);
+						}
+					}).catch((error) => {
+						const message = error instanceof Error
+							? `${error.name}: ${error.message}`
+							: JSON.stringify(error) || String(error);
+						console.error(`Unable to render Mermaid diagram. ${message}`);
+						renderedThemes.delete(diagram);
+						diagram.removeAttribute('data-processed');
+						diagram.dataset.mermaidError = message;
+						diagram.textContent = sources.get(diagram) ?? '';
+					});
+					return renderQueue;
+				};
+
+				if ('IntersectionObserver' in window) {
+					const observer = new IntersectionObserver(
+						(entries) => {
+							for (const entry of entries) {
+								if (!entry.isIntersecting) continue;
+								observer.unobserve(entry.target);
+								void renderDiagram(entry.target as HTMLPreElement);
+							}
+						},
+						{ rootMargin: '300px' },
+					);
+					for (const diagram of diagrams) observer.observe(diagram);
+				} else {
+					for (const diagram of diagrams) void renderDiagram(diagram);
+				}
+
+				new MutationObserver(() => {
+					for (const diagram of renderedThemes.keys()) void renderDiagram(diagram);
+				}).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+			}
 		</script>
 	</body>
 </html>

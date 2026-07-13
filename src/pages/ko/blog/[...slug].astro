@@ -13,8 +13,14 @@ type Props = CollectionEntry<'blog'>;
 
 const post = Astro.props;
 const { Content } = await render(post);
+const slug = post.id.replace(/^ko\//, '');
+const hasTranslation = (await getCollection('blog')).some((entry) => entry.id === `en/${slug}`);
 ---
 
-<BlogPost {...post.data} lang="ko">
+<BlogPost
+	{...post.data}
+	lang="ko"
+	alternatePath={hasTranslation ? `/blog/${slug}/` : undefined}
+>
 	<Content />
 </BlogPost>
