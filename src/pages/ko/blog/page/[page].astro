@@ -1,0 +1,24 @@
+---
+import type { GetStaticPaths, Page } from 'astro';
+import type { CollectionEntry } from 'astro:content';
+import BlogList from '../../../../layouts/BlogList.astro';
+import { BLOG_PAGE_SIZE, getBlogPosts } from '../../../../lib/blog';
+
+export const getStaticPaths = (async ({ paginate }) => {
+	const posts = await getBlogPosts('ko');
+	return paginate(posts, { pageSize: BLOG_PAGE_SIZE }).slice(1);
+}) satisfies GetStaticPaths;
+
+interface Props {
+	page: Page<CollectionEntry<'blog'>>;
+}
+
+const { page } = Astro.props;
+---
+
+<BlogList
+	posts={page.data}
+	lang="ko"
+	currentPage={page.currentPage}
+	totalPages={page.lastPage}
+/>

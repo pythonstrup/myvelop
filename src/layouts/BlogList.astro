@@ -1,0 +1,165 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import BaseHead from '../components/BaseHead.astro';
+import Footer from '../components/Footer.astro';
+import FormattedDate from '../components/FormattedDate.astro';
+import Header from '../components/Header.astro';
+import { SITE_DESCRIPTION, SITE_DESCRIPTION_KO, SITE_TITLE } from '../consts';
+
+interface Props {
+	posts: CollectionEntry<'blog'>[];
+	lang: 'en' | 'ko';
+	currentPage: number;
+	totalPages: number;
+}
+
+const { posts, lang, currentPage, totalPages } = Astro.props;
+const isKo = lang === 'ko';
+const basePath = isKo ? '/ko/blog' : '/blog';
+const listTitle = isKo ? '블로그' : 'Blog';
+const pageTitle =
+	currentPage === 1
+		? listTitle
+		: isKo
+			? `${listTitle} · ${currentPage}페이지`
+			: `${listTitle} · Page ${currentPage}`;
+const description = isKo ? SITE_DESCRIPTION_KO : SITE_DESCRIPTION;
+const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1);
+const pageHref = (pageNumber: number) =>
+	pageNumber === 1 ? `${basePath}/` : `${basePath}/page/${pageNumber}/`;
+---
+
+<!doctype html>
+<html lang={lang}>
+	<head>
+		<BaseHead
+			title={`${pageTitle} · ${SITE_TITLE}`}
+			description={description}
+			alternatePath={currentPage === 1 ? '/blog/' : undefined}
+		/>
+	</head>
+	<body>
+		<Header />
+		<main>
+			<h1>{pageTitle}</h1>
+			<ul class="post-list">
+				{
+					posts.map((post) => (
+						<li class="post-item">
+							<a href={`${basePath}/${post.id.replace(`${lang}/`, '')}/`}>
+								<h2 class="title">{post.data.title}</h2>
+								<p class="date">
+									<FormattedDate date={post.data.pubDate} />
+								</p>
+								<p class="desc">{post.data.description}</p>
+							</a>
+						</li>
+					))
+				}
+			</ul>
+			{
+				totalPages > 1 && (
+					<nav class="pagination" aria-label={isKo ? '페이지 탐색' : 'Pagination'}>
+						<ol>
+							{pageNumbers.map((pageNumber) => (
+								<li>
+									{pageNumber === currentPage ? (
+										<span aria-current="page">{pageNumber}</span>
+									) : (
+										<a
+											href={pageHref(pageNumber)}
+											aria-label={isKo ? `${pageNumber}페이지로 이동` : `Go to page ${pageNumber}`}
+										>
+											{pageNumber}
+										</a>
+									)}
+								</li>
+							))}
+						</ol>
+					</nav>
+				)
+			}
+		</main>
+		<Footer />
+	</body>
+</html>
+
+<style>
+	.post-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+	.post-item {
+		padding: 1.75rem 0;
+		border-bottom: 1px solid rgb(var(--gray-light));
+	}
+	.post-item:first-child {
+		padding-top: 0.5rem;
+	}
+	.post-item a {
+		display: block;
+		text-decoration: none;
+	}
+	.post-item .title {
+		margin: 0 0 0.3rem;
+		font-size: 1.5rem;
+		color: rgb(var(--black));
+		transition: color 0.2s ease;
+	}
+	.post-item .date {
+		margin: 0 0 0.6rem;
+		font-size: 0.9rem;
+		color: rgb(var(--gray));
+	}
+	.post-item .desc {
+		margin: 0;
+		font-size: 1rem;
+		line-height: 1.6;
+		color: rgb(var(--gray-dark));
+	}
+	.post-item a:hover .title {
+		color: var(--accent);
+	}
+	.pagination {
+		margin-top: 2rem;
+	}
+	.pagination ol {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 0.5rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.pagination a,
+	.pagination span {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.75rem;
+		height: 2.75rem;
+		border: 1px solid rgb(var(--gray-light));
+		border-radius: 8px;
+		font-size: 0.9rem;
+		font-weight: 600;
+		text-decoration: none;
+	}
+	.pagination a {
+		color: rgb(var(--black));
+	}
+	.pagination a:hover {
+		color: var(--accent);
+		border-color: var(--accent);
+	}
+	.pagination a:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+	.pagination span[aria-current='page'] {
+		color: var(--accent-foreground);
+		background: var(--accent);
+		border-color: var(--accent);
+	}
+</style>
