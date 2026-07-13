@@ -90,7 +90,7 @@ const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 			<article>
 				<a class="back" href={backHref}>{backLabel}</a>
 				<header class="post-header">
-					<h1>{title}</h1>
+					<h1 data-pagefind-body>{title}</h1>
 					<div class="meta">
 						<FormattedDate date={pubDate} />
 						{
@@ -112,7 +112,7 @@ const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 						</div>
 					)
 				}
-				<div class="prose">
+				<div class="prose" data-pagefind-body>
 					<slot />
 				</div>
 				<div class="post-footer">

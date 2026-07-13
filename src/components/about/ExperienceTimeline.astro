@@ -1,0 +1,110 @@
+---
+import type { AboutExperience } from '../../data/about';
+
+interface Props {
+	experiences: AboutExperience[];
+}
+
+const { experiences } = Astro.props;
+---
+
+<div class="timeline">
+	{
+		experiences.map((experience) => (
+			<article class="experience">
+				<header>
+					<h3>{experience.company}</h3>
+					<time class="period">{experience.period}</time>
+				</header>
+				<p class="role">{experience.role}</p>
+				<p class="summary">{experience.summary}</p>
+				<ul>
+					{experience.bullets.map((bullet) => <li>{bullet}</li>)}
+				</ul>
+			</article>
+		))
+	}
+</div>
+
+<style>
+	.timeline {
+		position: relative;
+	}
+	.timeline::before {
+		position: absolute;
+		top: 0.4rem;
+		bottom: 0.4rem;
+		left: 5px;
+		width: 1px;
+		background: rgb(var(--gray-light));
+		content: '';
+	}
+	.experience {
+		position: relative;
+		padding-left: 2rem;
+	}
+	.experience + .experience {
+		margin-top: 3.5rem;
+	}
+	.experience::before {
+		position: absolute;
+		top: 0.45rem;
+		left: 0;
+		width: 11px;
+		height: 11px;
+		border: 3px solid rgb(var(--bg));
+		border-radius: 50%;
+		background: var(--accent);
+		box-shadow: 0 0 0 1px var(--accent);
+		content: '';
+	}
+	.experience header {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+	.experience h3 {
+		margin: 0;
+		font-size: 1.35rem;
+		letter-spacing: -0.025em;
+	}
+	.period {
+		flex: none;
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: rgb(var(--gray));
+	}
+	.role {
+		margin: 0.25rem 0 1.1rem;
+		font-size: 0.9rem;
+		font-weight: 650;
+		color: var(--accent);
+	}
+	.summary {
+		margin: 0 0 1rem;
+		font-size: 0.95rem;
+		color: rgb(var(--gray-dark));
+	}
+	.experience ul {
+		margin: 0;
+		padding-left: 1.15rem;
+	}
+	.experience li {
+		padding-left: 0.25rem;
+		font-size: 0.88rem;
+		line-height: 1.72;
+		color: rgb(var(--gray));
+	}
+	.experience li + li {
+		margin-top: 0.45rem;
+	}
+
+	@media (max-width: 600px) {
+		.experience header {
+			align-items: flex-start;
+			flex-direction: column;
+			gap: 0.25rem;
+		}
+	}
+</style>

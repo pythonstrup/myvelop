@@ -1,0 +1,167 @@
+---
+import { Image } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+import type { AboutHeroContent } from '../../data/about';
+
+interface Props {
+	content: AboutHeroContent;
+	image: ImageMetadata;
+}
+
+const { content, image } = Astro.props;
+---
+
+<header class="hero">
+	<div>
+		<p class="eyebrow">{content.eyebrow}</p>
+		<h1>{content.name}</h1>
+		<ul class="resume-intro" aria-label={content.introAriaLabel}>
+			{
+				content.introductions.map((item) => (
+					<li>
+						<h2>{item.title}</h2>
+						<p>{item.body}</p>
+					</li>
+				))
+			}
+		</ul>
+		<nav class="links" aria-label={content.linksAriaLabel}>
+			<a href="https://github.com/pythonstrup" target="_blank" rel="noreferrer">
+				{content.links.github}
+			</a>
+			<a
+				href="https://www.linkedin.com/in/%EC%A2%85%ED%98%81-%EB%B0%95-6b062821a/"
+				target="_blank"
+				rel="noreferrer"
+			>
+				{content.links.linkedin}
+			</a>
+			<a href="https://myvelop.tistory.com/" target="_blank" rel="noreferrer">
+				{content.links.blog}
+			</a>
+		</nav>
+	</div>
+	<div class="profile">
+		<Image src={image} width={460} height={460} alt={content.profileAlt} priority />
+	</div>
+</header>
+
+<style>
+	.hero {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 230px;
+		gap: 3.5rem;
+		align-items: center;
+		padding: 3.5rem;
+		border: 1px solid rgb(var(--gray-light));
+		border-radius: 28px;
+		background:
+			radial-gradient(circle at 92% 8%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 32%),
+			linear-gradient(145deg, rgb(var(--bg)), color-mix(in srgb, rgb(var(--gray-light)) 35%, rgb(var(--bg))));
+		overflow: hidden;
+	}
+	.eyebrow {
+		margin: 0 0 0.8rem;
+		font-size: 0.78rem;
+		font-weight: 700;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--accent);
+	}
+	.hero h1 {
+		margin: 0 0 1rem;
+		font-size: clamp(2.8rem, 7vw, 5.6rem);
+		line-height: 0.98;
+		letter-spacing: -0.065em;
+	}
+	.resume-intro {
+		display: grid;
+		gap: 1rem;
+		margin: 1.5rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+	.resume-intro li {
+		padding-left: 1rem;
+		border-left: 2px solid var(--accent);
+	}
+	.resume-intro h2 {
+		margin: 0 0 0.25rem;
+		font-size: 1rem;
+		line-height: 1.4;
+		letter-spacing: -0.015em;
+	}
+	.resume-intro p {
+		margin: 0;
+		font-size: 0.78rem;
+		line-height: 1.6;
+		color: rgb(var(--gray));
+	}
+	.profile {
+		position: relative;
+	}
+	.profile::before {
+		position: absolute;
+		inset: 14px -14px -14px 14px;
+		z-index: 0;
+		border-radius: 24px;
+		background: var(--accent);
+		content: '';
+		opacity: 0.12;
+	}
+	.profile :global(img) {
+		position: relative;
+		z-index: 1;
+		display: block;
+		width: 100%;
+		aspect-ratio: 1;
+		border: 1px solid rgb(var(--gray-light));
+		border-radius: 24px;
+		object-fit: cover;
+		box-shadow: 0 20px 45px rgba(var(--black), 0.12);
+	}
+	.links {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.65rem;
+		margin-top: 1.6rem;
+	}
+	.links a {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.55rem 0.85rem;
+		border: 1px solid rgb(var(--gray-light));
+		border-radius: 999px;
+		background: rgb(var(--bg));
+		font-size: 0.82rem;
+		font-weight: 650;
+		text-decoration: none;
+	}
+	.links a::after {
+		margin-left: 0.35rem;
+		content: '↗';
+	}
+
+	@media (max-width: 800px) {
+		.hero {
+			grid-template-columns: minmax(0, 1fr) 170px;
+			gap: 2rem;
+			padding: 2rem;
+		}
+	}
+
+	@media (max-width: 600px) {
+		.hero {
+			grid-template-columns: 1fr;
+			padding: 1.5rem;
+			border-radius: 20px;
+		}
+		.profile {
+			grid-row: 1;
+			width: 120px;
+		}
+		.hero h1 {
+			font-size: clamp(2.6rem, 15vw, 4rem);
+		}
+	}
+</style>

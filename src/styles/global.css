@@ -1,5 +1,34 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 @import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
 
 /*
   The CSS in this style tag is based off of Bear Blog's default CSS.
@@ -16,6 +45,24 @@
   --gray-dark: 34, 41, 57;
   --bg: 255, 255, 255;
   --gray-gradient: rgba(var(--gray-light), 50%), #fff;
+  --background: rgb(var(--bg));
+  --foreground: rgb(var(--gray-dark));
+  --card: rgb(var(--bg));
+  --card-foreground: rgb(var(--gray-dark));
+  --popover: rgb(var(--bg));
+  --popover-foreground: rgb(var(--gray-dark));
+  --primary: var(--accent);
+  --primary-foreground: #fff;
+  --secondary: rgb(var(--gray-light));
+  --secondary-foreground: rgb(var(--gray-dark));
+  --muted: rgb(var(--gray-light));
+  --muted-foreground: rgb(var(--gray));
+  --accent-foreground: #fff;
+  --destructive: #dc2626;
+  --border: rgb(var(--gray-light));
+  --input: rgb(var(--gray-light));
+  --ring: var(--accent);
+  --radius: 0.625rem;
   --box-shadow:
     0 2px 6px rgba(var(--gray), 25%), 0 8px 24px rgba(var(--gray), 33%),
     0 16px 32px rgba(var(--gray), 33%);
@@ -29,6 +76,23 @@ html.dark {
   --gray-dark: 200, 210, 226;
   --bg: 13, 17, 23;
   --gray-gradient: rgba(15, 18, 25, 60%), #0d1117;
+  --background: rgb(var(--bg));
+  --foreground: rgb(var(--gray-dark));
+  --card: rgb(var(--bg));
+  --card-foreground: rgb(var(--gray-dark));
+  --popover: #161b22;
+  --popover-foreground: rgb(var(--gray-dark));
+  --primary: var(--accent);
+  --primary-foreground: #0d1117;
+  --secondary: rgb(var(--gray-light));
+  --secondary-foreground: rgb(var(--gray-dark));
+  --muted: rgb(var(--gray-light));
+  --muted-foreground: rgb(var(--gray));
+  --accent-foreground: #0d1117;
+  --destructive: #ef4444;
+  --border: rgb(var(--gray-light));
+  --input: rgb(var(--gray-light));
+  --ring: var(--accent);
 }
 html {
   color-scheme: light;

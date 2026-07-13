@@ -2,6 +2,7 @@
 import BaseHead from '../../components/BaseHead.astro';
 import Header from '../../components/Header.astro';
 import Footer from '../../components/Footer.astro';
+import SearchCommand from '../../components/search/SearchCommand';
 import { SITE_TITLE } from '../../consts';
 ---
 
@@ -13,28 +14,13 @@ import { SITE_TITLE } from '../../consts';
 			description="블로그 글을 검색합니다."
 			alternatePath="/search/"
 		/>
-		<link rel="stylesheet" href="/pagefind/pagefind-ui.css" />
 	</head>
 	<body>
 		<Header />
 		<main>
 			<h1>검색</h1>
-			<div id="search"></div>
+			<SearchCommand lang="ko" client:load />
 		</main>
 		<Footer />
-		<script is:inline src="/pagefind/pagefind-ui.js"></script>
-		<script is:inline>
-			window.addEventListener('DOMContentLoaded', () => {
-				if (typeof PagefindUI === 'undefined') return;
-				new PagefindUI({
-					element: '#search',
-					showSubResults: true,
-					translations: {
-						placeholder: '검색어를 입력하세요',
-						zero_results: '"[SEARCH_TERM]"에 대한 결과가 없습니다.',
-					},
-				});
-			});
-		</script>
 	</body>
 </html>

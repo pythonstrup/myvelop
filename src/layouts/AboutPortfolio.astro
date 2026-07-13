@@ -1,212 +1,28 @@
 ---
-import { Image } from 'astro:assets';
 import ProfileImage from '../assets/profile.jpg';
+import AboutHero from '../components/about/AboutHero.astro';
+import ExperienceTimeline from '../components/about/ExperienceTimeline.astro';
+import ImpactMetrics from '../components/about/ImpactMetrics.astro';
+import ResumeSection from '../components/about/ResumeSection.astro';
 import BaseHead from '../components/BaseHead.astro';
 import Footer from '../components/Footer.astro';
 import Header from '../components/Header.astro';
+import { getAboutContent, type AboutLocale } from '../data/about';
 
 interface Props {
-	lang: 'en' | 'ko';
+	lang: AboutLocale;
 }
 
 const { lang } = Astro.props;
-const isKo = lang === 'ko';
-
-const content = isKo
-	? {
-			title: 'About | 박종혁',
-			description:
-				'서비스의 성장을 안정적인 시스템으로 뒷받침하고, AI로 개발의 속도를 높이는 백엔드 개발자 박종혁입니다.',
-			eyebrow: 'SOFTWARE ENGINEER · BACKEND',
-			name: '박종혁',
-			introductions: [
-				{
-					title: 'AI Agent의 원리를 파고들고, 활용 방식을 확장합니다',
-					body: 'Stars 220,000+ 오픈소스 everything-claude-code에 Top 10 Contributor로 활동하고 있습니다.',
-				},
-				{
-					title: 'AI로 속도를 더합니다.',
-					body: 'Git Worktree와 Claude Code를 활용하여 컬리 3PL 연동, 정기식단 & 식단 스케줄링 구축, 가격·할인 시스템 일원화까지 3개 프로젝트를 병렬 진행하여 3주 만에 개발을 완료했습니다.',
-				},
-				{
-					title: '서비스와 함께 성장하는 개발자',
-					body: '유닛블랙 세무자동화팀에서 전년 대비 20배 이상 규모의 유저 트래픽을 처리하고, 매출 645% 상승에 기여했습니다. 이유식 판매 플랫폼 로하스밀의 A to Z를 경험하고, 매출이 700% 증가 및 MAU 약 6배 증가의 성과를 기록했습니다. 서비스 확장과 함께 복잡해지는 기술적 과제를 기회삼아, 스터디와 기술 블로그를 통해 끊임없이 학습하며 성장하고 있습니다.',
-				},
-			],
-			links: { github: 'GitHub', linkedin: 'LinkedIn', blog: '기술 블로그' },
-			metricsLabel: '대표 성과',
-			metrics: [
-				{ value: '3천만 건', label: '한 달간 안정적으로 처리한 알림톡' },
-				{ value: '10배', label: 'Virtual Thread 도입 후 I/O 처리량' },
-				{ value: '500→10ms', label: '캐시 계층 설계로 줄인 API 응답 시간' },
-				{ value: '연 3천만 원+', label: '워크플로우 내재화로 절감한 비용' },
-			],
-			experienceLabel: '경력',
-			experienceMeta: '총 4년',
-			experiences: [
-				{
-					company: '(주)유닛블랙',
-					period: '2026.01 — 현재',
-					role: 'Software Engineer · 세무자동화',
-					summary: '세무자동화 도메인에서 대규모 메시징, 외부 서비스 연동, 비용 최적화를 담당합니다.',
-					bullets: [
-						'BullMQ의 재시도·중복 제거·유량 제어를 활용해 한 달간 3천만 건의 알림톡을 안정적으로 발송하고, 약 15만 건의 신고와 151억 원 규모의 매출 전환을 뒷받침했습니다.',
-						'자리톡·카카오페이 연동을 개발해 일일 가입자 10만 명 달성과 사용자 규모 100% 성장에 기여했습니다.',
-						'Zapier·Make 워크플로우를 내재화해 연간 3천만 원 이상의 외부 도구 비용을 절감했습니다.',
-						'종합소득세 수수료율·할인·할증 정책을 5영업일 안에 설계하고 개발해 일정에 맞춰 출시했습니다.',
-					],
-				},
-				{
-					company: '주식회사 플라잉닥터',
-					period: '2023.03 — 2025.12',
-					role: 'Developer · 로하스밀 커머스',
-					summary: '커머스 핵심 기능과 성능을 개선하며 서비스의 매출 성장과 운영 효율화를 경험했습니다.',
-					bullets: [
-						'L1/L2 캐시 계층과 Redis Pub/Sub을 설계해 외부 API 응답 시간을 500ms에서 10ms로 단축하고 캐시 정합성을 보장했습니다.',
-						'블로킹 I/O에 Virtual Thread를 도입해 스레드 풀 고갈 문제를 해결하고 처리량을 10배 높였습니다.',
-						'서버사이드 Conversion API를 구축해 광고 전환 효율을 168% 개선하고 매출 20% 상승에 기여했습니다.',
-						'무료체험·정기 식단·3PL 연동 등 구매 전환 기능을 개발하고, 수작업 운영을 자동화해 투입 인력을 2명에서 1명으로 줄였습니다.',
-						'Elastic Stack과 Slack 기반 모니터링을 구축해 장애 탐지와 대응 체계를 마련했습니다.',
-					],
-				},
-			],
-			educationLabel: '학력',
-			education: {
-				school: '인천대학교',
-				period: '2015 — 2023',
-				major: '문헌정보학과 · 컴퓨터공학부 학사',
-				detail: '4.23 / 4.5 · 수석 졸업',
-			},
-			skillsLabel: '기술',
-			skills: [
-				'Java',
-				'Spring',
-				'Node.js',
-				'TypeScript',
-				'Redis',
-				'SQL',
-				'JPA',
-				'Docker',
-				'Kubernetes',
-				'AWS',
-				'ELK',
-				'Vue',
-			],
-			activitiesLabel: '활동',
-			activities: [
-				{ year: '2025', text: 'IT 연합 동아리 넥스터즈 26–27기 · PM, 챗봇 프롬프팅' },
-				{ year: '2024', text: '오픈소스 컨트리뷰션 · Apache Zeppelin' },
-				{ year: '2023', text: '글또 · 회차 베스트 글 3회 선정' },
-				{ year: '2022', text: '네이버 부스트캠프 7기 · 풀스택 과정' },
-			],
-			awardsLabel: '수상',
-			awards: [
-				{ year: '2025', text: '넥스터즈 27기 대상' },
-				{ year: '2024', text: '오픈소스 컨트리뷰션 아카데미 최우수상' },
-				{ year: '2023', text: '인천대학교 학장상 · 수석 졸업' },
-			],
-		}
-	: {
-			title: 'About | Jonghyeok Park',
-			description:
-				'Jonghyeok Park, a backend engineer who turns service growth into reliable systems and uses AI to move faster.',
-			eyebrow: 'SOFTWARE ENGINEER · BACKEND',
-			name: 'Jonghyeok Park',
-			introductions: [
-				{
-					title: 'I explore how AI agents work and expand how they can be used',
-					body: 'I am a Top 10 contributor to everything-claude-code, an open-source project with 220,000+ stars.',
-				},
-				{
-					title: 'I move faster with AI.',
-					body: 'Using Git Worktree and Claude Code, I completed three projects in parallel within three weeks: Kurly 3PL integration, recurring meal and meal scheduling, and price and discount system consolidation.',
-				},
-				{
-					title: 'A developer who grows with the service',
-					body: 'At Unitblack’s tax automation team, I handled more than 20 times the previous year’s user traffic and contributed to 645% revenue growth. I experienced Lohasmeal, a baby food sales platform, from A to Z, recording 700% revenue growth and approximately sixfold MAU growth. I treat the technical challenges that come with service expansion as opportunities and continue to learn through study groups and my technical blog.',
-				},
-			],
-			links: { github: 'GitHub', linkedin: 'LinkedIn', blog: 'Tech blog' },
-			metricsLabel: 'Selected impact',
-			metrics: [
-				{ value: '30M', label: 'Kakao notifications delivered in one month' },
-				{ value: '10×', label: 'I/O throughput after adopting virtual threads' },
-				{ value: '500→10ms', label: 'API latency after layered caching' },
-				{ value: '₩30M+/yr', label: 'Saved by bringing workflows in-house' },
-			],
-			experienceLabel: 'Experience',
-			experienceMeta: '4 years',
-			experiences: [
-				{
-					company: 'Unitblack',
-					period: 'Jan 2026 — Present',
-					role: 'Software Engineer · Tax Automation',
-					summary: 'Building large-scale messaging, external integrations, and cost-efficient systems for tax automation.',
-					bullets: [
-						'Designed a BullMQ pipeline with retries, deduplication, and rate limiting to deliver 30 million Kakao notifications in one month, supporting 150K filings and ₩15.1B in converted revenue.',
-						'Built JariTalk and Kakao Pay integrations that helped reach 100K daily signups and double the user base.',
-						'Replaced Zapier and Make workflows with in-house automation, saving more than ₩30M annually.',
-						'Designed and shipped tax fee, discount, and surcharge policies within five working days.',
-					],
-				},
-				{
-					company: 'Flying Doctor',
-					period: 'Mar 2023 — Dec 2025',
-					role: 'Developer · Lohasmeal Commerce',
-					summary: 'Built core commerce features and performance improvements that supported revenue growth and leaner operations.',
-					bullets: [
-						'Designed L1/L2 caching with Redis Pub/Sub, cutting external API latency from 500ms to 10ms while preserving cache consistency.',
-						'Resolved thread-pool exhaustion with virtual threads and increased I/O throughput tenfold.',
-						'Built server-side Conversion API tracking, improving conversion efficiency by 168% and contributing to 20% revenue growth.',
-						'Delivered free trials, meal subscriptions, and 3PL integrations, then automated manual operations to reduce staffing from two people to one.',
-						'Established incident detection and response monitoring with Elastic Stack and Slack.',
-					],
-				},
-			],
-			educationLabel: 'Education',
-			education: {
-				school: 'Incheon National University',
-				period: '2015 — 2023',
-				major: 'B.A. in Library & Information Science · B.S. in Computer Science',
-				detail: '4.23 / 4.5 · Valedictorian',
-			},
-			skillsLabel: 'Skills',
-			skills: [
-				'Java',
-				'Spring',
-				'Node.js',
-				'TypeScript',
-				'Redis',
-				'SQL',
-				'JPA',
-				'Docker',
-				'Kubernetes',
-				'AWS',
-				'ELK',
-				'Vue',
-			],
-			activitiesLabel: 'Activities',
-			activities: [
-				{ year: '2025', text: 'NEXTERS 26–27 · PM and chatbot prompting' },
-				{ year: '2024', text: 'Open Source Contribution · Apache Zeppelin' },
-				{ year: '2023', text: 'Geultto · Best article, three rounds' },
-				{ year: '2022', text: 'Naver Boostcamp 7 · Full-stack program' },
-			],
-			awardsLabel: 'Awards',
-			awards: [
-				{ year: '2025', text: 'Grand Prize · NEXTERS 27' },
-				{ year: '2024', text: 'Excellence Award · Open Source Contribution Academy' },
-				{ year: '2023', text: "Dean's Award · Valedictorian" },
-			],
-		};
+const content = getAboutContent(lang);
 ---
 
 <!doctype html>
 <html lang={lang}>
 	<head>
 		<BaseHead
-			title={content.title}
-			description={content.description}
+			title={content.meta.title}
+			description={content.meta.description}
 			image={ProfileImage}
 			alternatePath="/about/"
 		/>
@@ -217,185 +33,17 @@ const content = isKo
 				margin: 0 auto;
 				padding: 4rem 1rem 6rem;
 			}
-			.hero {
-				display: grid;
-				grid-template-columns: minmax(0, 1fr) 230px;
-				gap: 3.5rem;
-				align-items: center;
-				padding: 3.5rem;
-				border: 1px solid rgb(var(--gray-light));
-				border-radius: 28px;
-				background:
-					radial-gradient(circle at 92% 8%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 32%),
-					linear-gradient(145deg, rgb(var(--bg)), color-mix(in srgb, rgb(var(--gray-light)) 35%, rgb(var(--bg))));
-				overflow: hidden;
-			}
-			.eyebrow,
-			.section-number {
-				margin: 0 0 0.8rem;
-				font-size: 0.78rem;
-				font-weight: 700;
-				letter-spacing: 0.12em;
-				text-transform: uppercase;
-				color: var(--accent);
-			}
-			.hero h1 {
-				margin: 0 0 1rem;
-				font-size: clamp(2.8rem, 7vw, 5.6rem);
-				line-height: 0.98;
-				letter-spacing: -0.065em;
-			}
-			.resume-intro {
-				display: grid;
-				gap: 1rem;
-				margin: 1.5rem 0 0;
-				padding: 0;
-				list-style: none;
-			}
-			.resume-intro li {
-				padding-left: 1rem;
-				border-left: 2px solid var(--accent);
-			}
-			.resume-intro h2 {
-				margin: 0 0 0.25rem;
-				font-size: 1rem;
-				line-height: 1.4;
-				letter-spacing: -0.015em;
-			}
-			.resume-intro p {
-				margin: 0;
-				font-size: 0.78rem;
-				line-height: 1.6;
-				color: rgb(var(--gray));
-			}
-			.profile {
-				position: relative;
-			}
-			.profile::before {
-				position: absolute;
-				inset: 14px -14px -14px 14px;
-				z-index: 0;
-				border-radius: 24px;
-				background: var(--accent);
-				content: '';
-				opacity: 0.12;
-			}
-			.profile :global(img) {
-				position: relative;
-				z-index: 1;
-				display: block;
-				width: 100%;
-				aspect-ratio: 1;
-				border: 1px solid rgb(var(--gray-light));
-				border-radius: 24px;
-				object-fit: cover;
-				box-shadow: 0 20px 45px rgba(var(--black), 0.12);
-			}
-			.links {
-				display: flex;
-				flex-wrap: wrap;
-				gap: 0.65rem;
-				margin-top: 1.6rem;
-			}
-			.links a {
-				display: inline-flex;
-				align-items: center;
-				padding: 0.55rem 0.85rem;
-				border: 1px solid rgb(var(--gray-light));
-				border-radius: 999px;
-				background: rgb(var(--bg));
-				font-size: 0.82rem;
-				font-weight: 650;
-				text-decoration: none;
-			}
-			.links a::after {
-				margin-left: 0.35rem;
-				content: '↗';
-			}
-			.metrics {
-				display: grid;
-				grid-template-columns: repeat(4, 1fr);
-				gap: 0.75rem;
-				margin-top: 1rem;
-			}
-			.metric {
-				min-width: 0;
-				padding: 1.35rem;
+			.education {
+				padding: 1.5rem;
 				border: 1px solid rgb(var(--gray-light));
 				border-radius: 18px;
-				background: rgb(var(--bg));
 			}
-			.metric strong {
-				display: block;
-				margin-bottom: 0.35rem;
-				font-size: clamp(1.35rem, 2.5vw, 1.8rem);
-				line-height: 1.1;
-				letter-spacing: -0.04em;
-				color: rgb(var(--black));
-			}
-			.metric span {
-				display: block;
-				font-size: 0.78rem;
-				line-height: 1.5;
-				color: rgb(var(--gray));
-			}
-			.resume-section {
-				display: grid;
-				grid-template-columns: 170px minmax(0, 1fr);
-				gap: 2.5rem;
-				padding: 4rem 0;
-				border-bottom: 1px solid rgb(var(--gray-light));
-			}
-			.section-heading h2 {
-				margin: 0;
-				font-size: 1.15rem;
-				letter-spacing: -0.02em;
-			}
-			.section-heading small {
-				display: block;
-				margin-top: 0.4rem;
-				font-size: 0.78rem;
-				color: rgb(var(--gray));
-			}
-			.timeline {
-				position: relative;
-			}
-			.timeline::before {
-				position: absolute;
-				top: 0.4rem;
-				bottom: 0.4rem;
-				left: 5px;
-				width: 1px;
-				background: rgb(var(--gray-light));
-				content: '';
-			}
-			.experience {
-				position: relative;
-				padding-left: 2rem;
-			}
-			.experience + .experience {
-				margin-top: 3.5rem;
-			}
-			.experience::before {
-				position: absolute;
-				top: 0.45rem;
-				left: 0;
-				width: 11px;
-				height: 11px;
-				border: 3px solid rgb(var(--bg));
-				border-radius: 50%;
-				background: var(--accent);
-				box-shadow: 0 0 0 1px var(--accent);
-				content: '';
-			}
-			.experience header,
 			.education-head {
 				display: flex;
 				align-items: baseline;
 				justify-content: space-between;
 				gap: 1rem;
 			}
-			.experience h3,
 			.education h3 {
 				margin: 0;
 				font-size: 1.35rem;
@@ -406,35 +54,6 @@ const content = isKo
 				font-size: 0.78rem;
 				font-weight: 600;
 				color: rgb(var(--gray));
-			}
-			.role {
-				margin: 0.25rem 0 1.1rem;
-				font-size: 0.9rem;
-				font-weight: 650;
-				color: var(--accent);
-			}
-			.summary {
-				margin: 0 0 1rem;
-				font-size: 0.95rem;
-				color: rgb(var(--gray-dark));
-			}
-			.experience ul {
-				margin: 0;
-				padding-left: 1.15rem;
-			}
-			.experience li {
-				padding-left: 0.25rem;
-				font-size: 0.88rem;
-				line-height: 1.72;
-				color: rgb(var(--gray));
-			}
-			.experience li + li {
-				margin-top: 0.45rem;
-			}
-			.education {
-				padding: 1.5rem;
-				border: 1px solid rgb(var(--gray-light));
-				border-radius: 18px;
 			}
 			.education p {
 				margin: 0.45rem 0 0;
@@ -496,52 +115,18 @@ const content = isKo
 				font-weight: 700;
 				color: var(--accent);
 			}
+
 			@media (max-width: 800px) {
 				.portfolio {
 					padding-top: 2rem;
 				}
-				.hero {
-					grid-template-columns: minmax(0, 1fr) 170px;
-					gap: 2rem;
-					padding: 2rem;
-				}
-				.metrics {
-					grid-template-columns: 1fr 1fr;
-				}
-				.resume-section {
-					grid-template-columns: 130px minmax(0, 1fr);
-					gap: 1.5rem;
-				}
 			}
+
 			@media (max-width: 600px) {
 				.portfolio {
 					max-width: calc(100% - 1rem);
 					padding: 1rem 0.5rem 4rem;
 				}
-				.hero {
-					grid-template-columns: 1fr;
-					padding: 1.5rem;
-					border-radius: 20px;
-				}
-				.profile {
-					grid-row: 1;
-					width: 120px;
-				}
-				.hero h1 {
-					font-size: clamp(2.6rem, 15vw, 4rem);
-				}
-				.metrics {
-					gap: 0.5rem;
-				}
-				.metric {
-					padding: 1rem;
-				}
-				.resume-section {
-					grid-template-columns: 1fr;
-					gap: 1.5rem;
-					padding: 3rem 0;
-				}
-				.experience header,
 				.education-head {
 					align-items: flex-start;
 					flex-direction: column;
@@ -556,110 +141,54 @@ const content = isKo
 	<body>
 		<Header />
 		<main class="portfolio">
-			<header class="hero">
-				<div>
-					<p class="eyebrow">{content.eyebrow}</p>
-					<h1>{content.name}</h1>
-					<ul class="resume-intro" aria-label={isKo ? '소개' : 'Introduction'}>
-						{content.introductions.map((item) => (
-							<li>
-								<h2>{item.title}</h2>
-								<p>{item.body}</p>
-							</li>
-						))}
-					</ul>
-					<nav class="links" aria-label={isKo ? '외부 링크' : 'External links'}>
-						<a href="https://github.com/pythonstrup" target="_blank" rel="noreferrer">{content.links.github}</a>
-						<a href="https://www.linkedin.com/in/%EC%A2%85%ED%98%81-%EB%B0%95-6b062821a/" target="_blank" rel="noreferrer">{content.links.linkedin}</a>
-						<a href="https://myvelop.tistory.com/" target="_blank" rel="noreferrer">{content.links.blog}</a>
-					</nav>
-				</div>
-				<div class="profile">
-					<Image src={ProfileImage} width={460} height={460} alt={isKo ? '박종혁 프로필 사진' : 'Portrait of Jonghyeok Park'} priority />
-				</div>
-			</header>
+			<AboutHero content={content.hero} image={ProfileImage} />
+			<ImpactMetrics content={content.metrics} />
 
-			<section class="metrics" aria-label={content.metricsLabel}>
-				{content.metrics.map((metric) => (
-					<div class="metric">
-						<strong>{metric.value}</strong>
-						<span>{metric.label}</span>
-					</div>
-				))}
-			</section>
+			<ResumeSection number="01" title={content.experience.label} meta={content.experience.meta}>
+				<ExperienceTimeline experiences={content.experience.items} />
+			</ResumeSection>
 
-			<section class="resume-section">
-				<header class="section-heading">
-					<p class="section-number">01</p>
-					<h2>{content.experienceLabel}</h2>
-					<small>{content.experienceMeta}</small>
-				</header>
-				<div class="timeline">
-					{content.experiences.map((experience) => (
-						<article class="experience">
-							<header>
-								<h3>{experience.company}</h3>
-								<time class="period">{experience.period}</time>
-							</header>
-							<p class="role">{experience.role}</p>
-							<p class="summary">{experience.summary}</p>
-							<ul>
-								{experience.bullets.map((bullet) => <li>{bullet}</li>)}
-							</ul>
-						</article>
-					))}
-				</div>
-			</section>
-
-			<section class="resume-section">
-				<header class="section-heading">
-					<p class="section-number">02</p>
-					<h2>{content.educationLabel}</h2>
-				</header>
+			<ResumeSection number="02" title={content.education.label}>
 				<article class="education">
 					<div class="education-head">
-						<h3>{content.education.school}</h3>
-						<time class="period">{content.education.period}</time>
+						<h3>{content.education.item.school}</h3>
+						<time class="period">{content.education.item.period}</time>
 					</div>
-					<p>{content.education.major}</p>
-					<p class="detail">{content.education.detail}</p>
+					<p>{content.education.item.major}</p>
+					<p class="detail">{content.education.item.detail}</p>
 				</article>
-			</section>
+			</ResumeSection>
 
-			<section class="resume-section">
-				<header class="section-heading">
-					<p class="section-number">03</p>
-					<h2>{content.skillsLabel}</h2>
-				</header>
+			<ResumeSection number="03" title={content.skills.label}>
 				<ul class="skills">
-					{content.skills.map((skill) => <li>{skill}</li>)}
+					{content.skills.items.map((skill) => <li>{skill}</li>)}
 				</ul>
-			</section>
+			</ResumeSection>
 
-			<section class="resume-section">
-				<header class="section-heading">
-					<p class="section-number">04</p>
-					<h2>{content.activitiesLabel} &amp; {content.awardsLabel}</h2>
-				</header>
+			<ResumeSection number="04" title={`${content.activities.label} & ${content.awards.label}`}>
 				<div class="double-grid">
 					<article class="list-card">
-						<h3>{content.activitiesLabel}</h3>
+						<h3>{content.activities.label}</h3>
 						<ul>
-							{content.activities.map((item) => (
-								<li><span class="year">{item.year}</span><span>{item.text}</span></li>
-							))}
+							{
+								content.activities.items.map((item) => (
+									<li><span class="year">{item.year}</span><span>{item.text}</span></li>
+								))
+							}
 						</ul>
 					</article>
 					<article class="list-card">
-						<h3>{content.awardsLabel}</h3>
+						<h3>{content.awards.label}</h3>
 						<ul>
-							{content.awards.map((item) => (
-								<li><span class="year">{item.year}</span><span>{item.text}</span></li>
-							))}
+							{
+								content.awards.items.map((item) => (
+									<li><span class="year">{item.year}</span><span>{item.text}</span></li>
+								))
+							}
 						</ul>
 					</article>
 				</div>
-			</section>
+			</ResumeSection>
 		</main>
 		<Footer />
 	</body>

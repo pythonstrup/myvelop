@@ -1,0 +1,82 @@
+import { Command as CommandPrimitive } from "cmdk";
+import { SearchIcon } from "lucide-react";
+import type * as React from "react";
+
+import { cn } from "@/lib/utils";
+
+function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {
+	return (
+		<CommandPrimitive
+			data-slot="command"
+			className={cn(
+				"flex h-full w-full flex-col overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-sm",
+				className,
+			)}
+			{...props}
+		/>
+	);
+}
+
+function CommandInput({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.Input>) {
+	return (
+		<div data-slot="command-input-wrapper" className="flex h-14 items-center gap-3 border-b px-4">
+			<SearchIcon className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+			<CommandPrimitive.Input
+				data-slot="command-input"
+				className={cn(
+					"h-14 w-full bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+					className,
+				)}
+				{...props}
+			/>
+		</div>
+	);
+}
+
+function CommandList({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.List>) {
+	return (
+		<CommandPrimitive.List
+			data-slot="command-list"
+			className={cn("max-h-none overflow-x-hidden overflow-y-visible p-2", className)}
+			{...props}
+		/>
+	);
+}
+
+function CommandEmpty({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.Empty>) {
+	return (
+		<CommandPrimitive.Empty
+			data-slot="command-empty"
+			className={cn("py-10 text-center text-sm text-muted-foreground", className)}
+			{...props}
+		/>
+	);
+}
+
+function CommandGroup({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.Group>) {
+	return (
+		<CommandPrimitive.Group
+			data-slot="command-group"
+			className={cn(
+				"overflow-hidden p-1 text-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-heading]]:text-sm [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-foreground",
+				className,
+			)}
+			{...props}
+		/>
+	);
+}
+
+function CommandItem({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.Item>) {
+	return (
+		<CommandPrimitive.Item
+			data-slot="command-item"
+			className={cn(
+				"relative flex min-h-11 cursor-default select-none items-start rounded-lg px-3 py-3 text-sm outline-none data-[disabled=true]:pointer-events-none data-[selected=true]:bg-secondary data-[selected=true]:text-secondary-foreground data-[disabled=true]:opacity-50",
+				className,
+			)}
+			{...props}
+		/>
+	);
+}
+
+export { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList };

@@ -1,15 +1,20 @@
 ---
 import { getCollection } from 'astro:content';
 import { SITE_TITLE } from '../consts';
+import { externalLinks, navLinks } from '../lib/nav';
 import HeaderLink from './HeaderLink.astro';
+import MobileNav from './MobileNav';
 
 const { pathname } = Astro.url;
 const isKo = pathname === '/ko' || pathname.startsWith('/ko/');
 const langLabel = isKo ? 'EN' : 'KO';
+const links = navLinks(isKo);
+const githubUrl = externalLinks.find((l) => l.label === 'GitHub')?.href;
+const linkedinUrl = externalLinks.find((l) => l.label === 'LinkedIn')?.href;
 
 // 언어 스위처: 같은 위치의 다른 언어로 이동한다.
 // 글 상세 페이지는 번역본이 있으면 그 글로, 없으면 해당 언어의 글 목록으로 보낸다.
-let langSwitchHref;
+let langSwitchHref: string;
 const blogMatch = pathname.match(/^\/(?:ko\/)?blog\/(.+?)\/?$/);
 if (blogMatch) {
 	const slug = blogMatch[1];
@@ -29,10 +34,7 @@ if (blogMatch) {
 	<nav>
 		<h2><a href="/">{SITE_TITLE}</a></h2>
 		<div class="internal-links">
-			<HeaderLink href={isKo ? '/ko' : '/'}>Home</HeaderLink>
-			<HeaderLink href={isKo ? '/ko/blog' : '/blog'}>Blog</HeaderLink>
-			<HeaderLink href={isKo ? '/ko/about' : '/about'}>About</HeaderLink>
-			<HeaderLink href={isKo ? '/ko/search' : '/search'}>Search</HeaderLink>
+			{links.map((link) => <HeaderLink href={link.href}>{link.label}</HeaderLink>)}
 		</div>
 		<div class="social-links">
 			<a class="lang-switch" href={langSwitchHref} aria-label="Switch language">{langLabel}</a>
@@ -44,7 +46,7 @@ if (blogMatch) {
 					><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg
 				>
 			</button>
-			<a href="https://github.com/pythonstrup" target="_blank">
+			<a href={githubUrl} target="_blank">
 				<span class="sr-only">GitHub</span>
 				<svg viewBox="0 0 16 16" aria-hidden="true" width="32" height="32"
 					><path
@@ -53,7 +55,7 @@ if (blogMatch) {
 					></path></svg
 				>
 			</a>
-			<a href="https://www.linkedin.com/in/%EC%A2%85%ED%98%81-%EB%B0%95-6b062821a/" target="_blank">
+			<a href={linkedinUrl} target="_blank">
 				<span class="sr-only">LinkedIn</span>
 				<svg viewBox="0 0 16 16" aria-hidden="true" width="32" height="32"
 					><path
@@ -62,6 +64,14 @@ if (blogMatch) {
 					></path></svg
 				>
 			</a>
+		</div>
+		<div class="mobile-nav">
+			<MobileNav
+				currentPath={pathname}
+				isKo={isKo}
+				langSwitchHref={langSwitchHref}
+				client:media="(max-width: 720px)"
+			/>
 		</div>
 	</nav>
 </header>
@@ -98,10 +108,11 @@ if (blogMatch) {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		min-height: 64px;
 	}
 	nav a {
 		padding: 1em 0.5em;
-		color: var(--black);
+		color: rgb(var(--black));
 		border-bottom: 4px solid transparent;
 		text-decoration: none;
 	}
@@ -118,11 +129,17 @@ if (blogMatch) {
 		display: flex;
 		align-items: center;
 	}
+	.mobile-nav {
+		display: none;
+	}
 	@media (max-width: 720px) {
-		/* 모바일에서는 외부 소셜 링크(GitHub·LinkedIn)만 숨기고,
-		   언어 스위처와 다크모드 토글은 그대로 표시한다. */
+		.internal-links,
+		.social-links .lang-switch,
 		.social-links a[target='_blank'] {
 			display: none;
+		}
+		.mobile-nav {
+			display: block;
 		}
 	}
 	.lang-switch {
