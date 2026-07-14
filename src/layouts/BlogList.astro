@@ -85,6 +85,10 @@ const pageHref = (pageNumber: number) =>
 </html>
 
 <style>
+	main > h1 {
+		margin-bottom: 1.5rem;
+		font-size: clamp(2.2rem, 8vw, 3rem);
+	}
 	.post-list {
 		list-style: none;
 		margin: 0;
@@ -114,12 +118,21 @@ const pageHref = (pageNumber: number) =>
 	}
 	.post-item .desc {
 		margin: 0;
+		display: -webkit-box;
+		overflow: hidden;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
 		font-size: 1rem;
 		line-height: 1.6;
 		color: rgb(var(--gray-dark));
 	}
 	.post-item a:hover .title {
 		color: var(--accent);
+	}
+	.post-item a:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 6px;
+		border-radius: 4px;
 	}
 	.pagination {
 		margin-top: 2rem;
@@ -161,5 +174,17 @@ const pageHref = (pageNumber: number) =>
 		color: var(--accent-foreground);
 		background: var(--accent);
 		border-color: var(--accent);
+	}
+	@media (max-width: 520px) {
+		.post-item {
+			padding: 1.4rem 0;
+		}
+		.post-item .title {
+			font-size: 1.35rem;
+			line-height: 1.35;
+		}
+		.post-item .desc {
+			font-size: 0.95rem;
+		}
 	}
 </style>
