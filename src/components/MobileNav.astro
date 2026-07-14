@@ -187,8 +187,7 @@ const menuId = 'mobile-menu';
 	}
 
 	.mobile-menu[open] {
-		display: grid;
-		justify-items: end;
+		display: block;
 	}
 
 	.mobile-menu::backdrop {
@@ -198,6 +197,9 @@ const menuId = 'mobile-menu';
 	}
 
 	.menu-panel {
+		position: absolute;
+		inset-block-start: 0;
+		inset-inline-end: 0;
 		display: flex;
 		width: min(88vw, 360px);
 		height: 100vh;
@@ -420,9 +422,11 @@ const menuId = 'mobile-menu';
 
 	@keyframes panel-in {
 		from {
-			transform: translateX(100%);
+			opacity: 0;
+			transform: translateX(12px);
 		}
 		to {
+			opacity: 1;
 			transform: translateX(0);
 		}
 	}
