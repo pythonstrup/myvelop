@@ -54,7 +54,7 @@ const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 			}
 			.post-header h1 {
 				margin: 0 0 0.6rem;
-				font-size: 2.4rem;
+				font-size: clamp(2rem, 7vw, 2.6rem);
 				line-height: 1.2;
 				letter-spacing: -0.03em;
 			}
@@ -78,24 +78,51 @@ const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 				color: rgb(var(--gray-dark));
 			}
 			.prose :global(h2),
+			.prose :global(h3),
+			.prose :global(h4),
+			.prose :global(h5),
+			.prose :global(h6) {
+				scroll-margin-top: 6rem;
+			}
+			.prose :global(h2) {
+				margin-top: 2.25em;
+				font-size: 1.65em;
+			}
 			.prose :global(h3) {
-				scroll-margin-top: 2rem;
+				margin-top: 1.9em;
+				font-size: 1.3em;
+			}
+			.prose :global(h4) {
+				margin-top: 1.7em;
+				font-size: 1.08em;
+			}
+			.prose :global(p) {
+				margin-bottom: 1.5em;
+			}
+			.prose :global(ul),
+			.prose :global(ol) {
+				margin: 0 0 1.5em;
+				padding-left: 1.4em;
+			}
+			.prose :global(li + li) {
+				margin-top: 0.35em;
 			}
 			.prose :global(a) {
 				font-weight: 600;
 			}
 			.prose :global(pre.mermaid) {
-				display: flex;
-				justify-content: center;
+				display: block;
 				margin: 2rem 0;
 				padding: 1rem;
 				background: transparent;
+				overflow-x: auto;
 				white-space: pre-wrap;
 			}
 			.prose :global(pre.mermaid svg) {
-				width: auto;
-				max-width: 100%;
+				display: block;
+				max-width: none !important;
 				height: auto;
+				margin-inline: auto;
 			}
 			.post-footer {
 				margin-top: 3rem;
@@ -195,6 +222,14 @@ const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 							theme: darkMode ? 'dark' : 'default',
 						});
 						await mermaid.run({ nodes: [diagram] });
+						const svg = diagram.querySelector<SVGSVGElement>('svg');
+						const naturalWidth = svg?.viewBox.baseVal.width;
+						const naturalHeight = svg?.viewBox.baseVal.height;
+						if (svg && naturalWidth) {
+							const maxWidth = naturalHeight && naturalWidth > naturalHeight ? 960 : 680;
+							svg.style.width = `${Math.min(naturalWidth, maxWidth)}px`;
+							svg.style.maxWidth = 'none';
+						}
 						renderedThemes.set(diagram, darkMode);
 
 						if (document.documentElement.classList.contains('dark') !== darkMode) {
