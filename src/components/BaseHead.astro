@@ -18,6 +18,7 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 const { title, description, image = FallbackImage, alternatePath } = Astro.props;
 const englishURL = alternatePath && new URL(alternatePath, Astro.site);
 const koreanURL = alternatePath && new URL(`/ko${alternatePath}`, Astro.site);
+const rssURL = new URL(Astro.currentLocale === 'ko' ? 'ko/rss.xml' : 'rss.xml', Astro.site);
 ---
 
 <!-- Theme: apply before paint to avoid flash -->
@@ -42,7 +43,7 @@ const koreanURL = alternatePath && new URL(`/ko${alternatePath}`, Astro.site);
 	rel="alternate"
 	type="application/rss+xml"
 	title={SITE_TITLE}
-	href={new URL('rss.xml', Astro.site)}
+	href={rssURL}
 />
 <meta name="generator" content={Astro.generator} />
 

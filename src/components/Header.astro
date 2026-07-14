@@ -16,8 +16,12 @@ const linkedinUrl = externalLinks.find((link) => link.label === 'LinkedIn')?.hre
 // 언어 스위처: 같은 위치의 다른 언어로 이동한다.
 // 글 상세 페이지는 번역본이 있으면 그 글로, 없으면 해당 언어의 글 목록으로 보낸다.
 let langSwitchHref: string;
+const blogPageMatch = pathname.match(/^\/(?:ko\/)?blog\/page\/(\d+)\/?$/);
 const blogMatch = pathname.match(/^\/(?:ko\/)?blog\/(.+?)\/?$/);
-if (blogMatch) {
+if (blogPageMatch) {
+	const page = blogPageMatch[1];
+	langSwitchHref = `${isKo ? '' : '/ko'}/blog/page/${page}/`;
+} else if (blogMatch) {
 	const slug = blogMatch[1];
 	const targetLang = isKo ? 'en' : 'ko';
 	const posts = await getCollection('blog');

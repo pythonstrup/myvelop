@@ -27,6 +27,7 @@ const description = isKo ? SITE_DESCRIPTION_KO : SITE_DESCRIPTION;
 const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1);
 const pageHref = (pageNumber: number) =>
 	pageNumber === 1 ? `${basePath}/` : `${basePath}/page/${pageNumber}/`;
+const alternatePath = currentPage === 1 ? '/blog/' : `/blog/page/${currentPage}/`;
 ---
 
 <!doctype html>
@@ -35,7 +36,7 @@ const pageHref = (pageNumber: number) =>
 		<BaseHead
 			title={`${pageTitle} · ${SITE_TITLE}`}
 			description={description}
-			alternatePath={currentPage === 1 ? '/blog/' : undefined}
+			alternatePath={alternatePath}
 		/>
 	</head>
 	<body>

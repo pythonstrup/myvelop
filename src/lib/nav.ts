@@ -18,17 +18,17 @@ export function isActivePath(current: string, target: string): boolean {
 }
 
 const navItems = [
-	{ label: "Home", path: "" },
-	{ label: "Blog", path: "/blog" },
-	{ label: "About", path: "/about" },
-	{ label: "Search", path: "/search" },
+	{ label: { en: "Home", ko: "홈" }, path: "" },
+	{ label: { en: "Blog", ko: "블로그" }, path: "/blog" },
+	{ label: { en: "About", ko: "소개" }, path: "/about" },
+	{ label: { en: "Search", ko: "검색" }, path: "/search" },
 ];
 
 /** Nav links with the locale base applied (Home resolves to "/" or "/ko"). */
 export function navLinks(isKo: boolean): { label: string; href: string }[] {
 	const base = isKo ? "/ko" : "";
 	return navItems.map(({ label, path }) => ({
-		label,
+		label: isKo ? label.ko : label.en,
 		href: path ? `${base}${path}` : base || "/",
 	}));
 }

@@ -7,7 +7,7 @@ import FormattedDate from '../components/FormattedDate.astro';
 import Giscus from '../components/Giscus.astro';
 import Header from '../components/Header.astro';
 
-type Props = CollectionEntry<'blog'>['data'] & { lang?: string; alternatePath?: string };
+type Props = CollectionEntry<'blog'>['data'] & { lang?: 'en' | 'ko'; alternatePath?: string };
 
 const {
 	title,
@@ -171,6 +171,12 @@ const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 		<Footer />
 
 		<script>
+			const isKorean = document.documentElement.lang === 'ko';
+			const copyText = isKorean ? '복사' : 'Copy';
+			const copiedText = isKorean ? '복사됨' : 'Copied';
+			const copyLabel = isKorean ? '코드 복사' : 'Copy code';
+			const copiedLabel = isKorean ? '코드 복사됨' : 'Code copied';
+
 			document.querySelectorAll<HTMLPreElement>('article pre').forEach((pre) => {
 				if (pre.classList.contains('mermaid') || pre.parentElement?.classList.contains('code-block'))
 					return;
@@ -182,15 +188,19 @@ const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 				const btn = document.createElement('button');
 				btn.type = 'button';
 				btn.className = 'copy-btn';
-				btn.textContent = 'Copy';
+				btn.textContent = copyText;
+				btn.setAttribute('aria-label', copyLabel);
+				btn.setAttribute('aria-live', 'polite');
 				btn.addEventListener('click', async () => {
 					const code = pre.querySelector('code')?.innerText ?? pre.innerText;
 					try {
 						await navigator.clipboard.writeText(code);
-						btn.textContent = 'Copied';
+						btn.textContent = copiedText;
+						btn.setAttribute('aria-label', copiedLabel);
 						btn.classList.add('copied');
 						setTimeout(() => {
-							btn.textContent = 'Copy';
+							btn.textContent = copyText;
+							btn.setAttribute('aria-label', copyLabel);
 							btn.classList.remove('copied');
 						}, 1500);
 					} catch {

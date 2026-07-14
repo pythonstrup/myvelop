@@ -11,6 +11,7 @@
 <script is:inline>
 	(function () {
 		const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+		const lang = document.documentElement.lang === 'ko' ? 'ko' : 'en';
 		const attrs = {
 			'data-repo': 'pythonstrup/myvelop',
 			'data-repo-id': 'R_kgDOTDYsjA',
@@ -22,7 +23,7 @@
 			'data-emit-metadata': '0',
 			'data-input-position': 'bottom',
 			'data-theme': theme,
-			'data-lang': 'en',
+			'data-lang': lang,
 			'data-loading': 'lazy',
 		};
 		const s = document.createElement('script');
