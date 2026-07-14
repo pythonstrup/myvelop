@@ -4,9 +4,7 @@
 // 이후 테마 전환은 Header의 토글 핸들러가 postMessage로 동기화한다.
 ---
 
-<section class="giscus-comments">
-	<hr />
-</section>
+<section class="giscus-comments"></section>
 
 <script is:inline>
 	(function () {
@@ -34,9 +32,3 @@
 		document.querySelector('.giscus-comments')?.appendChild(s);
 	})();
 </script>
-
-<style>
-	.giscus-comments {
-		margin-top: 3em;
-	}
-</style>

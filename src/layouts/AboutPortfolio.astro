@@ -51,13 +51,13 @@ const content = getAboutContent(lang);
 			}
 			.period {
 				flex: none;
-				font-size: 0.78rem;
+				font-size: 0.875rem;
 				font-weight: 600;
 				color: rgb(var(--gray));
 			}
 			.education p {
 				margin: 0.45rem 0 0;
-				font-size: 0.88rem;
+				font-size: 1rem;
 				color: rgb(var(--gray));
 			}
 			.education .detail {
@@ -77,7 +77,7 @@ const content = getAboutContent(lang);
 				border: 1px solid rgb(var(--gray-light));
 				border-radius: 8px;
 				background: color-mix(in srgb, rgb(var(--gray-light)) 35%, rgb(var(--bg)));
-				font-size: 0.82rem;
+				font-size: 0.9rem;
 				font-weight: 600;
 				color: rgb(var(--black));
 			}
@@ -104,7 +104,7 @@ const content = getAboutContent(lang);
 				display: grid;
 				grid-template-columns: 3rem 1fr;
 				gap: 0.65rem;
-				font-size: 0.78rem;
+				font-size: 0.95rem;
 				line-height: 1.55;
 				color: rgb(var(--gray));
 			}
@@ -165,7 +165,10 @@ const content = getAboutContent(lang);
 				</ul>
 			</ResumeSection>
 
-			<ResumeSection number="04" title={`${content.activities.label} & ${content.awards.label}`}>
+			<ResumeSection
+				number="04"
+				title={`${content.activities.label} ${lang === 'ko' ? '·' : '&'} ${content.awards.label}`}
+			>
 				<div class="double-grid">
 					<article class="list-card">
 						<h3>{content.activities.label}</h3>

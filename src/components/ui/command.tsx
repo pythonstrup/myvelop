@@ -19,7 +19,10 @@ function Command({ className, ...props }: React.ComponentProps<typeof CommandPri
 
 function CommandInput({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.Input>) {
 	return (
-		<div data-slot="command-input-wrapper" className="flex h-14 items-center gap-3 border-b px-4">
+		<div
+			data-slot="command-input-wrapper"
+			className="flex h-14 items-center gap-3 border-b px-4 transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring/40"
+		>
 			<SearchIcon className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
 			<CommandPrimitive.Input
 				data-slot="command-input"
@@ -71,7 +74,7 @@ function CommandItem({ className, ...props }: React.ComponentProps<typeof Comman
 		<CommandPrimitive.Item
 			data-slot="command-item"
 			className={cn(
-				"relative flex min-h-11 cursor-default select-none items-start rounded-lg px-3 py-3 text-sm outline-none data-[disabled=true]:pointer-events-none data-[selected=true]:bg-secondary data-[selected=true]:text-secondary-foreground data-[disabled=true]:opacity-50",
+				"relative flex min-h-11 cursor-pointer select-none items-start rounded-lg px-3 py-3 text-sm outline-none data-[disabled=true]:pointer-events-none data-[selected=true]:bg-secondary data-[selected=true]:text-secondary-foreground data-[disabled=true]:opacity-50",
 				className,
 			)}
 			{...props}

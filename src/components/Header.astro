@@ -18,7 +18,9 @@ const linkedinUrl = externalLinks.find((link) => link.label === 'LinkedIn')?.hre
 let langSwitchHref: string;
 const blogPageMatch = pathname.match(/^\/(?:ko\/)?blog\/page\/(\d+)\/?$/);
 const blogMatch = pathname.match(/^\/(?:ko\/)?blog\/(.+?)\/?$/);
-if (blogPageMatch) {
+if (pathname === '/404') {
+	langSwitchHref = '/ko';
+} else if (blogPageMatch) {
 	const page = blogPageMatch[1];
 	langSwitchHref = `${isKo ? '' : '/ko'}/blog/page/${page}/`;
 } else if (blogMatch) {
