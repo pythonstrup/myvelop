@@ -18,11 +18,36 @@ const isActive = isActivePath(
 </a>
 <style>
 	a {
-		display: inline-block;
+		display: inline-flex;
+		min-height: 40px;
+		align-items: center;
+		padding: 0 12px;
+		color: rgb(var(--gray-dark));
+		border-radius: 10px;
+		font-size: 0.76rem;
+		font-weight: 620;
 		text-decoration: none;
+		transition:
+			color 160ms ease,
+			background-color 160ms ease;
+	}
+	a:hover {
+		color: rgb(var(--black));
+		background: rgba(var(--gray-light), 0.58);
 	}
 	a.active {
-		font-weight: bolder;
-		text-decoration: underline;
+		color: rgb(var(--black));
+		font-weight: 720;
+		background: rgba(var(--gray-light), 0.72);
+		text-decoration: none;
+	}
+	a:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		a {
+			transition: none;
+		}
 	}
 </style>

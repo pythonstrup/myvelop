@@ -3,14 +3,15 @@ import { getCollection } from 'astro:content';
 import { SITE_TITLE } from '../consts';
 import { externalLinks, navLinks } from '../lib/nav';
 import HeaderLink from './HeaderLink.astro';
-import MobileNav from './MobileNav';
+import MobileNav from './MobileNav.astro';
 
 const { pathname } = Astro.url;
 const isKo = pathname === '/ko' || pathname.startsWith('/ko/');
 const langLabel = isKo ? 'EN' : 'KO';
 const links = navLinks(isKo);
-const githubUrl = externalLinks.find((l) => l.label === 'GitHub')?.href;
-const linkedinUrl = externalLinks.find((l) => l.label === 'LinkedIn')?.href;
+const homeHref = isKo ? '/ko' : '/';
+const githubUrl = externalLinks.find((link) => link.label === 'GitHub')?.href;
+const linkedinUrl = externalLinks.find((link) => link.label === 'LinkedIn')?.href;
 
 // 언어 스위처: 같은 위치의 다른 언어로 이동한다.
 // 글 상세 페이지는 번역본이 있으면 그 글로, 없으면 해당 언어의 글 목록으로 보낸다.
@@ -20,7 +21,7 @@ if (blogMatch) {
 	const slug = blogMatch[1];
 	const targetLang = isKo ? 'en' : 'ko';
 	const posts = await getCollection('blog');
-	const hasTranslation = posts.some((p) => p.id === `${targetLang}/${slug}`);
+	const hasTranslation = posts.some((post) => post.id === `${targetLang}/${slug}`);
 	const base = isKo ? '/blog' : '/ko/blog';
 	langSwitchHref = hasTranslation ? `${base}/${slug}/` : base;
 } else if (isKo) {
@@ -30,58 +31,84 @@ if (blogMatch) {
 }
 ---
 
-<header>
-	<nav>
-		<h2><a href="/">{SITE_TITLE}</a></h2>
-		<div class="internal-links">
+<header class="site-header">
+	<nav class="header-inner" aria-label={isKo ? '주요 메뉴' : 'Primary navigation'}>
+		<a class="site-brand" href={homeHref} aria-label={`${SITE_TITLE} ${isKo ? '홈' : 'home'}`}>
+			<span>{SITE_TITLE}</span>
+			<span class="brand-dot" aria-hidden="true"></span>
+		</a>
+
+		<div class="desktop-nav">
 			{links.map((link) => <HeaderLink href={link.href}>{link.label}</HeaderLink>)}
 		</div>
-		<div class="social-links">
-			<a class="lang-switch" href={langSwitchHref} aria-label="Switch language">{langLabel}</a>
-			<button id="theme-toggle" type="button" class="theme-toggle" aria-label="Toggle light/dark theme">
-				<svg class="sun" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+
+		<div class="header-actions">
+			<a
+				class="lang-switch"
+				href={langSwitchHref}
+				aria-label={isKo ? '영어로 보기' : '한국어로 보기'}
+			>{langLabel}</a>
+
+			<button
+				id="theme-toggle"
+				type="button"
+				class="icon-button theme-toggle"
+				aria-label={isKo ? '다크 모드로 전환' : 'Switch to dark mode'}
+				data-light-label={isKo ? '라이트 모드로 전환' : 'Switch to light mode'}
+				data-dark-label={isKo ? '다크 모드로 전환' : 'Switch to dark mode'}
+			>
+				<svg class="sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
 					><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path></svg
 				>
-				<svg class="moon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+				<svg class="moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
 					><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg
 				>
 			</button>
-			<a href={githubUrl} target="_blank">
+
+			<a class="icon-button external-icon" href={githubUrl} target="_blank" rel="noreferrer">
 				<span class="sr-only">GitHub</span>
-				<svg viewBox="0 0 16 16" aria-hidden="true" width="32" height="32"
+				<svg viewBox="0 0 16 16" aria-hidden="true" width="20" height="20"
 					><path
 						fill="currentColor"
 						d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"
 					></path></svg
 				>
 			</a>
-			<a href={linkedinUrl} target="_blank">
+
+			<a class="icon-button external-icon" href={linkedinUrl} target="_blank" rel="noreferrer">
 				<span class="sr-only">LinkedIn</span>
-				<svg viewBox="0 0 16 16" aria-hidden="true" width="32" height="32"
+				<svg viewBox="0 0 16 16" aria-hidden="true" width="20" height="20"
 					><path
 						fill="currentColor"
 						d="M0 1.146C0 .513.526 0 1.175 0h13.65C15.474 0 16 .513 16 1.146v13.708c0 .633-.526 1.146-1.175 1.146H1.175C.526 16 0 15.487 0 14.854V1.146zm4.943 12.248V6.169H2.542v7.225h2.401zm-1.2-8.212c.837 0 1.358-.554 1.358-1.248-.015-.709-.52-1.248-1.342-1.248-.822 0-1.359.54-1.359 1.248 0 .694.521 1.248 1.327 1.248h.016zm4.908 8.212V9.359c0-.216.016-.432.08-.586.173-.431.568-.878 1.232-.878.869 0 1.216.662 1.216 1.634v3.865h2.401V9.25c0-2.22-1.184-3.252-2.764-3.252-1.274 0-1.845.7-2.165 1.193v.025h-.016l.016-.025V6.169h-2.4c.03.678 0 7.225 0 7.225h2.4z"
 					></path></svg
 				>
 			</a>
-		</div>
-		<div class="mobile-nav">
-			<MobileNav
-				currentPath={pathname}
-				isKo={isKo}
-				langSwitchHref={langSwitchHref}
-				client:media="(max-width: 720px)"
-			/>
+
+			<div class="mobile-nav">
+				<MobileNav currentPath={pathname} isKo={isKo} langSwitchHref={langSwitchHref} />
+			</div>
 		</div>
 	</nav>
 </header>
 
 <script is:inline>
-	document.getElementById('theme-toggle')?.addEventListener('click', () => {
-		const root = document.documentElement;
+	const themeToggle = document.getElementById('theme-toggle');
+	const root = document.documentElement;
+	const updateThemeLabel = () => {
+		if (!(themeToggle instanceof HTMLButtonElement)) return;
+		const label = root.classList.contains('dark')
+			? themeToggle.dataset.lightLabel
+			: themeToggle.dataset.darkLabel;
+		if (label) themeToggle.setAttribute('aria-label', label);
+	};
+
+	updateThemeLabel();
+	themeToggle?.addEventListener('click', () => {
 		root.classList.toggle('dark');
 		const theme = root.classList.contains('dark') ? 'dark' : 'light';
 		localStorage.setItem('theme', theme);
+		updateThemeLabel();
 		document
 			.querySelector('iframe.giscus-frame')
 			?.contentWindow?.postMessage({ giscus: { setConfig: { theme } } }, 'https://giscus.app');
@@ -89,87 +116,168 @@ if (blogMatch) {
 </script>
 
 <style>
-	header {
+	.site-header {
+		position: sticky;
+		top: 0;
+		z-index: 20;
 		margin: 0;
-		padding: 0 1em;
-		background: rgb(var(--bg));
-		border-bottom: 1px solid rgb(var(--gray-light));
-	}
-	h2 {
-		margin: 0;
-		font-size: 1em;
+		background: rgba(var(--bg), 0.9);
+		border-bottom: 1px solid rgba(var(--gray-light), 0.86);
+		backdrop-filter: blur(16px) saturate(140%);
 	}
 
-	h2 a,
-	h2 a.active {
-		text-decoration: none;
-	}
-	nav {
+	.header-inner {
 		display: flex;
+		width: min(calc(100% - 32px), 1120px);
+		min-height: 68px;
 		align-items: center;
-		justify-content: space-between;
-		min-height: 64px;
+		margin: 0 auto;
 	}
-	nav a {
-		padding: 1em 0.5em;
+
+	.site-brand {
+		display: inline-flex;
+		min-height: 44px;
+		align-items: center;
+		gap: 6px;
 		color: rgb(var(--black));
-		border-bottom: 4px solid transparent;
+		font-size: 0.96rem;
+		font-weight: 760;
+		line-height: 1;
+		letter-spacing: -0.045em;
 		text-decoration: none;
 	}
-	nav a.active {
+
+	.site-brand:hover {
+		color: rgb(var(--black));
+	}
+
+	.brand-dot {
+		width: 6px;
+		height: 6px;
+		margin-top: 2px;
+		background: var(--accent);
+		border-radius: 999px;
+	}
+
+	.desktop-nav {
+		display: flex;
+		align-items: center;
+		gap: 3px;
+		margin-left: 30px;
+	}
+
+	.header-actions {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		margin-left: auto;
+	}
+
+	.lang-switch,
+	.icon-button {
+		display: inline-flex;
+		min-width: 42px;
+		height: 42px;
+		align-items: center;
+		justify-content: center;
+		box-sizing: border-box;
+		color: rgb(var(--gray-dark));
+		background: transparent;
+		border: 1px solid transparent;
+		border-radius: 11px;
 		text-decoration: none;
-		border-bottom-color: var(--accent);
+		transition:
+			color 160ms ease,
+			background-color 160ms ease,
+			border-color 160ms ease,
+			transform 160ms ease;
 	}
-	.social-links {
-		display: flex;
-		align-items: center;
-		gap: 0.25em;
-	}
-	.social-links a {
-		display: flex;
-		align-items: center;
-	}
-	.mobile-nav {
-		display: none;
-	}
-	@media (max-width: 720px) {
-		.internal-links,
-		.social-links .lang-switch,
-		.social-links a[target='_blank'] {
-			display: none;
-		}
-		.mobile-nav {
-			display: block;
-		}
-	}
+
 	.lang-switch {
-		display: flex;
-		align-items: center;
-		padding: 0 0.5em;
-		font-size: 0.85em;
-		font-weight: 700;
-		color: rgb(var(--black));
-		text-decoration: none;
+		padding: 0 10px;
+		font-size: 0.68rem;
+		font-weight: 750;
+		letter-spacing: 0.04em;
 	}
-	.theme-toggle {
-		display: flex;
-		align-items: center;
-		background: none;
-		border: none;
-		padding: 0 0.5em;
+
+	.icon-button {
+		padding: 0;
+		font: inherit;
 		cursor: pointer;
-		color: rgb(var(--black));
 	}
+
+	.lang-switch:hover,
+	.icon-button:hover {
+		color: rgb(var(--black));
+		background: rgba(var(--gray-light), 0.66);
+	}
+
+	.icon-button:active {
+		transform: scale(0.94);
+	}
+
+	.site-brand:focus-visible,
+	.lang-switch:focus-visible,
+	.icon-button:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+
 	.theme-toggle .sun {
 		display: none;
 	}
+
 	.theme-toggle .moon {
 		display: block;
 	}
+
 	:global(html.dark) .theme-toggle .sun {
 		display: block;
 	}
+
 	:global(html.dark) .theme-toggle .moon {
 		display: none;
+	}
+
+	.mobile-nav {
+		display: none;
+	}
+
+	@media (max-width: 720px) {
+		.header-inner {
+			width: calc(100% - 24px);
+			min-height: 64px;
+		}
+
+		.site-brand {
+			font-size: 1rem;
+		}
+
+		.desktop-nav,
+		.lang-switch,
+		.external-icon {
+			display: none;
+		}
+
+		.header-actions {
+			gap: 0;
+		}
+
+		.icon-button {
+			width: 44px;
+			height: 44px;
+		}
+
+		.mobile-nav {
+			display: block;
+			height: 44px;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.lang-switch,
+		.icon-button {
+			transition: none;
+		}
 	}
 </style>

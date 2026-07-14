@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import "../../styles/ui.css";
+
 import { Button } from "@/components/ui/button";
 import {
 	Command,

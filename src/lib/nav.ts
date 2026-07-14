@@ -1,5 +1,5 @@
 // Single source of truth for navigation shared by Header.astro (desktop),
-// MobileNav.tsx (mobile sheet), and HeaderLink.astro (active-route styling).
+// MobileNav.astro (mobile dialog), and HeaderLink.astro (active-route styling).
 
 const LOCALE_PREFIXES = ["ko"];
 
