@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+	<defs>
+		<linearGradient id="surface" x1="70" y1="50" x2="1130" y2="580" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#ffffff" />
+			<stop offset="1" stop-color="#eef1ff" />
+		</linearGradient>
+		<radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(1100 38) rotate(137) scale(520 380)" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#2337ff" stop-opacity="0.18" />
+			<stop offset="1" stop-color="#2337ff" stop-opacity="0" />
+		</radialGradient>
+	</defs>
+	<rect width="1200" height="630" fill="url(#surface)" />
+	<rect width="1200" height="630" fill="url(#glow)" />
+	<rect x="72" y="70" width="96" height="96" rx="24" fill="#2337ff" />
+	<path
+		d="M99 145V92h23c17 0 27 10 27 25s-10 25-27 25h-12"
+		fill="none"
+		stroke="#fff"
+		stroke-width="10"
+		stroke-linecap="round"
+		stroke-linejoin="round"
+	/>
+	<text x="72" y="338" fill="#0f1219" font-family="Arial, Helvetica, sans-serif" font-size="92" font-weight="700" letter-spacing="-5">pythonstrup</text>
+	<rect x="72" y="386" width="88" height="8" rx="4" fill="#2337ff" />
+	<text x="72" y="466" fill="#60739f" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="500" letter-spacing="-0.5">Notes from a journey of growing one step at a time.</text>
+	<text x="72" y="554" fill="#60739f" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="600" letter-spacing="1.5">PYTHONSTRUP.COM</text>
+</svg>
