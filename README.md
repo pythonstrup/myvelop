@@ -1,63 +1,31 @@
-# Astro Starter Kit: Blog
+# pythonstrup
+
+[pythonstrup.com](https://pythonstrup.com)의 소스 저장소다. Astro로 정적 HTML을 만들고 Cloudflare Pages에 배포한다. 영어는 루트 경로, 한국어는 `/ko` 경로에서 제공한다.
+
+## 로컬 개발
+
+Node.js 22.12 이상과 npm이 필요하다.
 
 ```sh
-npm create astro@latest -- --template blog
+npm ci
+astro dev --background
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+개발 서버는 `astro dev status`, `astro dev logs`, `astro dev stop`으로 관리한다.
 
-Features:
+## 검증과 배포
 
-- ✅ Minimal styling (make it your own!)
-- ✅ 100/100 Lighthouse performance
-- ✅ SEO-friendly with canonical URLs and Open Graph data
-- ✅ Sitemap support
-- ✅ RSS Feed support
-- ✅ Markdown & MDX support
-
-## 🚀 Project Structure
-
-Inside of your Astro project, you'll see the following folders and files:
-
-```text
-├── public/
-├── src/
-│   ├── assets/
-│   ├── components/
-│   ├── content/
-│   ├── layouts/
-│   └── pages/
-├── astro.config.mjs
-├── README.md
-├── package.json
-└── tsconfig.json
+```sh
+npm run check
+npm run preview
 ```
 
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
+`npm run check`는 Astro 타입 검사, 정적 빌드, Pagefind 검색 색인 생성, 저장소·산출물 검증을 차례로 실행한다. Cloudflare Pages의 빌드 명령은 `npm run build`, 출력 디렉터리는 `dist`다.
 
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
+## 문서
 
-The `src/content/` directory contains "collections" of related Markdown and MDX documents. Use `getCollection()` to retrieve posts from `src/content/blog/`, and type-check your frontmatter using an optional schema. See [Astro's Content Collections docs](https://docs.astro.build/en/guides/content-collections/) to learn more.
+- [아키텍처와 변경 경계](docs/architecture.md)
+- [글 작성과 번역](docs/content-authoring.md)
+- [Lighthouse 성능 최적화](docs/lighthouse-performance.md)
 
-Any static assets, like images, can be placed in the `public/` directory.
-
-## 🧞 Commands
-
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Check out [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
-
-## Credit
-
-This theme is based off of the lovely [Bear Blog](https://github.com/HermanMartinus/bearblog/).
+이 디자인은 [Bear Blog](https://github.com/HermanMartinus/bearblog/)를 바탕으로 시작했다.
