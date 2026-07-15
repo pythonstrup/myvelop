@@ -77,6 +77,9 @@ const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 			.prose {
 				color: rgb(var(--gray-dark));
 			}
+			.system-prose {
+				font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+			}
 			.prose :global(h2),
 			.prose :global(h3),
 			.prose :global(h4),
@@ -160,7 +163,7 @@ const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 						</div>
 					)
 				}
-				<div class="prose" data-pagefind-body>
+				<div class:list={['prose', { 'system-prose': lang === 'ko' }]} data-pagefind-body>
 					<slot />
 				</div>
 				<div class="post-footer">

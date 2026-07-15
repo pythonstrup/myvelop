@@ -7,6 +7,23 @@ import { defineConfig } from "astro/config";
 
 import tailwindcss from "@tailwindcss/vite";
 
+// Keep delayed Korean subsets from replacing already-rendered text.
+const optionalPretendard = {
+  postcssPlugin: "pretendard-font-display",
+  AtRule: {
+    "font-face": (rule) => {
+      let isPretendard = false;
+      rule.walkDecls("font-family", (declaration) => {
+        isPretendard ||= declaration.value.includes("Pretendard Variable");
+      });
+      if (!isPretendard) return;
+      rule.walkDecls("font-display", (declaration) => {
+        declaration.value = "optional";
+      });
+    },
+  },
+};
+
 // https://astro.build/config
 export default defineConfig({
   site: "https://pythonstrup.com",
@@ -19,6 +36,10 @@ export default defineConfig({
   },
   integrations: [mdx(), react(), sitemap()],
 
+  image: {
+    layout: "constrained",
+  },
+
   markdown: {
     shikiConfig: {
       themes: {
@@ -30,6 +51,11 @@ export default defineConfig({
   },
 
   vite: {
+    css: {
+      postcss: {
+        plugins: [optionalPretendard],
+      },
+    },
     plugins: [tailwindcss()],
   },
 });
