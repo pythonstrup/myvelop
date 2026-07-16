@@ -119,7 +119,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 			label: '대표 성과',
 			items: [
 				{ value: '3천만 건', label: '한 달간 안정적으로 처리한 알림톡' },
-				{ value: '10배', label: 'Virtual Thread 도입 후 I/O 처리량' },
+				{ value: '3.3초→63ms', label: 'ECC 오픈소스 formatter hook 실행 시간' },
 				{ value: '500→10ms', label: '캐시 계층 설계로 줄인 API 응답 시간' },
 				{ value: '연 3천만 원+', label: '워크플로우 내재화로 절감한 비용' },
 			],
@@ -231,7 +231,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 			label: 'Selected impact',
 			items: [
 				{ value: '30M', label: 'Kakao notifications delivered in one month' },
-				{ value: '10×', label: 'I/O throughput after adopting virtual threads' },
+				{ value: '3.3s→63ms', label: 'ECC open-source formatter hook runtime' },
 				{ value: '500→10ms', label: 'API latency after layered caching' },
 				{ value: '₩30M+/yr', label: 'Saved by bringing workflows in-house' },
 			],
