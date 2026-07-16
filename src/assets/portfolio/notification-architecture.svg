@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1700 1080" role="img" aria-labelledby="diagram-title diagram-description">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1700 1390" role="img" aria-labelledby="diagram-title diagram-description">
   <title id="diagram-title">Notification delivery platform architecture</title>
-  <desc id="diagram-description">A queue-driven notification platform running on Amazon EKS. Internal services enqueue jobs in Amazon ElastiCache for Redis, scalable notification worker pods consume them, read data from an Amazon RDS for MySQL read replica through VPC peering, and send messages to a third-party messaging API through a NAT Gateway and Internet Gateway. GitHub Actions, a GitOps repository, Amazon ECR, Argo CD, and an in-cluster observability stack support delivery and operations.</desc>
+  <desc id="diagram-description">A queue-driven notification platform running on Amazon EKS. Internal services enqueue jobs in Amazon ElastiCache for Redis, scalable notification worker pods consume them, read data from an Amazon RDS for MySQL read replica through VPC peering, and send messages to a third-party messaging API through a NAT Gateway and Internet Gateway. Notification history is isolated in a separate Amazon RDS for MySQL database, while both operational and notification history data feed BigQuery and an analytics dashboard. Logs and traces leave the workers through parallel Fluent Bit and OpenTelemetry Collector pipelines and are correlated by trace ID in Elasticsearch. Prometheus Operator converts PodMonitor selections into Prometheus scrape targets, Prometheus scrapes application metrics directly from each worker pod, and Grafana visualizes those metrics.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -14,6 +14,9 @@
     </marker>
     <marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#0F766E"/>
+    </marker>
+    <marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7C3AED"/>
     </marker>
     <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="150%">
       <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0F172A" flood-opacity="0.08"/>
@@ -63,25 +66,29 @@
     .small { font-size: 13px; fill: #64748B; }
     .tiny { font-size: 12px; fill: #64748B; }
     .edge-label { font-size: 12px; font-weight: 600; fill: #475569; paint-order: stroke; stroke: #F8FAFC; stroke-width: 4px; stroke-linejoin: round; }
+    .pipeline-title { font-size: 13px; font-weight: 700; }
+    .pipeline-small { font-size: 12px; fill: #64748B; }
+    .lane-label { font-size: 11px; font-weight: 800; letter-spacing: 0.8px; }
     .boundary { fill: #FFFFFF; stroke-width: 2; }
     .node { fill: #FFFFFF; stroke: #CBD5E1; stroke-width: 1.5; }
     .edge { fill: none; stroke: #475569; stroke-width: 2; marker-end: url(#arrow); }
     .edge-orange { fill: none; stroke: #ED7100; stroke-width: 2.5; marker-end: url(#arrow-orange); }
     .edge-blue { fill: none; stroke: #2563EB; stroke-width: 2; marker-end: url(#arrow-blue); }
     .edge-teal { fill: none; stroke: #0F766E; stroke-width: 2; marker-end: url(#arrow-teal); }
+    .edge-violet { fill: none; stroke: #7C3AED; stroke-width: 2; marker-end: url(#arrow-violet); }
     .edge-dashed { stroke-dasharray: 7 7; }
-    .edge, .edge-orange, .edge-blue, .edge-teal { stroke-linecap: round; stroke-linejoin: round; }
+    .edge, .edge-orange, .edge-blue, .edge-teal, .edge-violet { stroke-linecap: round; stroke-linejoin: round; }
     .aws-word { fill: #FFFFFF; }
   </style>
 
-  <rect width="1700" height="1080" fill="#F8FAFC"/>
+  <rect width="1700" height="1390" fill="#F8FAFC"/>
 
   <!-- Heading -->
   <text class="title" x="52" y="55">Notification Delivery Architecture</text>
   <text class="subtitle" x="52" y="82">Queue-driven workers · private workloads · no public ingress</text>
 
   <!-- AWS Cloud and Region -->
-  <rect class="boundary" x="250" y="100" width="1190" height="930" rx="20" stroke="#64748B" filter="url(#soft-shadow)"/>
+  <rect class="boundary" x="250" y="100" width="1190" height="1190" rx="20" stroke="#64748B" filter="url(#soft-shadow)"/>
   <g transform="translate(274 122)">
     <rect width="42" height="42" rx="8" fill="#232F3E"/>
     <text class="aws-word" x="21" y="27" text-anchor="middle" font-size="13" font-weight="800">AWS</text>
@@ -89,10 +96,10 @@
   </g>
   <text class="group-title" x="330" y="148">AWS Cloud</text>
 
-  <rect x="285" y="174" width="1120" height="820" rx="16" fill="#F6FFFF" fill-opacity="0.52" stroke="#00A4A6" stroke-width="1.7" stroke-dasharray="9 6"/>
-  <rect x="330" y="158" width="194" height="32" rx="16" fill="#E7FAFA" stroke="#00A4A6"/>
-  <circle cx="348" cy="174" r="5" fill="#00A4A6"/>
-  <text class="label" x="362" y="179">AWS Region · Multi-AZ</text>
+  <rect x="285" y="174" width="1120" height="1080" rx="16" fill="#F6FFFF" fill-opacity="0.52" stroke="#00A4A6" stroke-width="1.7" stroke-dasharray="9 6"/>
+  <rect x="550" y="158" width="194" height="32" rx="16" fill="#E7FAFA" stroke="#00A4A6"/>
+  <circle cx="568" cy="174" r="5" fill="#00A4A6"/>
+  <text class="label" x="582" y="179">AWS Region · Multi-AZ</text>
 
   <!-- CI/CD outside and ECR inside the AWS region -->
   <g filter="url(#soft-shadow)">
@@ -122,7 +129,7 @@
   <text class="edge-label" x="253" y="179">push image</text>
 
   <!-- Application VPC -->
-  <rect x="325" y="350" width="755" height="610" rx="16" fill="#FBF9FF" fill-opacity="0.82" stroke="#8C4FFF" stroke-width="2"/>
+  <rect x="325" y="350" width="755" height="830" rx="16" fill="#FBF9FF" fill-opacity="0.82" stroke="#8C4FFF" stroke-width="2"/>
   <rect x="345" y="334" width="177" height="32" rx="16" fill="#F2ECFF" stroke="#8C4FFF"/>
   <path d="M361 350 h14 M368 343 v14" stroke="#8C4FFF" stroke-width="2" stroke-linecap="round"/>
   <text class="label" x="384" y="355">Application VPC</text>
@@ -149,10 +156,10 @@
   </g>
 
   <!-- Workload private subnets and EKS -->
-  <rect x="360" y="555" width="685" height="370" rx="14" fill="#F1FCFC" fill-opacity="0.85" stroke="#00A4A6" stroke-width="1.6" stroke-dasharray="8 5"/>
+  <rect x="360" y="555" width="685" height="605" rx="14" fill="#F1FCFC" fill-opacity="0.85" stroke="#00A4A6" stroke-width="1.6" stroke-dasharray="8 5"/>
   <text class="small" x="380" y="581">Private workload subnets · Multi-AZ</text>
 
-  <rect x="390" y="600" width="625" height="302" rx="14" fill="#FFF9F4" stroke="#ED7100" stroke-width="2"/>
+  <rect x="390" y="600" width="625" height="535" rx="14" fill="#FFF9F4" stroke="#ED7100" stroke-width="2"/>
   <use href="#icon-eks" x="408" y="615" width="50" height="50"/>
   <text class="group-title" x="472" y="641">Amazon EKS</text>
   <text class="small" x="472" y="661">Managed compute</text>
@@ -197,7 +204,22 @@
     <text class="node-title" x="838" y="711">Notification</text>
     <text class="node-title" x="838" y="732">Worker Pods</text>
     <text class="small" x="838" y="755">queue consumers</text>
-    <text class="tiny" x="771" y="778">health · metrics · graceful shutdown</text>
+    <text class="tiny" x="771" y="778">NDJSON logs · OTLP spans · /metrics</text>
+  </g>
+
+  <!-- PodMonitor is a selector resource attached to the worker workload, not a collector. -->
+  <g>
+    <rect x="644" y="738" width="92" height="42" rx="10" fill="#DBEAFE" stroke="#60A5FA"/>
+    <text class="pipeline-title" x="690" y="756" text-anchor="middle">PodMonitor</text>
+    <text class="pipeline-small" x="690" y="773" text-anchor="middle">selects pods</text>
+  </g>
+  <path class="edge-blue edge-dashed" d="M736 759 H751"/>
+
+  <!-- Prometheus Operator watches PodMonitor and reconciles Prometheus targets. -->
+  <path class="edge-blue edge-dashed" d="M690 780 V794"/>
+  <g>
+    <rect x="650" y="794" width="150" height="22" rx="11" fill="#E0F2FE" stroke="#38BDF8"/>
+    <text class="pipeline-title" x="725" y="809" text-anchor="middle">Prometheus Operator</text>
   </g>
 
   <!-- Deployment paths -->
@@ -210,7 +232,7 @@
   <text class="edge-label" x="717" y="621">sync</text>
 
   <!-- Queue paths -->
-  <path class="edge-orange" d="M422 737 H374 V520 H650 V513"/>
+  <path class="edge-orange" d="M422 737 H345 V540 H650 V513"/>
   <text class="edge-label" x="462" y="512">enqueue</text>
   <path class="edge-orange" d="M698 513 V556 Q698 571 713 571 H867 V676"/>
   <text class="edge-label" x="731" y="559">consume</text>
@@ -219,23 +241,88 @@
   <path class="edge-orange" d="M983 714 H1000 V548 Q1000 532 984 532 H918 V513"/>
   <text class="edge-label" x="1007" y="567">outbound</text>
 
-  <!-- Observability stack -->
+  <!-- Detailed observability pipelines -->
   <g filter="url(#soft-shadow)">
-    <rect class="node" x="410" y="830" width="585" height="62" rx="12"/>
-    <g transform="translate(431 844)">
-      <circle cx="16" cy="16" r="15" fill="#0EA5E9" opacity="0.15"/>
-      <path d="M9 20 l5-8 l5 8 l4-6" fill="none" stroke="#0284C7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    </g>
-    <text class="label" x="470" y="852">Fluent Bit · OpenTelemetry</text>
-    <text class="tiny" x="470" y="873">logs · metrics · traces</text>
-    <path d="M634 843 v36" stroke="#CBD5E1"/>
-    <circle cx="666" cy="861" r="16" fill="#F59E0B" opacity="0.18"/>
-    <path d="M658 861 h16 M666 853 v16" stroke="#D97706" stroke-width="2" stroke-linecap="round"/>
-    <text class="label" x="694" y="852">Elasticsearch · Prometheus</text>
-    <text class="tiny" x="694" y="873">Kibana · Grafana</text>
+    <rect class="node" x="410" y="820" width="585" height="300" rx="13"/>
   </g>
-  <path class="edge-blue edge-dashed" d="M867 792 V830"/>
-  <text class="edge-label" x="878" y="814">telemetry</text>
+  <text class="label" x="430" y="844">Observability pipelines</text>
+  <text class="tiny" x="690" y="844">parallel collectors · trace_id correlation</text>
+
+  <!-- Logs: stdout/stderr -> node log -> Fluent Bit -> Elasticsearch -> Kibana -->
+  <rect x="425" y="858" width="555" height="61" rx="10" fill="#FFFBEB" stroke="#F59E0B" stroke-opacity="0.55"/>
+  <rect x="436" y="877" width="44" height="22" rx="11" fill="#FEF3C7"/>
+  <text class="lane-label" x="458" y="892" text-anchor="middle" fill="#92400E">LOGS</text>
+  <path class="edge" d="M488 889 H510"/>
+  <text class="pipeline-small" x="505" y="875" text-anchor="end">NDJSON</text>
+
+  <rect class="node" x="510" y="864" width="130" height="49" rx="9" stroke="#F59E0B"/>
+  <text class="pipeline-title" x="575" y="881" text-anchor="middle">Fluent Bit</text>
+  <text class="pipeline-small" x="575" y="896" text-anchor="middle">DaemonSet · CRI tail</text>
+  <text class="pipeline-small" x="575" y="908" text-anchor="middle">parse · filter · enrich</text>
+
+  <path class="edge" d="M640 889 H653"/>
+  <rect class="node" x="653" y="864" width="155" height="49" rx="9"/>
+  <text class="pipeline-title" x="730.5" y="884" text-anchor="middle">Elasticsearch</text>
+  <text class="pipeline-small" x="730.5" y="901" text-anchor="middle">log indices</text>
+
+  <path class="edge" d="M808 889 H825"/>
+  <rect class="node" x="825" y="864" width="140" height="49" rx="9"/>
+  <text class="pipeline-title" x="895" y="884" text-anchor="middle">Kibana</text>
+  <text class="pipeline-small" x="895" y="901" text-anchor="middle">log search</text>
+
+  <!-- Traces: OTLP -> OTel Collector -> APM Server -> Elasticsearch -> Kibana APM -->
+  <rect x="425" y="929" width="555" height="72" rx="10" fill="#F5F3FF" stroke="#8B5CF6" stroke-opacity="0.55"/>
+  <rect x="436" y="954" width="58" height="22" rx="11" fill="#EDE9FE"/>
+  <text class="lane-label" x="465" y="969" text-anchor="middle" fill="#5B21B6">TRACES</text>
+  <path class="edge-violet" d="M500 965 H510"/>
+  <text class="pipeline-small" x="497" y="948" text-anchor="end">OTLP/HTTP</text>
+
+  <rect class="node" x="510" y="937" width="135" height="56" rx="9" stroke="#8B5CF6"/>
+  <text class="pipeline-title" x="577.5" y="954" text-anchor="middle">OTel Collector</text>
+  <text class="pipeline-small" x="577.5" y="970" text-anchor="middle">memory limit · filter</text>
+  <text class="pipeline-small" x="577.5" y="984" text-anchor="middle">sample · batch</text>
+
+  <path class="edge-violet" d="M645 965 H661"/>
+  <rect class="node" x="661" y="937" width="86" height="56" rx="9"/>
+  <text class="pipeline-title" x="704" y="960" text-anchor="middle">APM Server</text>
+  <text class="pipeline-small" x="704" y="978" text-anchor="middle">OTLP/gRPC</text>
+
+  <path class="edge-violet" d="M747 965 H763"/>
+  <rect class="node" x="763" y="937" width="102" height="56" rx="9"/>
+  <text class="pipeline-title" x="814" y="958" text-anchor="middle">Elasticsearch</text>
+  <text class="pipeline-small" x="814" y="977" text-anchor="middle">APM indices</text>
+
+  <path class="edge-violet" d="M865 965 H881"/>
+  <rect class="node" x="881" y="937" width="84" height="56" rx="9"/>
+  <text class="pipeline-title" x="923" y="958" text-anchor="middle">Kibana</text>
+  <text class="pipeline-small" x="923" y="977" text-anchor="middle">APM</text>
+
+  <!-- Metrics: PodMonitor selects the workers; Prometheus pulls each pod directly. -->
+  <rect x="425" y="1011" width="555" height="96" rx="10" fill="#EFF6FF" stroke="#60A5FA" stroke-opacity="0.6"/>
+  <rect x="436" y="1049" width="66" height="22" rx="11" fill="#DBEAFE"/>
+  <text class="lane-label" x="469" y="1064" text-anchor="middle" fill="#1D4ED8">METRICS</text>
+
+  <rect class="node" x="560" y="1042" width="170" height="48" rx="9" stroke="#2563EB"/>
+  <text class="pipeline-title" x="645" y="1061" text-anchor="middle">Prometheus</text>
+  <text class="pipeline-small" x="645" y="1079" text-anchor="middle">scrapes selected pods</text>
+
+  <path class="edge-blue" d="M730 1066 H835"/>
+  <text class="pipeline-small" x="782.5" y="1056" text-anchor="middle">metrics</text>
+  <rect class="node" x="835" y="1042" width="130" height="48" rx="9"/>
+  <text class="pipeline-title" x="900" y="1061" text-anchor="middle">Grafana</text>
+  <text class="pipeline-small" x="900" y="1079" text-anchor="middle">PromQL</text>
+
+  <!-- Control plane: the operator turns PodMonitor declarations into scrape targets. -->
+  <path class="edge-blue edge-dashed" d="M725 816 H400 V1022 H590 V1042"/>
+  <text class="pipeline-small" x="495" y="1018" text-anchor="middle">reconcile targets</text>
+
+  <!-- Trace-derived metrics join the same Prometheus/Grafana path. -->
+  <path class="edge-blue" d="M577.5 993 V1016 H650 V1042"/>
+  <text class="pipeline-small" x="592" y="1011">spanmetrics</text>
+
+  <!-- Prometheus scrapes the selected worker pods; metrics are not pushed to the collector. -->
+  <path class="edge-blue" d="M700 1042 V1022 H973 V814 H956 V792"/>
+  <text class="edge-label" x="838" y="810">scrape /metrics · 15s</text>
 
   <!-- Internet gateway on the Application VPC edge -->
   <g>
@@ -244,18 +331,26 @@
     <text class="small" x="1094" y="520" text-anchor="middle">Internet Gateway</text>
   </g>
 
-  <!-- Data VPC and peering -->
-  <rect x="1140" y="555" width="225" height="300" rx="16" fill="#FBF9FF" fill-opacity="0.9" stroke="#8C4FFF" stroke-width="2"/>
+  <!-- Data VPC: operational reads and notification history are isolated stores. -->
+  <rect x="1140" y="555" width="255" height="565" rx="16" fill="#FBF9FF" fill-opacity="0.9" stroke="#8C4FFF" stroke-width="2"/>
   <rect x="1157" y="539" width="135" height="32" rx="16" fill="#F2ECFF" stroke="#8C4FFF"/>
   <text class="label" x="1175" y="560">Data VPC</text>
-  <rect x="1172" y="590" width="161" height="225" rx="13" fill="#F2FCFC" stroke="#00A4A6" stroke-width="1.6" stroke-dasharray="7 5"/>
+  <rect x="1172" y="590" width="195" height="495" rx="13" fill="#F2FCFC" stroke="#00A4A6" stroke-width="1.6" stroke-dasharray="7 5"/>
   <text class="small" x="1188" y="616">Private DB subnets</text>
   <g filter="url(#soft-shadow)">
-    <rect class="node" x="1192" y="640" width="121" height="148" rx="12"/>
-    <use href="#icon-rds" x="1222" y="657" width="62" height="62"/>
-    <text class="node-title" x="1252" y="742" text-anchor="middle">Amazon RDS</text>
-    <text class="small" x="1252" y="763" text-anchor="middle">MySQL read replica</text>
-    <text class="tiny" x="1252" y="781" text-anchor="middle">read-only</text>
+    <rect class="node" x="1192" y="640" width="155" height="170" rx="12"/>
+    <use href="#icon-rds" x="1238" y="655" width="62" height="62"/>
+    <text class="node-title" x="1269.5" y="742" text-anchor="middle">Operational DB</text>
+    <text class="small" x="1269.5" y="764" text-anchor="middle">Amazon RDS · MySQL</text>
+    <text class="tiny" x="1269.5" y="786" text-anchor="middle">worker read replica</text>
+  </g>
+  <g filter="url(#soft-shadow)">
+    <rect class="node" x="1192" y="850" width="155" height="185" rx="12"/>
+    <use href="#icon-rds" x="1238" y="865" width="62" height="62"/>
+    <text class="node-title" x="1269.5" y="950" text-anchor="middle">Notification History</text>
+    <text class="node-title" x="1269.5" y="971" text-anchor="middle">DB</text>
+    <text class="small" x="1269.5" y="994" text-anchor="middle">Amazon RDS · MySQL</text>
+    <text class="tiny" x="1269.5" y="1016" text-anchor="middle">isolated write store</text>
   </g>
 
   <g>
@@ -265,7 +360,42 @@
   </g>
   <path class="edge-blue" d="M983 734 H1038 Q1054 734 1054 718 Q1054 716 1056 716 H1075"/>
   <path class="edge-blue" d="M1145 716 H1192"/>
-  <text class="edge-label" x="1014" y="705">read-only</text>
+  <path class="edge-blue" d="M1110 751 V942 H1192"/>
+  <text class="edge-label" x="1014" y="705">DB access</text>
+  <text class="edge-label" x="1152" y="704">read-only</text>
+  <text class="edge-label" x="1123" y="930">history writes</text>
+
+  <!-- Analytics pipeline: operational and history data are loaded independently. -->
+  <rect x="1470" y="790" width="200" height="360" rx="18" fill="#F4F8FF" stroke="#4285F4" stroke-width="1.7"/>
+  <rect x="1490" y="774" width="160" height="32" rx="16" fill="#E8F0FE" stroke="#4285F4"/>
+  <circle cx="1508" cy="790" r="5" fill="#4285F4"/>
+  <text class="label" x="1520" y="795">Analytics Platform</text>
+
+  <g filter="url(#soft-shadow)">
+    <rect class="node" x="1490" y="835" width="160" height="130" rx="14"/>
+    <circle cx="1570" cy="875" r="25" fill="#4285F4"/>
+    <path d="M1558 881 v-10 M1565 881 v-17 M1572 881 v-7" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="1578" cy="874" r="9" fill="none" stroke="#FFFFFF" stroke-width="2.5"/>
+    <path d="M1584 881 l7 7" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+    <text class="node-title" x="1570" y="927" text-anchor="middle">BigQuery</text>
+    <text class="small" x="1570" y="947" text-anchor="middle">analytics warehouse</text>
+  </g>
+
+  <g filter="url(#soft-shadow)">
+    <rect class="node" x="1490" y="1005" width="160" height="105" rx="14"/>
+    <rect x="1510" y="1027" width="42" height="34" rx="6" fill="#E8F0FE" stroke="#4285F4"/>
+    <path d="M1519 1052 v-8 M1527 1052 v-15 M1535 1052 v-11 M1517 1054 h21" fill="none" stroke="#2563EB" stroke-width="2.2" stroke-linecap="round"/>
+    <text class="node-title" x="1562" y="1039">Analytics</text>
+    <text class="node-title" x="1562" y="1059">Dashboard</text>
+    <text class="tiny" x="1570" y="1087" text-anchor="middle">delivery · conversion · trends</text>
+  </g>
+
+  <path class="edge-blue" d="M1347 716 H1428 Q1444 716 1444 732 V875 H1490"/>
+  <text class="edge-label" x="1360" y="704">operational data</text>
+  <path class="edge-blue" d="M1347 942 H1445 Q1462 942 1462 925 H1490"/>
+  <text class="edge-label" x="1372" y="930">history data</text>
+  <path class="edge-blue" d="M1570 965 V1005"/>
+  <text class="edge-label" x="1582" y="991">query</text>
 
   <!-- Third-party provider outside AWS -->
   <g filter="url(#soft-shadow)">
@@ -284,12 +414,14 @@
   <text class="edge-label" x="1198" y="459">message delivery</text>
 
   <!-- Compact legend -->
-  <g transform="translate(52 1005)">
+  <g transform="translate(52 1340)">
     <path d="M0 0 h38" class="edge-orange"/>
     <text class="small" x="52" y="5">job &amp; notification flow</text>
     <path d="M226 0 h38" class="edge-blue"/>
-    <text class="small" x="278" y="5">data &amp; telemetry</text>
-    <path d="M430 0 h38" class="edge-teal edge-dashed"/>
-    <text class="small" x="482" y="5">deployment flow</text>
+    <text class="small" x="278" y="5">data, metrics &amp; analytics</text>
+    <path d="M430 0 h38" class="edge-violet"/>
+    <text class="small" x="482" y="5">trace flow</text>
+    <path d="M590 0 h38" class="edge-teal edge-dashed"/>
+    <text class="small" x="642" y="5">deployment flow</text>
   </g>
 </svg>
