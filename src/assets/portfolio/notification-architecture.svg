@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1700 1390" role="img" aria-labelledby="diagram-title diagram-description">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1700 1580" role="img" aria-labelledby="diagram-title diagram-description">
   <title id="diagram-title">Notification delivery platform architecture</title>
-  <desc id="diagram-description">A queue-driven notification platform running on Amazon EKS. Internal services enqueue jobs in Amazon ElastiCache for Redis, scalable notification worker pods consume them, read data from an Amazon RDS for MySQL read replica through VPC peering, and send messages to a third-party messaging API through a NAT Gateway and Internet Gateway. Notification history is isolated in a separate Amazon RDS for MySQL database, while both operational and notification history data feed BigQuery and an analytics dashboard. Logs and traces leave the workers through parallel Fluent Bit and OpenTelemetry Collector pipelines and are correlated by trace ID in Elasticsearch. Prometheus Operator converts PodMonitor selections into Prometheus scrape targets, Prometheus scrapes application metrics directly from each worker pod, and Grafana visualizes those metrics.</desc>
+  <desc id="diagram-description">A queue-driven notification platform running on Amazon EKS inside a single VPC. Internal services enqueue jobs in Amazon ElastiCache for Redis, and scalable notification services consume them, read from an operational Amazon RDS for MySQL database, send messages to a third-party messaging API through a NAT Gateway and Internet Gateway, and publish REQUESTED plus terminal ACCEPTED, FAILED, or ERROR events to Amazon SNS without blocking delivery. Amazon SNS fans out each history event independently: Amazon Data Firehose buffers and compresses raw events into Amazon S3 for long-term archival, while Amazon SQS with a dead-letter queue buffers retries for an AWS Lambda consumer that transforms batches and writes them to BigQuery. Operational data is loaded into BigQuery independently. Fluent Bit ships application logs to Elasticsearch and Kibana, while scheduled Kubernetes CronJobs compress older log indices and archive them in Amazon S3 Glacier Instant Retrieval. OpenTelemetry Collector sends traces through APM Server for trace ID correlation in Elasticsearch. Prometheus Operator converts PodMonitor selections into Prometheus scrape targets, Prometheus scrapes application metrics directly from each service pod, and Grafana visualizes those metrics.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -51,9 +51,84 @@
       <path d="M33.4312,35.1778 L31.9332,35.1778 L31.9332,17.5018 C31.9332,17.1088 31.7022,16.7518 31.3442,16.5908 L31.2522,16.5488 C29.2432,15.6418 27.1642,14.7028 24.1762,14.7028 C21.0532,14.7028 18.7612,15.7118 16.4952,16.8368 C16.1552,17.0058 15.9402,17.3528 15.9402,17.7328 L15.9402,35.1778 L14.4772,35.1778 L14.4772,16.3118 C16.9112,14.3328 20.4202,13.2048 24.1862,13.2048 C27.6872,13.2048 31.0252,14.2018 33.4312,15.9528 L33.4312,35.1778 Z M24.1862,11.2048 C19.7612,11.2048 15.6172,12.6238 12.8152,15.0998 C12.6002,15.2888 12.4772,15.5618 12.4772,15.8488 L12.4772,36.1778 C12.4772,36.7308 12.9242,37.1778 13.4772,37.1778 L16.9402,37.1778 C17.4932,37.1778 17.9402,36.7308 17.9402,36.1778 L17.9402,18.3558 C19.8592,17.4288 21.7192,16.7028 24.1762,16.7028 C26.5112,16.7028 28.2092,17.3778 29.9332,18.1488 L29.9332,36.1778 C29.9332,36.7308 30.3802,37.1778 30.9332,37.1778 L34.4312,37.1778 C34.9842,37.1778 35.4312,36.7308 35.4312,36.1778 L35.4312,15.4578 C35.4312,15.1538 35.2922,14.8658 35.0532,14.6748 C32.2792,12.4698 28.3182,11.2048 24.1862,11.2048 Z M23.9542,43.9088 C12.9522,43.9088 3.9992,34.9568 3.9992,23.9538 C3.9992,12.9508 12.9522,3.9998 23.9542,3.9998 C34.9572,3.9998 43.9092,12.9508 43.9092,23.9538 C43.9092,34.9568 34.9572,43.9088 23.9542,43.9088 Z M23.9542,1.9998 C11.8482,1.9998 1.9992,11.8488 1.9992,23.9538 C1.9992,36.0608 11.8482,45.9088 23.9542,45.9088 C36.0602,45.9088 45.9092,36.0608 45.9092,23.9538 C45.9092,11.8488 36.0602,1.9998 23.9542,1.9998 Z" fill="#8C4FFF"/>
     </symbol>
 
-    <symbol id="icon-peering" viewBox="0 0 48 48">
-      <path d="M30.6055,25.6368 C30.6055,25.2538 30.6055,24.2358 28.9355,23.8938 C28.4915,23.8028 28.1645,23.4248 28.1375,22.9718 C28.0995,22.3148 27.8295,21.9068 27.4315,21.9068 C27.2485,21.9068 27.0725,22.0008 26.9485,22.1648 C26.7285,22.4588 26.3685,22.6078 26.0015,22.5548 C25.6375,22.4998 25.3335,22.2518 25.2085,21.9068 C25.0125,21.3658 24.7265,20.9008 24.3815,20.5608 C24.0655,20.2468 23.3415,19.6688 22.3165,19.6688 C21.9565,19.6688 21.5585,19.7408 21.1285,19.9188 C20.2085,20.3038 19.4595,21.4568 19.4595,22.4898 C19.4595,22.6118 19.4665,22.7288 19.4805,22.8458 C19.5405,23.3458 19.2185,23.8108 18.7315,23.9338 C17.8465,24.1568 17.3975,24.7208 17.3975,25.6118 L17.4025,25.7578 C17.4475,26.5858 18.4185,27.3468 19.4385,27.3468 L28.8285,27.3468 C30.6055,27.3468 30.6055,26.0598 30.6055,25.6368 Z M32.6055,25.6368 C32.6055,28.3178 30.6755,29.3048 28.9765,29.3458 C28.9595,29.3468 28.9425,29.3468 28.9245,29.3468 L19.4385,29.3468 C17.3555,29.3468 15.5085,27.7498 15.4055,25.8598 C15.4005,25.7738 15.3975,25.6968 15.3975,25.6118 C15.3975,24.0768 16.1565,22.8738 17.4645,22.2678 C17.5605,20.5108 18.7725,18.7358 20.3585,18.0738 C22.2795,17.2768 24.3065,17.6718 25.7885,19.1388 C26.0665,19.4128 26.3145,19.7238 26.5315,20.0698 C27.7795,19.5998 29.5565,20.1578 30.0285,22.1208 C31.6755,22.6828 32.6055,23.9348 32.6055,25.6368 Z M44.0015,24.0008 C44.0015,12.9728 35.0295,3.9998 24.0015,3.9998 C12.9725,3.9998 4.0005,12.9728 4.0005,24.0008 C4.0005,35.0298 12.9725,44.0018 24.0015,44.0018 C35.0295,44.0018 44.0015,35.0298 44.0015,24.0008 Z M46.0015,24.0008 C46.0015,36.1328 36.1325,46.0018 24.0015,46.0018 C11.8695,46.0018 2.0005,36.1328 2.0005,24.0008 C2.0005,11.8688 11.8695,1.9998 24.0015,1.9998 C36.1325,1.9998 46.0015,11.8688 46.0015,24.0008 Z M11.6735,20.3638 L10.2595,18.9498 L5.9145,23.2938 C5.7265,23.4818 5.6215,23.7358 5.6215,24.0008 C5.6215,24.2668 5.7265,24.5208 5.9145,24.7078 L10.2595,29.0538 L11.6735,27.6398 L9.0355,25.0008 L13.9905,25.0008 L13.9905,23.0008 L9.0355,23.0008 L11.6735,20.3638 Z M42.0885,23.2938 L37.7435,18.9498 L36.3295,20.3638 L38.9675,23.0008 L33.9855,23.0008 L33.9855,25.0008 L38.9675,25.0008 L36.3295,27.6398 L37.7435,29.0538 L42.0885,24.7078 C42.2765,24.5208 42.3815,24.2668 42.3815,24.0008 C42.3815,23.7358 42.2765,23.4818 42.0885,23.2938 Z M25.0015,38.9678 L25.0015,30.9758 L23.0015,30.9758 L23.0015,38.9678 L20.3635,36.3288 L18.9495,37.7428 L23.2935,42.0888 C23.4815,42.2768 23.7355,42.3818 24.0015,42.3818 C24.2665,42.3818 24.5205,42.2768 24.7085,42.0888 L29.0535,37.7428 L27.6395,36.3288 L25.0015,38.9678 Z M20.3635,11.6728 L18.9495,10.2588 L23.2935,5.9138 C23.6845,5.5238 24.3175,5.5238 24.7085,5.9138 L29.0535,10.2588 L27.6395,11.6728 L25.0015,9.0348 L25.0015,16.2748 L23.0015,16.2748 L23.0015,9.0348 L20.3635,11.6728 Z" fill="#8C4FFF"/>
+    <!-- Compact project marks keep the dense observability lanes recognizable. -->
+    <symbol id="logo-argocd" viewBox="0 0 24 24">
+      <circle cx="12" cy="10" r="9" fill="#CDECF6"/>
+      <path d="M7.2 9.6c0-3.4 2-6.1 4.8-6.1s4.9 2.7 4.9 6.1l-.4 8.1 1.7 1.1-2.8.2-.8-3.1-.2 4.1-2.2-4.2-.3 4.2-2.1-4.2-.8 3.1-3 .1 1.7-1.3-.5-8.1Z" fill="#FE733E"/>
+      <circle cx="9.5" cy="9.2" r="2.25" fill="#FFFFFF"/>
+      <circle cx="14.5" cy="9.2" r="2.25" fill="#FFFFFF"/>
+      <circle cx="9.5" cy="9.2" r=".75" fill="#0F172A"/>
+      <circle cx="14.5" cy="9.2" r=".75" fill="#0F172A"/>
     </symbol>
+
+    <symbol id="logo-fluent-bit" viewBox="0 0 24 24">
+      <path d="M.412 3.517c-.038 0-.072 0-.102.01a.336.336 0 0 0-.087.035H.215a.325.325 0 0 0-.113.113.416.416 0 0 0-.053.1c-.008.021-.019.036-.023.067a.423.423 0 0 0-.015.071v-.01H.004v.018L0 3.936l.007-.023v.046L0 4.004v.015h.004l.003-.004v-.003a1.323 1.323 0 0 0 .095.472l.019.046v.007l.06.144.023.06.064.163a19.736 19.736 0 0 0 1.724 3.254L2 8.173l.023.038c.922 1.44 2.037 2.885 3.202 4.095l.037.04c.832.859 1.686 1.6 2.514 2.129a4 4 0 0 0 .37.216l.038.019-.026.019c-1.127 1.64-2.42 2.834-3.742 3.704C2.51 19.763.91 20.172.91 20.172s4.237 1.164 8.887-1.013c3.534-1.664 5.368-4.903 5.787-5.621l2.124-3.61c.333-.458.522-.647.54-.68.065-.065.538-.614 1.524-.946 1.46-.488 3.667-.783 4.188-.832a.113.113 0 0 0 .03-.132.076.076 0 0 0-.056-.05 4.177 4.177 0 0 0-.544-.037 9.234 9.234 0 0 0-1.399.068 18.39 18.39 0 0 0-1.383.204 29.78 29.78 0 0 0-1.066.204l-.053.012h-.023a3.493 3.493 0 0 1-.574.037 2.737 2.737 0 0 1-.473-.075 7.3 7.3 0 0 1-.465-.129 6.79 6.79 0 0 0-.484-.143 4.645 4.645 0 0 0-1.463-.152 2.797 2.797 0 0 0-.657.133l-.167.06a2.767 2.767 0 0 0-1.22.972c-.401.536-1.233 2.178-2.374 2.613l-.023-.023h.01a77.214 77.214 0 0 0-.9-.829l-.021-.015-.2-.189-.053-.042a60.73 60.73 0 0 0-2.307-2.014 28.411 28.411 0 0 0-1.504-1.13l-.227-.163a30.725 30.725 0 0 0-3.93-2.332c-.114-.064-.23-.102-.36-.166-.038-.016-.076-.038-.102-.038l.196.11-.079-.038h-.01V4.18a1.013 1.013 0 0 0-.054-.023l-.023-.015-.03-.015a1.01 1.01 0 0 1-.102-.05l-.072-.033a1.512 1.512 0 0 1-.098-.046c-.03-.01-.057-.022-.076-.022a1.296 1.296 0 0 0-.22-.08l-.007-.004-.015-.007h-.007l-.012-.004v-.004h-.022a.37.37 0 0 1-.038-.019l-.038-.018a.113.113 0 0 0-.034-.012h-.004l-.234-.094a2.854 2.854 0 0 0-.242-.087.601.601 0 0 0-.151-.03ZM16.757 8.3a.386.386 0 0 1 .113.015.386.386 0 0 1 .269.473.386.386 0 0 1-.473.264.386.386 0 0 1-.264-.468.386.386 0 0 1 .355-.284Z" fill="#49BDA5"/>
+    </symbol>
+
+    <symbol id="logo-elasticsearch" viewBox="0 0 32 32">
+      <path d="M2 16c0 1.384.194 2.72.524 4H22a4 4 0 0 0 0-8H2.524A15.984 15.984 0 0 0 2 16" fill="#343741"/>
+      <path d="M28.924 7.662A15.381 15.381 0 0 0 30.48 6C27.547 2.346 23.05 0 18 0 11.679 0 6.239 3.678 3.644 9H25.51a5.039 5.039 0 0 0 3.414-1.338" fill="#FEC514"/>
+      <path d="M25.51 23H3.645C6.24 28.323 11.679 32 18 32c5.05 0 9.547-2.346 12.48-6a15.381 15.381 0 0 0-1.556-1.662A5.034 5.034 0 0 0 25.51 23" fill="#00BFB3"/>
+    </symbol>
+
+    <symbol id="logo-kibana" viewBox="0 0 32 32">
+      <g transform="translate(4)">
+        <polygon points="0 0 0 28.789 24.935 .017" fill="#F04E98"/>
+        <path d="M0 12v16.789l11.906-13.738C8.368 13.115 4.317 12 0 12" fill="#2B394F"/>
+        <path d="m14.4785 16.664-12.211 14.09-1.073 1.237h23.192c-1.252-6.292-4.883-11.719-9.908-15.327" fill="#00BFB3"/>
+      </g>
+    </symbol>
+
+    <symbol id="logo-opentelemetry" viewBox="0 0 24 24">
+      <path d="M12.6974 13.1173c-1.0224 1.0224-1.0224 2.68 0 3.7024 1.0224 1.0224 2.68 1.0224 3.7024 0 1.0224-1.0223 1.0224-2.68 0-3.7024-1.0223-1.0223-2.68-1.0223-3.7024 0zm2.7677 2.7701c-.5063.5063-1.3267.5063-1.833 0s-.5063-1.3266 0-1.833c.5063-.5062 1.3267-.5062 1.833 0 .5063.504.5063 1.3267 0 1.833zM16.356.2355l-1.6041 1.6042c-.314.314-.314.83 0 1.144L21.015 9.247c.314.314.83.314 1.144 0l1.6042-1.6041c.314-.314.314-.83 0-1.144L17.4976.2354c-.314-.314-.8276-.314-1.1416 0zM5.1173 20.734c.2848-.2848.2848-.7497 0-1.0345l-.8155-.8155c-.2848-.2848-.7497-.2848-1.0345 0l-1.6845 1.6845-.0024.0024-.4625-.4625c-.2556-.2556-.6718-.2556-.925 0-.2556.2556-.2556.6718 0 .925l2.775 2.775c.2556.2556.6718.2556.925 0 .2532-.2556.2556-.6718 0-.925l-.4625-.4625.0024-.0024zm8.4856-15.893-3.5637 3.5637c-.3164.3164-.3164.8374 0 1.1538l2.2006 2.2005c1.5554-1.1197 3.7365-.981 5.1361.4187l1.7819-1.7818c.3164-.3165.3164-.8374 0-1.1538l-4.401-4.401c-.3165-.319-.8374-.319-1.1539 0zm-2.2881 7.8455-1.2999-1.2999c-.3043-.3043-.8033-.3043-1.1076 0l-4.5836 4.586c-.3042.3043-.3042.8033 0 1.1076l2.5973 2.5973c.3043.3043.8033.3043 1.1076 0l2.9478-2.9527c-.6231-1.2877-.5112-2.8431.3384-4.0383z" fill="#425CC7"/>
+    </symbol>
+
+    <symbol id="logo-prometheus" viewBox="0 0 24 24">
+      <path d="M12 0C5.373 0 0 5.372 0 12c0 6.627 5.373 12 12 12s12-5.373 12-12c0-6.628-5.373-12-12-12zm0 22.46c-1.885 0-3.414-1.26-3.414-2.814h6.828c0 1.553-1.528 2.813-3.414 2.813zm5.64-3.745H6.36v-2.046h11.28v2.046zm-.04-3.098H6.391c-.037-.043-.075-.086-.111-.13-1.155-1.401-1.427-2.133-1.69-2.879-.005-.025 1.4.287 2.395.511 0 0 .513.119 1.262.255-.72-.843-1.147-1.915-1.147-3.01 0-2.406 1.845-4.508 1.18-6.207.648.053 1.34 1.367 1.387 3.422.689-.951.977-2.69.977-3.755 0-1.103.727-2.385 1.454-2.429-.648 1.069.168 1.984.894 4.256.272.854.237 2.29.447 3.201.07-1.892.395-4.652 1.595-5.605-.529 1.2.079 2.702.494 3.424.671 1.164 1.078 2.047 1.078 3.716a4.642 4.642 0 01-1.11 2.996c.792-.149 1.34-.283 1.34-.283l2.573-.502s-.374 1.538-1.81 3.019z" fill="#E6522C"/>
+    </symbol>
+
+    <symbol id="logo-grafana" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="11" fill="#F46800"/>
+      <path d="M5 13.6c0-4.6 3.6-8.1 8-8.1 3.4 0 6.2 2.2 6.2 5.4 0 2.5-1.9 4.6-4.5 4.6-2.1 0-3.8-1.5-3.8-3.4 0-1.6 1.3-2.9 3-2.9 1.3 0 2.4.9 2.4 2.1 0 .9-.7 1.6-1.6 1.6-.6 0-1.1-.4-1.1-1" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M5.1 13.7c.6 3.3 3.4 5.8 6.9 5.8 2.3 0 4.3-.9 5.7-2.4" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"/>
+    </symbol>
+
+    <symbol id="icon-cronjob" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10" fill="#326CE5"/>
+      <circle cx="12" cy="12" r="6.3" fill="none" stroke="#FFFFFF" stroke-width="1.6"/>
+      <path d="M12 8.3v4l2.8 1.7" fill="none" stroke="#FFFFFF" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+
+    <symbol id="icon-s3-bucket" viewBox="0 0 80 80">
+      <rect width="80" height="80" rx="4" fill="#3F8624"/>
+      <ellipse cx="40" cy="23" rx="24" ry="8" fill="none" stroke="#FFFFFF" stroke-width="4"/>
+      <path d="M16 23l6 39c.7 4.8 8.2 8 18 8s17.3-3.2 18-8l6-39" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="40" cy="39" r="3" fill="#FFFFFF"/>
+      <path d="M43 39l18 9c6.2 3.1 9 1.5 7.5-2.2-1.1-2.8-3.5-5.2-7.2-7" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+    </symbol>
+
+    <symbol id="icon-sns" viewBox="0 0 80 80">
+      <rect width="80" height="80" fill="#E7157B"/>
+      <path d="M17,38 C18.103,38 19,38.897 19,40 C19,41.103 18.103,42 17,42 C15.897,42 15,41.103 15,40 C15,38.897 15.897,38 17,38 L17,38 Z M41,64 C29.314,64 19.289,55.466 17.194,43.98 C18.965,43.894 20.427,42.659 20.857,41 L27,41 L27,39 L20.857,39 C20.427,37.342 18.966,36.107 17.195,36.02 C19.285,24.71 29.511,16 41,16 C45.313,16 49.832,17.622 54.429,20.821 L55.571,19.179 C50.633,15.743 45.73,14 41,14 C28.27,14 16.949,23.865 15.063,36.521 C13.839,37.207 13,38.5 13,40 C13,41.5 13.839,42.793 15.063,43.478 C16.97,56.341 28.056,66 41,66 C46.407,66 51.942,64.157 56.585,60.811 L55.415,59.189 C51.11,62.292 45.991,64 41,64 L41,64 Z M30.101,36.442 C31.955,36.895 34.275,37 36,37 C37.642,37 39.823,36.905 41.629,36.506 L37.105,45.553 C37.036,45.691 37,46 37,46 L37,50.453 C36.199,50.964 34.833,51.812 34,51.986 L34,46 C34,45.868 33.974,45.737 33.923,45.615 L30.101,36.442 Z M36,33 C40.025,33 42.174,33.604 42.841,34 C42.174,34.396 40.025,35 36,35 C31.975,35 29.826,34.396 29.159,34 C29.826,33.604 31.975,33 36,33 L36,33 Z M33,54 L34,54 C34.043,54 34.086,53.997 34.128,53.992 C35.352,53.833 36.909,52.887 38.272,52.013 L38.535,51.845 C38.824,51.661 39,51.342 39,51 L39,46.236 L44.559,35.12 C44.833,34.801 45,34.434 45,34 C45,31.39 39.361,31 36,31 C32.639,31 27,31.39 27,34 C27,34.366 27.12,34.684 27.32,34.967 L32,46.2 L32,53 C32,53.552 32.447,54 33,54 L33,54 Z M62,53 C63.103,53 64,53.897 64,55 C64,56.103 63.103,57 62,57 C60.897,57 60,56.103 60,55 C60,53.897 60.897,53 62,53 L62,53 Z M62,23 C63.103,23 64,23.897 64,25 C64,26.103 63.103,27 62,27 C60.897,27 60,26.103 60,25 C60,23.897 60.897,23 62,23 L62,23 Z M64,38 C65.103,38 66,38.897 66,40 C66,41.103 65.103,42 64,42 C62.897,42 62,41.103 62,40 C62,38.897 62.897,38 64,38 L64,38 Z M54,41 L60.143,41 C60.589,42.72 62.142,44 64,44 C66.206,44 68,42.206 68,40 C68,37.794 66.206,36 64,36 C62.142,36 60.589,37.28 60.143,39 L54,39 L54,26 L58.143,26 C58.589,27.72 60.142,29 62,29 C64.206,29 66,27.206 66,25 C66,22.794 64.206,21 62,21 C60.142,21 58.589,22.28 58.143,24 L53,24 C52.447,24 52,24.448 52,25 L52,39 L45,39 L45,41 L52,41 L52,55 C52,55.552 52.447,56 53,56 L58.143,56 C58.589,57.72 60.142,59 62,59 C64.206,59 66,57.206 66,55 C66,52.794 64.206,51 62,51 C60.142,51 58.589,52.28 58.143,54 L54,54 L54,41 Z" fill="#FFFFFF"/>
+    </symbol>
+
+    <symbol id="icon-firehose" viewBox="0 0 80 80">
+      <rect width="80" height="80" fill="#8C4FFF"/>
+      <g transform="translate(14 15)" fill="#FFFFFF">
+        <path d="M52.625 29.072 51.883 30.928C48.685 29.649 44.784 29 40.288 29v-2c4.752 0 8.902.697 12.337 2.072ZM51.938 27.949C49.032 26.984 43.152 26 40.288 26v-2c2.896 0 8.751-.983 11.604-1.947l.64 1.894c-1.094.371-2.572.737-4.16 1.057 1.607.319 3.104.684 4.197 1.047l-.631 1.898ZM52.611 20.934C49.03 22.305 44.884 23 40.288 23v-2c4.351 0 8.256-.651 11.608-1.934l.715 1.868ZM36.255 28.219l-10 2.5V19.281l10 2.5v6.438ZM24.255 33h-3V17h3v16ZM37.497 20.03l-11.242-2.811V16c0-.552-.447-1-1-1h-5c-.553 0-1 .448-1 1v.93C4.053 15.821 2.255 9.619 2.255 5V0h-2v5c0 8.469 6.23 13.023 19 13.927v1.036c-7.763-.311-13.337-1.536-17.469-3.836l-.973 1.747c4.429 2.467 10.313 3.77 18.442 4.09v2.014c-5.648-.134-13.299-.508-18.745-1.945L0 23.967C1.633 24.398 3.449 24.734 5.342 25 3.449 25.267 1.633 25.603 0 26.033l.51 1.934c5.447-1.437 13.098-1.811 18.745-1.944v2.014c-8.084.316-13.965 1.619-18.439 4.088l.967 1.751c4.175-2.304 9.762-3.52 17.472-3.829v1.021C2.76 32.282.255 40.902.255 46l-.002.392c-.017 3.224-.007 3.582.008 3.715l1.991-.185c-.011-.182-.01-1.366.001-3.519l.002-.403c0-7.62 5.883-12.067 17-12.92V34c0 .552.447 1 1 1h5c.553 0 1-.448 1-1v-1.219l11.242-2.811c.445-.111.758-.511.758-.97v-8c0-.459-.313-.859-.758-.97Z"/>
+      </g>
+    </symbol>
+
+    <symbol id="icon-sqs" viewBox="0 0 80 80">
+      <rect width="80" height="80" fill="#E7157B"/>
+      <path d="M28.717 43.688 31.719 40.722a.989.989 0 0 0 .003-1.406l-3.001-3-1.419 1.402 1.288 1.288h-4.581v1.988h4.597l-1.3 1.284 1.411 1.41Zm22.911.09 4.002-2.985a.992.992 0 0 0-.001-1.59l-4.002-2.981-1.201 1.591 1.601 1.193h-4.003v1.988h4.002l-1.601 1.193 1.203 1.591ZM35.208 40c0 2.111-.365 4.101-1.048 5.833 3.6-1.384 8.118-1.384 11.717 0-.681-1.732-1.047-3.722-1.047-5.833s.366-4.1 1.047-5.833c-3.599 1.383-8.116 1.383-11.717 0 .683 1.733 1.048 3.722 1.048 5.833Zm-4.902 9.651a.99.99 0 0 1 0-1.406c1.816-1.804 2.901-4.887 2.901-8.245s-1.085-6.441-2.901-8.245a.99.99 0 0 1 0-1.406 1.007 1.007 0 0 1 1.415 0c3.877 3.853 12.719 3.853 16.597 0a1.007 1.007 0 0 1 1.415 0 .99.99 0 0 1 0 1.406c-1.817 1.804-2.901 4.887-2.901 8.245s1.084 6.441 2.901 8.245a.99.99 0 0 1 0 1.406 1.007 1.007 0 0 1-1.415 0c-3.878-3.853-12.72-3.853-16.597 0a1.007 1.007 0 0 1-1.415 0Zm35.695-9.646c0-3.091-3.761-4.642-5.96-2.453a3.45 3.45 0 0 0 0 4.906c2.198 2.189 5.96.638 5.96-2.453Zm.392 3.859c-2.141 2.127-5.625 2.127-7.767 0a5.437 5.437 0 0 1 0-7.718c2.142-2.13 5.626-2.128 7.767 0a5.437 5.437 0 0 1 0 7.718ZM20.98 40.028a3.46 3.46 0 0 0-3.491-3.469 3.46 3.46 0 0 0-3.49 3.469 3.46 3.46 0 0 0 3.49 3.468 3.46 3.46 0 0 0 3.491-3.468Zm.392 3.859c-2.142 2.127-5.625 2.127-7.767 0a5.437 5.437 0 0 1 0-7.718c2.142-2.128 5.625-2.128 7.767 0a5.437 5.437 0 0 1 0 7.718ZM54.896 54.856c-8.256 8.205-21.657 8.205-29.914 0-2.74-2.721-4.248-5.973-5.031-8.221l-1.891.65c.852 2.446 2.498 5.988 5.507 8.977 9.036 8.974 23.711 8.974 32.744 0a23.502 23.502 0 0 0 5.668-8.98l-1.893-.644a21.512 21.512 0 0 1-5.19 8.218Zm-34.946-21.49-1.889-.652a23.558 23.558 0 0 1 5.512-8.981c9.033-8.977 23.699-8.977 32.732 0a23.604 23.604 0 0 1 5.672 8.981l-1.889.652a21.572 21.572 0 0 0-5.198-8.227c-8.251-8.201-21.65-8.201-29.902 0a21.502 21.502 0 0 0-5.038 8.227Z" fill="#FFFFFF"/>
+    </symbol>
+
+    <symbol id="icon-lambda" viewBox="0 0 80 80">
+      <rect width="80" height="80" fill="#ED7100"/>
+      <path d="M28.008 66H15.591l13.733-28.704 6.222 12.81L28.008 66Zm2.212-31.447a1.004 1.004 0 0 0-.902-.564h-.003c-.386.001-.737.222-.903.569L13.098 66.569A1 1 0 0 0 14.002 68h14.64c.388 0 .74-.223.906-.572l8.016-16.9a1.003 1.003 0 0 0-.005-.863L30.22 34.553ZM64.995 66H52.659L32.867 24.57A1.005 1.005 0 0 0 31.962 24H23.89l.009-10H39.72l19.7 41.429c.166.348.519.571.906.571h4.67v10Zm1.003-12H60.96L41.259 12.571A1.003 1.003 0 0 0 40.353 12H22.898c-.552 0-1.001.447-1.002.999l-.012 12c0 .266.105.52.294.708.188.188.442.293.709.293h8.442l19.793 41.43c.167.348.517.57.904.57h13.972c.554 0 1.002-.448 1.002-1V55c0-.552-.448-1-1.002-1Z" fill="#FFFFFF"/>
+    </symbol>
+
   </defs>
 
   <style>
@@ -67,6 +142,7 @@
     .tiny { font-size: 12px; fill: #64748B; }
     .edge-label { font-size: 12px; font-weight: 600; fill: #475569; paint-order: stroke; stroke: #F8FAFC; stroke-width: 4px; stroke-linejoin: round; }
     .pipeline-title { font-size: 13px; font-weight: 700; }
+    .pipeline-title-compact { font-size: 12px; font-weight: 700; }
     .pipeline-small { font-size: 12px; fill: #64748B; }
     .lane-label { font-size: 11px; font-weight: 800; letter-spacing: 0.8px; }
     .boundary { fill: #FFFFFF; stroke-width: 2; }
@@ -81,14 +157,14 @@
     .aws-word { fill: #FFFFFF; }
   </style>
 
-  <rect width="1700" height="1390" fill="#F8FAFC"/>
+  <rect width="1700" height="1580" fill="#F8FAFC"/>
 
   <!-- Heading -->
   <text class="title" x="52" y="55">Notification Delivery Architecture</text>
   <text class="subtitle" x="52" y="82">Queue-driven workers · private workloads · no public ingress</text>
 
   <!-- AWS Cloud and Region -->
-  <rect class="boundary" x="250" y="100" width="1190" height="1190" rx="20" stroke="#64748B" filter="url(#soft-shadow)"/>
+  <rect class="boundary" x="250" y="100" width="1190" height="1390" rx="20" stroke="#64748B" filter="url(#soft-shadow)"/>
   <g transform="translate(274 122)">
     <rect width="42" height="42" rx="8" fill="#232F3E"/>
     <text class="aws-word" x="21" y="27" text-anchor="middle" font-size="13" font-weight="800">AWS</text>
@@ -96,7 +172,7 @@
   </g>
   <text class="group-title" x="330" y="148">AWS Cloud</text>
 
-  <rect x="285" y="174" width="1120" height="1080" rx="16" fill="#F6FFFF" fill-opacity="0.52" stroke="#00A4A6" stroke-width="1.7" stroke-dasharray="9 6"/>
+  <rect x="285" y="174" width="1120" height="1260" rx="16" fill="#F6FFFF" fill-opacity="0.52" stroke="#00A4A6" stroke-width="1.7" stroke-dasharray="9 6"/>
   <rect x="550" y="158" width="194" height="32" rx="16" fill="#E7FAFA" stroke="#00A4A6"/>
   <circle cx="568" cy="174" r="5" fill="#00A4A6"/>
   <text class="label" x="582" y="179">AWS Region · Multi-AZ</text>
@@ -128,11 +204,11 @@
   <path class="edge" d="M212 190 H294 Q310 190 310 206 V244 H345"/>
   <text class="edge-label" x="253" y="179">push image</text>
 
-  <!-- Application VPC -->
-  <rect x="325" y="350" width="755" height="830" rx="16" fill="#FBF9FF" fill-opacity="0.82" stroke="#8C4FFF" stroke-width="2"/>
-  <rect x="345" y="334" width="177" height="32" rx="16" fill="#F2ECFF" stroke="#8C4FFF"/>
+  <!-- Single VPC for workloads, egress, cache, and databases. -->
+  <rect x="325" y="350" width="1070" height="830" rx="16" fill="#FBF9FF" fill-opacity="0.82" stroke="#8C4FFF" stroke-width="2"/>
+  <rect x="345" y="334" width="95" height="32" rx="16" fill="#F2ECFF" stroke="#8C4FFF"/>
   <path d="M361 350 h14 M368 343 v14" stroke="#8C4FFF" stroke-width="2" stroke-linecap="round"/>
-  <text class="label" x="384" y="355">Application VPC</text>
+  <text class="label" x="384" y="355">VPC</text>
 
   <!-- Managed Redis in private data subnets -->
   <rect x="535" y="390" width="230" height="142" rx="13" fill="#F2FCFC" stroke="#00A4A6" stroke-width="1.6" stroke-dasharray="7 5"/>
@@ -167,9 +243,8 @@
   <!-- Argo CD and HPA are capabilities, not count indicators -->
   <g>
     <rect x="606" y="616" width="105" height="34" rx="17" fill="#E6F7F8" stroke="#0F9FA6"/>
-    <path d="M623 632 a8 8 0 1 1 4 7" fill="none" stroke="#0F9FA6" stroke-width="2" stroke-linecap="round"/>
-    <path d="M623 632 l-4 3 l5 1" fill="none" stroke="#0F9FA6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <text class="label" x="638" y="637">Argo CD</text>
+    <use href="#logo-argocd" x="614" y="622" width="22" height="22"/>
+    <text class="label" x="642" y="637">Argo CD</text>
   </g>
   <g>
     <rect x="913" y="616" width="78" height="34" rx="17" fill="#EEF2FF" stroke="#6366F1"/>
@@ -194,32 +269,35 @@
     <text class="tiny" x="442" y="777">queue producers</text>
   </g>
 
-  <!-- Scalable notification workers -->
+  <!-- Scalable notification services -->
   <g filter="url(#soft-shadow)">
-    <rect class="node" x="751" y="676" width="232" height="116" rx="13"/>
+    <rect class="node" x="751" y="676" width="232" height="128" rx="13"/>
     <g transform="translate(771 698)">
       <rect x="0" y="12" width="50" height="45" rx="8" fill="#326CE5"/>
       <path d="M13 29 h24 M13 36 h18 M13 43 h10" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round"/>
     </g>
     <text class="node-title" x="838" y="711">Notification</text>
-    <text class="node-title" x="838" y="732">Worker Pods</text>
-    <text class="small" x="838" y="755">queue consumers</text>
-    <text class="tiny" x="771" y="778">NDJSON logs · OTLP spans · /metrics</text>
+    <text class="node-title" x="838" y="732">Services</text>
+    <text class="small" x="838" y="753">queue consumers</text>
+    <text class="tiny" x="771" y="776">publish lifecycle events</text>
+    <text class="tiny" x="771" y="795">logs · traces · /metrics</text>
   </g>
 
   <!-- PodMonitor is a selector resource attached to the worker workload, not a collector. -->
   <g>
-    <rect x="644" y="738" width="92" height="42" rx="10" fill="#DBEAFE" stroke="#60A5FA"/>
-    <text class="pipeline-title" x="690" y="756" text-anchor="middle">PodMonitor</text>
-    <text class="pipeline-small" x="690" y="773" text-anchor="middle">selects pods</text>
+    <rect x="638" y="738" width="100" height="42" rx="10" fill="#DBEAFE" stroke="#60A5FA"/>
+    <use href="#logo-prometheus" x="645" y="749" width="14" height="14"/>
+    <text class="pipeline-title-compact" x="664" y="756">PodMonitor</text>
+    <text class="pipeline-small" x="664" y="773">selects pods</text>
   </g>
-  <path class="edge-blue edge-dashed" d="M736 759 H751"/>
+  <path class="edge-blue edge-dashed" d="M738 759 H751"/>
 
   <!-- Prometheus Operator watches PodMonitor and reconciles Prometheus targets. -->
-  <path class="edge-blue edge-dashed" d="M690 780 V794"/>
+  <path class="edge-blue edge-dashed" d="M690 780 V792 H519 V798"/>
   <g>
-    <rect x="650" y="794" width="150" height="22" rx="11" fill="#E0F2FE" stroke="#38BDF8"/>
-    <text class="pipeline-title" x="725" y="809" text-anchor="middle">Prometheus Operator</text>
+    <rect x="430" y="798" width="178" height="18" rx="9" fill="#E0F2FE" stroke="#38BDF8"/>
+    <use href="#logo-prometheus" x="437" y="801" width="12" height="12"/>
+    <text class="pipeline-title" x="455" y="811">Prometheus Operator</text>
   </g>
 
   <!-- Deployment paths -->
@@ -256,18 +334,21 @@
   <text class="pipeline-small" x="505" y="875" text-anchor="end">NDJSON</text>
 
   <rect class="node" x="510" y="864" width="130" height="49" rx="9" stroke="#F59E0B"/>
-  <text class="pipeline-title" x="575" y="881" text-anchor="middle">Fluent Bit</text>
+  <use href="#logo-fluent-bit" x="518" y="870" width="20" height="20"/>
+  <text class="pipeline-title" x="545" y="881">Fluent Bit</text>
   <text class="pipeline-small" x="575" y="896" text-anchor="middle">DaemonSet · CRI tail</text>
   <text class="pipeline-small" x="575" y="908" text-anchor="middle">parse · filter · enrich</text>
 
   <path class="edge" d="M640 889 H653"/>
   <rect class="node" x="653" y="864" width="155" height="49" rx="9"/>
-  <text class="pipeline-title" x="730.5" y="884" text-anchor="middle">Elasticsearch</text>
+  <use href="#logo-elasticsearch" x="662" y="870" width="20" height="20"/>
+  <text class="pipeline-title" x="690" y="884">Elasticsearch</text>
   <text class="pipeline-small" x="730.5" y="901" text-anchor="middle">log indices</text>
 
   <path class="edge" d="M808 889 H825"/>
   <rect class="node" x="825" y="864" width="140" height="49" rx="9"/>
-  <text class="pipeline-title" x="895" y="884" text-anchor="middle">Kibana</text>
+  <use href="#logo-kibana" x="836" y="870" width="20" height="20"/>
+  <text class="pipeline-title" x="864" y="884">Kibana</text>
   <text class="pipeline-small" x="895" y="901" text-anchor="middle">log search</text>
 
   <!-- Traces: OTLP -> OTel Collector -> APM Server -> Elasticsearch -> Kibana APM -->
@@ -277,65 +358,78 @@
   <path class="edge-violet" d="M500 965 H510"/>
   <text class="pipeline-small" x="497" y="948" text-anchor="end">OTLP/HTTP</text>
 
-  <rect class="node" x="510" y="937" width="135" height="56" rx="9" stroke="#8B5CF6"/>
-  <text class="pipeline-title" x="577.5" y="954" text-anchor="middle">OTel Collector</text>
-  <text class="pipeline-small" x="577.5" y="970" text-anchor="middle">memory limit · filter</text>
-  <text class="pipeline-small" x="577.5" y="984" text-anchor="middle">sample · batch</text>
+  <rect class="node" x="510" y="937" width="130" height="56" rx="9" stroke="#8B5CF6"/>
+  <use href="#logo-opentelemetry" x="518" y="943" width="20" height="20"/>
+  <text class="pipeline-title-compact" x="544" y="954">OTel Collector</text>
+  <text class="pipeline-small" x="575" y="970" text-anchor="middle">memory limit · filter</text>
+  <text class="pipeline-small" x="575" y="984" text-anchor="middle">sample · batch</text>
 
-  <path class="edge-violet" d="M645 965 H661"/>
-  <rect class="node" x="661" y="937" width="86" height="56" rx="9"/>
-  <text class="pipeline-title" x="704" y="960" text-anchor="middle">APM Server</text>
-  <text class="pipeline-small" x="704" y="978" text-anchor="middle">OTLP/gRPC</text>
+  <path class="edge-violet" d="M640 965 H645"/>
+  <rect class="node" x="645" y="937" width="104" height="56" rx="9"/>
+  <use href="#logo-elasticsearch" x="652" y="945" width="14" height="14"/>
+  <text class="pipeline-title-compact" x="672" y="958">APM Server</text>
+  <text class="pipeline-small" x="697" y="978" text-anchor="middle">OTLP/gRPC</text>
 
-  <path class="edge-violet" d="M747 965 H763"/>
-  <rect class="node" x="763" y="937" width="102" height="56" rx="9"/>
-  <text class="pipeline-title" x="814" y="958" text-anchor="middle">Elasticsearch</text>
+  <path class="edge-violet" d="M749 965 H756"/>
+  <rect class="node" x="756" y="937" width="116" height="56" rx="9"/>
+  <use href="#logo-elasticsearch" x="763" y="945" width="14" height="14"/>
+  <text class="pipeline-title-compact" x="782" y="958">Elasticsearch</text>
   <text class="pipeline-small" x="814" y="977" text-anchor="middle">APM indices</text>
 
-  <path class="edge-violet" d="M865 965 H881"/>
-  <rect class="node" x="881" y="937" width="84" height="56" rx="9"/>
-  <text class="pipeline-title" x="923" y="958" text-anchor="middle">Kibana</text>
-  <text class="pipeline-small" x="923" y="977" text-anchor="middle">APM</text>
+  <path class="edge-violet" d="M872 965 H879"/>
+  <rect class="node" x="879" y="937" width="86" height="56" rx="9"/>
+  <use href="#logo-kibana" x="885" y="945" width="14" height="14"/>
+  <text class="pipeline-title-compact" x="904" y="958">Kibana</text>
+  <text class="pipeline-small" x="922" y="977" text-anchor="middle">APM</text>
 
   <!-- Metrics: PodMonitor selects the workers; Prometheus pulls each pod directly. -->
-  <rect x="425" y="1011" width="555" height="96" rx="10" fill="#EFF6FF" stroke="#60A5FA" stroke-opacity="0.6"/>
-  <rect x="436" y="1049" width="66" height="22" rx="11" fill="#DBEAFE"/>
-  <text class="lane-label" x="469" y="1064" text-anchor="middle" fill="#1D4ED8">METRICS</text>
+  <rect x="425" y="1011" width="555" height="54" rx="10" fill="#EFF6FF" stroke="#60A5FA" stroke-opacity="0.6"/>
+  <rect x="436" y="1027" width="66" height="22" rx="11" fill="#DBEAFE"/>
+  <text class="lane-label" x="469" y="1042" text-anchor="middle" fill="#1D4ED8">METRICS</text>
 
-  <rect class="node" x="560" y="1042" width="170" height="48" rx="9" stroke="#2563EB"/>
-  <text class="pipeline-title" x="645" y="1061" text-anchor="middle">Prometheus</text>
-  <text class="pipeline-small" x="645" y="1079" text-anchor="middle">scrapes selected pods</text>
+  <rect class="node" x="560" y="1018" width="180" height="40" rx="9" stroke="#2563EB"/>
+  <use href="#logo-prometheus" x="570" y="1026" width="22" height="22"/>
+  <text class="pipeline-title" x="601" y="1034">Prometheus</text>
+  <text class="pipeline-small" x="601" y="1049">scrapes /metrics · 15s</text>
 
-  <path class="edge-blue" d="M730 1066 H835"/>
-  <text class="pipeline-small" x="782.5" y="1056" text-anchor="middle">metrics</text>
-  <rect class="node" x="835" y="1042" width="130" height="48" rx="9"/>
-  <text class="pipeline-title" x="900" y="1061" text-anchor="middle">Grafana</text>
-  <text class="pipeline-small" x="900" y="1079" text-anchor="middle">PromQL</text>
+  <path class="edge-blue" d="M740 1038 H835"/>
+  <text class="pipeline-small" x="787.5" y="1029" text-anchor="middle">metrics</text>
+  <rect class="node" x="835" y="1018" width="130" height="40" rx="9"/>
+  <use href="#logo-grafana" x="845" y="1026" width="22" height="22"/>
+  <text class="pipeline-title" x="875" y="1034">Grafana</text>
+  <text class="pipeline-small" x="900" y="1049" text-anchor="middle">PromQL</text>
 
   <!-- Control plane: the operator turns PodMonitor declarations into scrape targets. -->
-  <path class="edge-blue edge-dashed" d="M725 816 H400 V1022 H590 V1042"/>
-  <text class="pipeline-small" x="495" y="1018" text-anchor="middle">reconcile targets</text>
+  <path class="edge-blue edge-dashed" d="M430 807 H400 V1068 H545 V1038 H560"/>
 
-  <!-- Trace-derived metrics join the same Prometheus/Grafana path. -->
-  <path class="edge-blue" d="M577.5 993 V1016 H650 V1042"/>
-  <text class="pipeline-small" x="592" y="1011">spanmetrics</text>
+  <!-- Prometheus scrapes the selected worker pods; application metrics bypass OTel Collector. -->
+  <path class="edge-blue" d="M700 1018 V1007 H973 V792"/>
 
-  <!-- Prometheus scrapes the selected worker pods; metrics are not pushed to the collector. -->
-  <path class="edge-blue" d="M700 1042 V1022 H973 V814 H956 V792"/>
-  <text class="edge-label" x="838" y="810">scrape /metrics · 15s</text>
+  <!-- Scheduled CronJobs archive old Elasticsearch log indices to S3. -->
+  <rect x="425" y="1072" width="555" height="35" rx="10" fill="#F0FDF4" stroke="#4D7C0F" stroke-opacity="0.55"/>
+  <rect x="436" y="1078" width="66" height="22" rx="11" fill="#DCFCE7"/>
+  <text class="lane-label" x="469" y="1093" text-anchor="middle" fill="#3F6212">ARCHIVE</text>
 
-  <!-- Internet gateway on the Application VPC edge -->
+  <rect class="node" x="510" y="1075" width="130" height="28" rx="8"/>
+  <use href="#logo-elasticsearch" x="518" y="1081" width="16" height="16"/>
+  <text class="pipeline-title" x="541" y="1093">ES log indices</text>
+  <path class="edge" d="M640 1089 H655"/>
+  <rect class="node" x="655" y="1075" width="180" height="28" rx="8" stroke="#4D7C0F"/>
+  <use href="#icon-cronjob" x="663" y="1081" width="16" height="16"/>
+  <text class="pipeline-title" x="686" y="1093">Log Archive CronJobs</text>
+
+  <path class="edge-blue" d="M835 1089 H862 V1192"/>
+  <text class="pipeline-small" x="884" y="1085">daily · gzip</text>
+
+  <!-- Internet gateway on the VPC edge -->
   <g>
-    <circle cx="1094" cy="471" r="32" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="1.5"/>
-    <use href="#icon-internet-gateway" x="1070" y="447" width="48" height="48"/>
-    <text class="small" x="1094" y="520" text-anchor="middle">Internet Gateway</text>
+    <circle cx="1395" cy="471" r="32" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="1.5"/>
+    <use href="#icon-internet-gateway" x="1371" y="447" width="48" height="48"/>
+    <text class="small" x="1395" y="520" text-anchor="middle">Internet Gateway</text>
   </g>
 
-  <!-- Data VPC: operational reads and notification history are isolated stores. -->
-  <rect x="1140" y="555" width="255" height="565" rx="16" fill="#FBF9FF" fill-opacity="0.9" stroke="#8C4FFF" stroke-width="2"/>
-  <rect x="1157" y="539" width="135" height="32" rx="16" fill="#F2ECFF" stroke="#8C4FFF"/>
-  <text class="label" x="1175" y="560">Data VPC</text>
-  <rect x="1172" y="590" width="195" height="495" rx="13" fill="#F2FCFC" stroke="#00A4A6" stroke-width="1.6" stroke-dasharray="7 5"/>
+  <!-- The operational database remains in private subnets. -->
+  <rect x="1172" y="590" width="195" height="245" rx="13" fill="#F2FCFC" stroke="#00A4A6" stroke-width="1.6" stroke-dasharray="7 5"/>
   <text class="small" x="1188" y="616">Private DB subnets</text>
   <g filter="url(#soft-shadow)">
     <rect class="node" x="1192" y="640" width="155" height="170" rx="12"/>
@@ -344,28 +438,56 @@
     <text class="small" x="1269.5" y="764" text-anchor="middle">Amazon RDS · MySQL</text>
     <text class="tiny" x="1269.5" y="786" text-anchor="middle">worker read replica</text>
   </g>
+
+  <path class="edge-blue" d="M983 734 H1192"/>
+  <text class="edge-label" x="1080" y="722">read-only</text>
+  <path class="edge-blue edge-dashed" d="M983 770 H1102 V1168 H1095 V1192"/>
+  <text class="edge-label" x="1090" y="1138" text-anchor="end">REQUESTED · ACCEPTED / FAILED / ERROR</text>
+  <text class="edge-label" x="1090" y="1155" text-anchor="end">publish · fire-and-forget</text>
+
+  <!-- Application history fans out from SNS to independent archive and analytics paths. -->
   <g filter="url(#soft-shadow)">
-    <rect class="node" x="1192" y="850" width="155" height="185" rx="12"/>
-    <use href="#icon-rds" x="1238" y="865" width="62" height="62"/>
-    <text class="node-title" x="1269.5" y="950" text-anchor="middle">Notification History</text>
-    <text class="node-title" x="1269.5" y="971" text-anchor="middle">DB</text>
-    <text class="small" x="1269.5" y="994" text-anchor="middle">Amazon RDS · MySQL</text>
-    <text class="tiny" x="1269.5" y="1016" text-anchor="middle">isolated write store</text>
+    <rect class="node" x="750" y="1192" width="225" height="54" rx="12"/>
+    <use href="#icon-s3-bucket" x="757" y="1197" width="44" height="44"/>
+    <text class="node-title" x="813" y="1215">Log Archive S3</text>
+    <text class="tiny" x="813" y="1235">Glacier Instant Retrieval</text>
+  </g>
+  <g filter="url(#soft-shadow)">
+    <rect class="node" x="995" y="1192" width="200" height="54" rx="12"/>
+    <use href="#icon-sns" x="1002" y="1197" width="44" height="44"/>
+    <text class="node-title" x="1053" y="1215">Amazon SNS</text>
+    <text class="tiny" x="1053" y="1235">notification-events</text>
+  </g>
+  <path class="edge-blue" d="M1195 1219 H1215"/>
+  <g filter="url(#soft-shadow)">
+    <rect class="node" x="1215" y="1192" width="180" height="54" rx="12"/>
+    <use href="#icon-firehose" x="1222" y="1197" width="44" height="44"/>
+    <text class="pipeline-title" x="1273" y="1215">Data Firehose</text>
+    <text class="tiny" x="1273" y="1235">buffer · gzip</text>
+  </g>
+  <path class="edge-blue" d="M1305 1246 V1270"/>
+  <g filter="url(#soft-shadow)">
+    <rect class="node" x="1215" y="1270" width="180" height="54" rx="12"/>
+    <use href="#icon-s3-bucket" x="1222" y="1275" width="44" height="44"/>
+    <text class="pipeline-title" x="1273" y="1293">History S3</text>
+    <text class="tiny" x="1273" y="1313">raw archive · gzip</text>
+  </g>
+  <path class="edge-blue" d="M1095 1246 V1270"/>
+  <g filter="url(#soft-shadow)">
+    <rect class="node" x="995" y="1270" width="200" height="54" rx="12"/>
+    <use href="#icon-sqs" x="1002" y="1275" width="44" height="44"/>
+    <text class="pipeline-title" x="1053" y="1293">SQS + DLQ</text>
+    <text class="tiny" x="1053" y="1313">retry buffer</text>
+  </g>
+  <path class="edge-blue" d="M1095 1324 V1348"/>
+  <g filter="url(#soft-shadow)">
+    <rect class="node" x="995" y="1348" width="200" height="58" rx="12"/>
+    <use href="#icon-lambda" x="1002" y="1355" width="44" height="44"/>
+    <text class="pipeline-title" x="1053" y="1372">Lambda Consumer</text>
+    <text class="tiny" x="1053" y="1393">batch transform · WIF</text>
   </g>
 
-  <g>
-    <circle cx="1110" cy="716" r="35" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="1.5"/>
-    <use href="#icon-peering" x="1086" y="692" width="48" height="48"/>
-    <text class="small" x="1110" y="768" text-anchor="middle">VPC Peering</text>
-  </g>
-  <path class="edge-blue" d="M983 734 H1038 Q1054 734 1054 718 Q1054 716 1056 716 H1075"/>
-  <path class="edge-blue" d="M1145 716 H1192"/>
-  <path class="edge-blue" d="M1110 751 V942 H1192"/>
-  <text class="edge-label" x="1014" y="705">DB access</text>
-  <text class="edge-label" x="1152" y="704">read-only</text>
-  <text class="edge-label" x="1123" y="930">history writes</text>
-
-  <!-- Analytics pipeline: operational and history data are loaded independently. -->
+  <!-- Analytics pipeline: operational data loads directly; history arrives through SQS and Lambda. -->
   <rect x="1470" y="790" width="200" height="360" rx="18" fill="#F4F8FF" stroke="#4285F4" stroke-width="1.7"/>
   <rect x="1490" y="774" width="160" height="32" rx="16" fill="#E8F0FE" stroke="#4285F4"/>
   <circle cx="1508" cy="790" r="5" fill="#4285F4"/>
@@ -374,9 +496,9 @@
   <g filter="url(#soft-shadow)">
     <rect class="node" x="1490" y="835" width="160" height="130" rx="14"/>
     <circle cx="1570" cy="875" r="25" fill="#4285F4"/>
-    <path d="M1558 881 v-10 M1565 881 v-17 M1572 881 v-7" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
-    <circle cx="1578" cy="874" r="9" fill="none" stroke="#FFFFFF" stroke-width="2.5"/>
-    <path d="M1584 881 l7 7" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M1558 882 v-10 M1565 882 v-17 M1572 882 v-7" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="1579" cy="874" r="8" fill="none" stroke="#FFFFFF" stroke-width="2.5"/>
+    <path d="M1585 880 l6 6" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
     <text class="node-title" x="1570" y="927" text-anchor="middle">BigQuery</text>
     <text class="small" x="1570" y="947" text-anchor="middle">analytics warehouse</text>
   </g>
@@ -385,15 +507,14 @@
     <rect class="node" x="1490" y="1005" width="160" height="105" rx="14"/>
     <rect x="1510" y="1027" width="42" height="34" rx="6" fill="#E8F0FE" stroke="#4285F4"/>
     <path d="M1519 1052 v-8 M1527 1052 v-15 M1535 1052 v-11 M1517 1054 h21" fill="none" stroke="#2563EB" stroke-width="2.2" stroke-linecap="round"/>
-    <text class="node-title" x="1562" y="1039">Analytics</text>
-    <text class="node-title" x="1562" y="1059">Dashboard</text>
-    <text class="tiny" x="1570" y="1087" text-anchor="middle">delivery · conversion · trends</text>
+    <text class="pipeline-title" x="1562" y="1039">Analytics</text>
+    <text class="pipeline-title" x="1562" y="1059">Dashboard</text>
+    <text class="tiny" x="1570" y="1087" text-anchor="middle">follow-up scope</text>
   </g>
 
-  <path class="edge-blue" d="M1347 716 H1428 Q1444 716 1444 732 V875 H1490"/>
+  <path class="edge-blue" d="M1347 716 H1660 V900 H1650"/>
   <text class="edge-label" x="1360" y="704">operational data</text>
-  <path class="edge-blue" d="M1347 942 H1445 Q1462 942 1462 925 H1490"/>
-  <text class="edge-label" x="1372" y="930">history data</text>
+  <path class="edge-blue" d="M1195 1377 H1455 V900 H1490"/>
   <path class="edge-blue" d="M1570 965 V1005"/>
   <text class="edge-label" x="1582" y="991">query</text>
 
@@ -409,12 +530,12 @@
     <text class="node-title" x="1574" y="495" text-anchor="middle">Messaging API</text>
     <text class="small" x="1574" y="515" text-anchor="middle">AlimTalk · LMS</text>
   </g>
-  <path class="edge-orange" d="M1002 471 H1058"/>
-  <path class="edge-orange" d="M1126 471 H1425 Q1441 471 1441 455 H1490"/>
+  <path class="edge-orange" d="M1002 471 H1363"/>
+  <path class="edge-orange" d="M1427 471 H1490"/>
   <text class="edge-label" x="1198" y="459">message delivery</text>
 
   <!-- Compact legend -->
-  <g transform="translate(52 1340)">
+  <g transform="translate(52 1530)">
     <path d="M0 0 h38" class="edge-orange"/>
     <text class="small" x="52" y="5">job &amp; notification flow</text>
     <path d="M226 0 h38" class="edge-blue"/>
