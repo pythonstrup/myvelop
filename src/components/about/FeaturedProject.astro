@@ -1,0 +1,225 @@
+---
+import notificationArchitectureUrl from '../../assets/portfolio/notification-architecture.svg?url';
+import type { AboutFeaturedProjectContent } from '../../data/about';
+
+interface Props {
+	content: AboutFeaturedProjectContent;
+}
+
+const { content } = Astro.props;
+// Astro dev serves imported source SVGs through Vite's URL route.
+const notificationArchitectureSrc = import.meta.env.DEV
+	? `${notificationArchitectureUrl}?url`
+	: notificationArchitectureUrl;
+---
+
+<article class="featured-project">
+	<div class="project-copy">
+		<p class="eyebrow">{content.eyebrow}</p>
+		<h3>{content.title}</h3>
+		<p class="summary">{content.summary}</p>
+
+		<ul class="highlights">
+			{
+				content.highlights.map((highlight) => (
+					<li>
+						<strong>{highlight.value}</strong>
+						<span>{highlight.label}</span>
+					</li>
+				))
+			}
+		</ul>
+
+		<ul class="stack">
+			{content.stack.map((technology) => <li>{technology}</li>)}
+		</ul>
+
+		<a class="article-link" href={content.articleHref}>
+			{content.articleLabel}<span aria-hidden="true">→</span>
+		</a>
+	</div>
+
+	<figure>
+		<div class="diagram-frame">
+			<img
+				src={notificationArchitectureSrc}
+				width="1700"
+				height="1580"
+				alt={content.diagramAlt}
+				loading="lazy"
+				decoding="async"
+			/>
+		</div>
+		<figcaption>
+			<span>{content.diagramCaption}</span>
+			<a href={notificationArchitectureSrc} target="_blank" rel="noreferrer">
+				{content.diagramLinkLabel}<span aria-hidden="true">↗</span>
+			</a>
+		</figcaption>
+	</figure>
+</article>
+
+<style>
+	.featured-project {
+		grid-column: 1 / -1;
+		min-width: 0;
+		overflow: hidden;
+		border: 1px solid rgb(var(--gray-light));
+		border-radius: 18px;
+		background: rgb(var(--bg));
+	}
+	.project-copy {
+		max-width: 860px;
+		padding: clamp(1.35rem, 3vw, 2.25rem);
+	}
+	.eyebrow {
+		margin: 0 0 0.65rem;
+		font-size: 0.75rem;
+		font-weight: 750;
+		letter-spacing: 0.12em;
+		color: var(--accent);
+	}
+	h3 {
+		max-width: 34ch;
+		margin: 0;
+		font-size: clamp(1.65rem, 4vw, 2.6rem);
+		line-height: 1.16;
+		letter-spacing: -0.045em;
+		text-wrap: balance;
+		white-space: pre-line;
+		word-break: keep-all;
+	}
+	.summary {
+		max-width: 72ch;
+		margin: 1rem 0 0;
+		font-size: 1rem;
+		line-height: 1.75;
+		color: rgb(var(--gray));
+	}
+	.highlights {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 1px;
+		margin: 1.75rem 0 0;
+		padding: 0;
+		border: 1px solid rgb(var(--gray-light));
+		border-radius: 12px;
+		overflow: hidden;
+		background: rgb(var(--gray-light));
+		list-style: none;
+	}
+	.highlights li {
+		min-width: 0;
+		padding: 1rem;
+		background: rgb(var(--bg));
+	}
+	.highlights strong,
+	.highlights span {
+		display: block;
+	}
+	.highlights strong {
+		font-size: 1.1rem;
+		letter-spacing: -0.025em;
+		color: rgb(var(--black));
+	}
+	.highlights span {
+		margin-top: 0.3rem;
+		font-size: 0.82rem;
+		line-height: 1.45;
+		color: rgb(var(--gray));
+	}
+	.stack {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.45rem;
+		margin: 1.25rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+	.stack li {
+		padding: 0.35rem 0.6rem;
+		border-radius: 999px;
+		background: color-mix(in srgb, rgb(var(--gray-light)) 55%, rgb(var(--bg)));
+		font-size: 0.78rem;
+		font-weight: 650;
+		color: rgb(var(--gray-dark));
+	}
+	.article-link,
+	figcaption a {
+		display: inline-flex;
+		min-height: 44px;
+		align-items: center;
+		gap: 0.35rem;
+		font-size: 0.9rem;
+		font-weight: 700;
+		color: var(--accent);
+		text-underline-offset: 0.2em;
+	}
+	.article-link {
+		margin-top: 0.75rem;
+	}
+	.article-link:hover,
+	figcaption a:hover {
+		text-decoration-thickness: 2px;
+	}
+	.article-link:focus-visible,
+	figcaption a:focus-visible {
+		border-radius: 4px;
+		outline: 2px solid var(--accent);
+		outline-offset: 3px;
+	}
+	figure {
+		margin: 0;
+		border-top: 1px solid rgb(var(--gray-light));
+	}
+	.diagram-frame {
+		padding: clamp(0.5rem, 2vw, 1rem);
+		background: #f8fafc;
+	}
+	.diagram-frame img {
+		display: block;
+		width: 100%;
+		height: auto;
+		margin: 0 auto;
+	}
+	figcaption {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem 1.25rem;
+		padding: 0.75rem 1.25rem;
+		border-top: 1px solid rgb(var(--gray-light));
+		font-size: 0.84rem;
+		line-height: 1.5;
+		color: rgb(var(--gray));
+	}
+	figcaption > span {
+		max-width: 72ch;
+	}
+	figcaption a {
+		flex: none;
+	}
+
+	@media (max-width: 600px) {
+		.featured-project {
+			border-radius: 16px;
+		}
+		.project-copy {
+			padding: 1.25rem;
+		}
+		.highlights {
+			grid-template-columns: 1fr;
+		}
+		figcaption {
+			align-items: flex-start;
+			flex-direction: column;
+			padding: 0.85rem 1rem;
+		}
+	}
+
+	@media (max-width: 480px) {
+		h3 {
+			white-space: normal;
+		}
+	}
+</style>

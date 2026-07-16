@@ -2,6 +2,7 @@
 import ProfileImage from '../assets/profile.jpg';
 import AboutHero from '../components/about/AboutHero.astro';
 import ExperienceTimeline from '../components/about/ExperienceTimeline.astro';
+import FeaturedProject from '../components/about/FeaturedProject.astro';
 import ImpactMetrics from '../components/about/ImpactMetrics.astro';
 import ResumeSection from '../components/about/ResumeSection.astro';
 import BaseHead from '../components/BaseHead.astro';
@@ -144,11 +145,15 @@ const content = getAboutContent(lang);
 			<AboutHero content={content.hero} image={ProfileImage} />
 			<ImpactMetrics content={content.metrics} />
 
-			<ResumeSection number="01" title={content.experience.label} meta={content.experience.meta}>
+			<ResumeSection number="01" title={content.project.label}>
+				<FeaturedProject content={content.project} />
+			</ResumeSection>
+
+			<ResumeSection number="02" title={content.experience.label} meta={content.experience.meta}>
 				<ExperienceTimeline experiences={content.experience.items} />
 			</ResumeSection>
 
-			<ResumeSection number="02" title={content.education.label}>
+			<ResumeSection number="03" title={content.education.label}>
 				<article class="education">
 					<div class="education-head">
 						<h3>{content.education.item.school}</h3>
@@ -159,14 +164,14 @@ const content = getAboutContent(lang);
 				</article>
 			</ResumeSection>
 
-			<ResumeSection number="03" title={content.skills.label}>
+			<ResumeSection number="04" title={content.skills.label}>
 				<ul class="skills">
 					{content.skills.items.map((skill) => <li>{skill}</li>)}
 				</ul>
 			</ResumeSection>
 
 			<ResumeSection
-				number="04"
+				number="05"
 				title={`${content.activities.label} ${lang === 'ko' ? '·' : '&'} ${content.awards.label}`}
 			>
 				<div class="double-grid">

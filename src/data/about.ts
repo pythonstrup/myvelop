@@ -31,6 +31,25 @@ export interface AboutMetricsContent {
 	items: AboutMetric[];
 }
 
+export interface AboutProjectHighlight {
+	value: string;
+	label: string;
+}
+
+export interface AboutFeaturedProjectContent {
+	label: string;
+	eyebrow: string;
+	title: string;
+	summary: string;
+	highlights: AboutProjectHighlight[];
+	stack: string[];
+	articleHref: string;
+	articleLabel: string;
+	diagramAlt: string;
+	diagramCaption: string;
+	diagramLinkLabel: string;
+}
+
 export interface AboutExperience {
 	company: string;
 	period: string;
@@ -79,6 +98,7 @@ export interface AboutContent {
 	};
 	hero: AboutHeroContent;
 	metrics: AboutMetricsContent;
+	project: AboutFeaturedProjectContent;
 	experience: AboutExperienceContent;
 	education: AboutEducationContent;
 	skills: AboutSkillsContent;
@@ -123,6 +143,26 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 				{ value: '500→10ms', label: '캐시 계층 설계로 줄인 API 응답 시간' },
 				{ value: '연 3천만 원+', label: '워크플로우 내재화로 절감한 비용' },
 			],
+		},
+		project: {
+			label: '대표 프로젝트',
+			eyebrow: 'NOTIFICATION PLATFORM · 2026',
+			title: '한 달간 3천만 건을 처리한\n알림 발송 플랫폼',
+			summary:
+				'API 서버·어드민·배치에 흩어진 발송 경로를 Redis/BullMQ 기반 단일 큐로 통합했습니다. 수평 확장 가능한 Worker가 외부 API의 rate limit, 재시도, 중복 제거를 일관되게 제어하고, 발송 이력과 관측 데이터는 전달 경로와 분리해 보관·분석하도록 설계했습니다.',
+			highlights: [
+				{ value: '3천만 건', label: '한 달간 처리한 알림톡' },
+				{ value: '약 15만 건', label: '알림 발송으로 이어진 신고 완료' },
+				{ value: '151억 원', label: '알림 발송으로 이어진 매출 전환' },
+			],
+			stack: ['BullMQ', 'Redis', 'Kubernetes', 'AWS', 'BigQuery', 'Elastic', 'OpenTelemetry'],
+			articleHref: '/ko/blog/19/',
+			articleLabel: '기술 글 읽기',
+			diagramAlt:
+				'내부 서비스가 Redis와 BullMQ 큐에 작업을 넣고 EKS 알림 Worker가 외부 메시징 API로 전송하며, 발송 이력과 관측 데이터를 별도 파이프라인으로 보내는 아키텍처',
+			diagramCaption:
+				'발송 처리, 이력 보관·분석, 로그·트레이스·메트릭 관측을 서로 분리한 전체 구성입니다.',
+			diagramLinkLabel: '아키텍처 크게 보기',
 		},
 		experience: {
 			label: '경력',
@@ -235,6 +275,26 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 				{ value: '500→10ms', label: 'API latency after layered caching' },
 				{ value: '₩30M+/yr', label: 'Saved by bringing workflows in-house' },
 			],
+		},
+		project: {
+			label: 'Featured project',
+			eyebrow: 'NOTIFICATION PLATFORM · 2026',
+			title: 'A notification platform that handled\n30M Kakao messages in one month',
+			summary:
+				'I consolidated delivery paths scattered across API servers, admin tools, and batch jobs behind a single Redis/BullMQ queue. Horizontally scalable workers apply rate limits, retries, and deduplication consistently, while delivery history and observability data flow through separate archival and analytics pipelines.',
+			highlights: [
+				{ value: '30M', label: 'Kakao notifications handled in one month' },
+				{ value: '150K', label: 'Tax filings supported by notification delivery' },
+				{ value: '₩15.1B', label: 'Converted revenue supported by notification delivery' },
+			],
+			stack: ['BullMQ', 'Redis', 'Kubernetes', 'AWS', 'BigQuery', 'Elastic', 'OpenTelemetry'],
+			articleHref: '/blog/19/',
+			articleLabel: 'Read the technical write-up',
+			diagramAlt:
+				'Architecture showing internal services enqueueing work in Redis and BullMQ, EKS notification workers sending through an external messaging API, and separate history and observability pipelines',
+			diagramCaption:
+				'The full system separates message delivery, history archival and analytics, and logs, traces, and metrics.',
+			diagramLinkLabel: 'View the architecture',
 		},
 		experience: {
 			label: 'Experience',
