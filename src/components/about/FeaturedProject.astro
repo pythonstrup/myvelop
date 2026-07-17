@@ -1,4 +1,5 @@
 ---
+import cacheArchitectureUrl from '../../assets/portfolio/cache-architecture.svg?url';
 import notificationArchitectureUrl from '../../assets/portfolio/notification-architecture.svg?url';
 import type { AboutFeaturedProjectContent } from '../../data/about';
 
@@ -8,9 +9,12 @@ interface Props {
 
 const { content } = Astro.props;
 // Astro dev serves imported source SVGs through Vite's URL route.
-const notificationArchitectureSrc = import.meta.env.DEV
-	? `${notificationArchitectureUrl}?url`
-	: notificationArchitectureUrl;
+const visuals = {
+	notification: { url: notificationArchitectureUrl, width: 1700, height: 1580 },
+	cache: { url: cacheArchitectureUrl, width: 1600, height: 900 },
+};
+const visual = content.visual ? visuals[content.visual.key] : undefined;
+const visualSrc = visual && import.meta.env.DEV ? `${visual.url}?url` : visual?.url;
 ---
 
 <article class="featured-project">
@@ -34,29 +38,44 @@ const notificationArchitectureSrc = import.meta.env.DEV
 			{content.stack.map((technology) => <li>{technology}</li>)}
 		</ul>
 
-		<a class="article-link" href={content.articleHref}>
-			{content.articleLabel}<span aria-hidden="true">→</span>
-		</a>
+		<div class="project-links">
+			{
+				content.links.map((link) => (
+					<a
+						class="project-link"
+						href={link.href}
+						target={link.external ? '_blank' : undefined}
+						rel={link.external ? 'noreferrer' : undefined}
+					>
+						{link.label}<span aria-hidden="true">{link.external ? '↗' : '→'}</span>
+					</a>
+				))
+			}
+		</div>
 	</div>
 
-	<figure>
-		<div class="diagram-frame">
-			<img
-				src={notificationArchitectureSrc}
-				width="1700"
-				height="1580"
-				alt={content.diagramAlt}
-				loading="lazy"
-				decoding="async"
-			/>
-		</div>
-		<figcaption>
-			<span>{content.diagramCaption}</span>
-			<a href={notificationArchitectureSrc} target="_blank" rel="noreferrer">
-				{content.diagramLinkLabel}<span aria-hidden="true">↗</span>
-			</a>
-		</figcaption>
-	</figure>
+	{
+		content.visual && visual && visualSrc && (
+			<figure>
+				<div class="diagram-frame">
+					<img
+						src={visualSrc}
+						width={visual.width}
+						height={visual.height}
+						alt={content.visual.alt}
+						loading="lazy"
+						decoding="async"
+					/>
+				</div>
+				<figcaption>
+					<span>{content.visual.caption}</span>
+					<a href={visualSrc} target="_blank" rel="noreferrer">
+						{content.visual.linkLabel}<span aria-hidden="true">↗</span>
+					</a>
+				</figcaption>
+			</figure>
+		)
+	}
 </article>
 
 <style>
@@ -98,7 +117,7 @@ const notificationArchitectureSrc = import.meta.env.DEV
 	}
 	.highlights {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
 		gap: 1px;
 		margin: 1.75rem 0 0;
 		padding: 0;
@@ -144,7 +163,13 @@ const notificationArchitectureSrc = import.meta.env.DEV
 		font-weight: 650;
 		color: rgb(var(--gray-dark));
 	}
-	.article-link,
+	.project-links {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem 1rem;
+		margin-top: 0.75rem;
+	}
+	.project-link,
 	figcaption a {
 		display: inline-flex;
 		min-height: 44px;
@@ -155,14 +180,11 @@ const notificationArchitectureSrc = import.meta.env.DEV
 		color: var(--accent);
 		text-underline-offset: 0.2em;
 	}
-	.article-link {
-		margin-top: 0.75rem;
-	}
-	.article-link:hover,
+	.project-link:hover,
 	figcaption a:hover {
 		text-decoration-thickness: 2px;
 	}
-	.article-link:focus-visible,
+	.project-link:focus-visible,
 	figcaption a:focus-visible {
 		border-radius: 4px;
 		outline: 2px solid var(--accent);

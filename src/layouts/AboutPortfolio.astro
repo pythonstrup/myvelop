@@ -87,6 +87,10 @@ const content = getAboutContent(lang);
 				grid-template-columns: 1fr 1fr;
 				gap: 1rem;
 			}
+			.featured-projects {
+				display: grid;
+				gap: clamp(1.25rem, 3vw, 2rem);
+			}
 			.list-card {
 				padding: 1.5rem;
 				border: 1px solid rgb(var(--gray-light));
@@ -145,8 +149,10 @@ const content = getAboutContent(lang);
 			<AboutHero content={content.hero} image={ProfileImage} />
 			<ImpactMetrics content={content.metrics} />
 
-			<ResumeSection number="01" title={content.project.label}>
-				<FeaturedProject content={content.project} />
+			<ResumeSection number="01" title={content.projects.label}>
+				<div class="featured-projects">
+					{content.projects.items.map((project) => <FeaturedProject content={project} />)}
+				</div>
 			</ResumeSection>
 
 			<ResumeSection number="02" title={content.experience.label} meta={content.experience.meta}>
