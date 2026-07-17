@@ -43,7 +43,7 @@ export interface AboutProjectLink {
 }
 
 export interface AboutProjectVisual {
-	key: 'notification' | 'cache';
+	key: 'notification' | 'lohasmeal' | 'cache';
 	alt: string;
 	caption: string;
 	linkLabel: string;
@@ -155,7 +155,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 				{ value: '3천만 건', label: '한 달간 안정적으로 처리한 알림톡' },
 				{ value: '3.3초→63ms', label: 'ECC 오픈소스 formatter hook 실행 시간' },
 				{ value: '500→10ms', label: '캐시 계층 설계로 줄인 API 응답 시간' },
-				{ value: '10건', label: 'ECC에 병합된 오픈소스 PR' },
+				{ value: '연 3천만 원+', label: '자동화 내재화로 절감한 외부 도구 비용' },
 			],
 		},
 		projects: {
@@ -182,6 +182,39 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					},
 				},
 				{
+					eyebrow: 'LOHASMEAL COMMERCE PLATFORM · 2023–2025',
+					title: '매출 700% 성장과 함께 확장한\n로하스밀 커머스 플랫폼',
+					summary:
+						'10년간 운영된 ASP/VB 시스템과 699개의 스토어드 프로시저를 분석해 주문·결제·회원·상품·포인트·SCM을 Spring Boot 멀티모듈 구조로 재구축하고, 2개월 안에 마이그레이션을 마쳤습니다. Nuxt·Spring 서비스와 Redis Sentinel·MySQL 복제 구성을 Naver Cloud의 Kubernetes 클러스터 안에서 운영했습니다. 서버사이드 Conversion API를 구축해 광고 전환 효율을 168% 높였고, 서비스는 오픈 1년 만에 매출이 700% 성장하고 누적 회원 15만 명·MAU 3만 명 규모로 커졌습니다.',
+					highlights: [
+						{ value: '700%', label: '오픈 1년 내 매출 성장' },
+						{ value: '누적 15만 명', label: '회원 규모 · MAU 3만 명' },
+						{ value: '전환 효율 168%↑', label: '서버사이드 Conversion API 구축' },
+					],
+					stack: [
+						'Spring Boot',
+						'Nuxt',
+						'Meta Conversion API',
+						'Naver Cloud',
+						'Kubernetes',
+						'Jenkins',
+						'Docker Hub',
+						'MySQL',
+						'Redis Sentinel',
+						'Elastic Stack',
+					],
+					links: [
+						{ href: '/ko/blog/10/', label: '외부 API 장애 대응 글 읽기' },
+					],
+					visual: {
+						key: 'lohasmeal',
+						alt: 'Jenkins에서 빌드한 이미지를 Docker Hub에 게시해 Naver Cloud의 Kubernetes 클러스터로 배포하고, Nuxt·Spring과 Redis Sentinel·MySQL 복제 구성, Object Storage, Sentry·Elastic 관측 계층을 연결한 로하스밀 서비스 구조',
+						caption:
+							'Jenkins와 Docker Hub를 거쳐 Kubernetes에 배포하고, Nuxt·Spring·Redis·MySQL을 Sentry·Elastic Stack으로 관측한 구조입니다.',
+						linkLabel: '서비스 아키텍처 크게 보기',
+					},
+				},
+				{
 					eyebrow: 'KURLY 3PL INTEGRATION · 2025',
 					title: '컬리 3PL 전환을 위한\n주문·배송·재고 연동',
 					summary:
@@ -205,10 +238,10 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					eyebrow: 'OPEN SOURCE · ECC · 2026',
 					title: 'formatter hook을 52배 빠르게 만든\nECC 오픈소스 기여',
 					summary:
-						'프로젝트 설정에 맞춰 Biome 또는 Prettier를 자동으로 실행하도록 formatter hook을 개선했습니다. 중복 검사와 프로세스 호출도 줄여, 로컬 벤치마크에서 포맷팅이 끝날 때까지 걸리는 시간을 약 3.3초에서 63ms로 단축했습니다.',
+						'프로젝트 설정에 맞춰 Biome 또는 Prettier를 자동으로 실행하도록 formatter hook을 개선했습니다. 중복 검사와 프로세스 호출도 줄여, 로컬 벤치마크에서 포맷팅이 끝날 때까지 걸리는 시간을 약 3.3초에서 63ms로 단축했습니다. 또한 Review→Dedup→Verify 방식의 멀티 에이전트 코드 리뷰 워크플로우를 기여해 예제 기준 검증 대상을 11건에서 4건으로 줄였습니다.',
 					highlights: [
 						{ value: '3.3초→63ms', label: '로컬 벤치마크 기준 hook 실행' },
-						{ value: '10건', label: 'ECC에 병합된 PR' },
+						{ value: '11→4건', label: '중복 제거 후 검증할 리뷰 항목' },
 					],
 					stack: ['Node.js', 'Biome', 'Prettier', 'Claude Code', 'Open Source'],
 					links: [
@@ -220,6 +253,11 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 						{
 							href: 'https://github.com/affaan-m/ECC/pull/359',
 							label: '52배 최적화 PR',
+							external: true,
+						},
+						{
+							href: 'https://github.com/affaan-m/everything-claude-code/pull/2400',
+							label: '멀티 에이전트 리뷰 PR',
 							external: true,
 						},
 						{
@@ -340,7 +378,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 				{ value: '30M', label: 'Kakao notifications delivered in one month' },
 				{ value: '3.3s→63ms', label: 'ECC open-source formatter hook runtime' },
 				{ value: '500→10ms', label: 'API latency after layered caching' },
-				{ value: '10', label: 'Open-source PRs merged into ECC' },
+				{ value: '₩30M+/yr', label: 'Automation tooling cost saved with in-house workflows' },
 			],
 		},
 		projects: {
@@ -367,6 +405,39 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					},
 				},
 				{
+					eyebrow: 'LOHASMEAL COMMERCE PLATFORM · 2023–2025',
+					title: 'A commerce platform that scaled alongside\n700% revenue growth',
+					summary:
+						'I analyzed a decade-old ASP/VB system and 699 stored procedures, rebuilding orders, payments, accounts, catalog, points, and SCM as a Spring Boot multi-module platform and completing the migration in two months. Nuxt and Spring services, Redis Sentinel, and replicated MySQL all ran inside a Kubernetes cluster on Naver Cloud. I also built a server-side Conversion API that improved advertising conversion efficiency by 168%. The service grew 700% in revenue within a year, reaching 150K cumulative members and 30K MAU.',
+					highlights: [
+						{ value: '700%', label: 'Revenue growth within the first year' },
+						{ value: '150K members', label: 'Cumulative users · 30K MAU' },
+						{ value: '168%↑', label: 'Conversion efficiency after server-side CAPI' },
+					],
+					stack: [
+						'Spring Boot',
+						'Nuxt',
+						'Meta Conversion API',
+						'Naver Cloud',
+						'Kubernetes',
+						'Jenkins',
+						'Docker Hub',
+						'MySQL',
+						'Redis Sentinel',
+						'Elastic Stack',
+					],
+					links: [
+						{ href: '/blog/10/', label: 'Read the external API resilience post' },
+					],
+					visual: {
+						key: 'lohasmeal',
+						alt: 'Lohasmeal architecture where Jenkins publishes an image to Docker Hub for deployment to a Kubernetes cluster on Naver Cloud, with Nuxt, Spring, Redis Sentinel, replicated MySQL, Object Storage, Sentry, and Elastic services',
+						caption:
+							'Jenkins and Docker Hub deliver the application to Kubernetes, while Sentry and the Elastic Stack provide observability across Nuxt, Spring, Redis, and MySQL.',
+						linkLabel: 'View the service architecture',
+					},
+				},
+				{
 					eyebrow: 'KURLY 3PL INTEGRATION · 2025',
 					title: 'Order, delivery, and inventory integration\nfor the move to Kurly 3PL',
 					summary:
@@ -390,10 +461,10 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					eyebrow: 'OPEN SOURCE · ECC · 2026',
 					title: 'Made ECC formatter hooks\n52× faster',
 					summary:
-						'I added project-aware Biome and Prettier detection to ECC’s post-edit hook, then shortened the execution path by preferring local binaries, removing duplicate checks, and invoking hooks in-process. In a local benchmark, runtime fell from about 3.3 seconds to 63 ms; the work was credited in the ECC v1.9.0 changelog.',
+						'I added project-aware Biome and Prettier detection to ECC’s post-edit hook, then shortened the execution path by preferring local binaries, removing duplicate checks, and invoking hooks in-process. In a local benchmark, runtime fell from about 3.3 seconds to 63 ms; the work was credited in the ECC v1.9.0 changelog. I also contributed a Review→Dedup→Verify multi-agent workflow that reduced the example set from 11 raw findings to 4 items requiring verification.',
 					highlights: [
 						{ value: '3.3s→63ms', label: 'Hook runtime in a local benchmark' },
-						{ value: '10', label: 'Merged PRs in ECC' },
+						{ value: '11→4', label: 'Review items after duplicate findings were merged' },
 					],
 					stack: ['Node.js', 'Biome', 'Prettier', 'Claude Code', 'Open Source'],
 					links: [
@@ -405,6 +476,11 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 						{
 							href: 'https://github.com/affaan-m/ECC/pull/359',
 							label: '52× optimization PR',
+							external: true,
+						},
+						{
+							href: 'https://github.com/affaan-m/everything-claude-code/pull/2400',
+							label: 'Multi-agent review PR',
 							external: true,
 						},
 						{

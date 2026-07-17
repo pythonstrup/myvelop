@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1700 1580" role="img" aria-labelledby="diagram-title diagram-description">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1700 1520" role="img" aria-labelledby="diagram-title diagram-description">
   <title id="diagram-title">Notification delivery platform architecture</title>
   <desc id="diagram-description">A queue-driven notification platform running on Amazon EKS inside a single VPC. Internal services enqueue jobs in Amazon ElastiCache for Redis, and scalable notification services consume them, read from an operational Amazon RDS for MySQL database, send messages to a third-party messaging API through a NAT Gateway and Internet Gateway, and publish REQUESTED plus terminal ACCEPTED, FAILED, or ERROR events to Amazon SNS without blocking delivery. Amazon SNS fans out each history event independently: Amazon Data Firehose buffers and compresses raw events into Amazon S3 for long-term archival, while Amazon SQS with a dead-letter queue buffers retries for an AWS Lambda consumer that transforms batches and writes them to BigQuery. Operational data is loaded into BigQuery independently. Fluent Bit ships application logs to Elasticsearch and Kibana, while scheduled Kubernetes CronJobs compress older log indices and archive them in Amazon S3 Glacier Instant Retrieval. OpenTelemetry Collector sends traces through APM Server for trace ID correlation in Elasticsearch. Prometheus Operator converts PodMonitor selections into Prometheus scrape targets, Prometheus scrapes application metrics directly from each service pod, and Grafana visualizes those metrics.</desc>
 
@@ -145,6 +145,7 @@
     .pipeline-title-compact { font-size: 12px; font-weight: 700; }
     .pipeline-small { font-size: 12px; fill: #64748B; }
     .lane-label { font-size: 11px; font-weight: 800; letter-spacing: 0.8px; }
+    .legend-label { font-size: 16px; font-weight: 800; letter-spacing: 0.45px; }
     .boundary { fill: #FFFFFF; stroke-width: 2; }
     .node { fill: #FFFFFF; stroke: #CBD5E1; stroke-width: 1.5; }
     .edge { fill: none; stroke: #475569; stroke-width: 2; marker-end: url(#arrow); }
@@ -157,7 +158,7 @@
     .aws-word { fill: #FFFFFF; }
   </style>
 
-  <rect width="1700" height="1580" fill="#F8FAFC"/>
+  <rect width="1700" height="1520" fill="#F8FAFC"/>
 
   <!-- Heading -->
   <text class="title" x="52" y="55">Notification Delivery Architecture</text>
@@ -534,15 +535,28 @@
   <path class="edge-orange" d="M1427 471 H1490"/>
   <text class="edge-label" x="1198" y="459">message delivery</text>
 
-  <!-- Compact legend -->
-  <g transform="translate(52 1530)">
-    <path d="M0 0 h38" class="edge-orange"/>
-    <text class="small" x="52" y="5">job &amp; notification flow</text>
-    <path d="M226 0 h38" class="edge-blue"/>
-    <text class="small" x="278" y="5">data, metrics &amp; analytics</text>
-    <path d="M430 0 h38" class="edge-violet"/>
-    <text class="small" x="482" y="5">trace flow</text>
-    <path d="M590 0 h38" class="edge-teal edge-dashed"/>
-    <text class="small" x="642" y="5">deployment flow</text>
+  <!-- Header legend -->
+  <g transform="translate(1046 23)">
+    <g>
+      <rect width="176" height="40" rx="20" fill="#FFEDD5"/>
+      <path d="M13 20h20m-5-5 5 5-5 5" fill="none" stroke="#ED7100" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text class="legend-label" x="48" y="26" fill="#9A3412">NOTIFICATION</text>
+    </g>
+    <g transform="translate(188)">
+      <rect width="108" height="40" rx="20" fill="#DBEAFE"/>
+      <path d="M13 20h20m-5-5 5 5-5 5" fill="none" stroke="#2563EB" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text class="legend-label" x="48" y="26" fill="#1D4ED8">DATA</text>
+    </g>
+    <g transform="translate(308)">
+      <rect width="112" height="40" rx="20" fill="#EDE9FE"/>
+      <path d="M13 20h20m-5-5 5 5-5 5" fill="none" stroke="#7C3AED" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text class="legend-label" x="48" y="26" fill="#5B21B6">TRACE</text>
+    </g>
+    <g transform="translate(432)">
+      <rect width="172" height="40" rx="20" fill="#CCFBF1"/>
+      <path d="M13 20h11" fill="none" stroke="#0F766E" stroke-width="2.2" stroke-dasharray="4 3" stroke-linecap="round"/>
+      <path d="M24 20h9m-5-5 5 5-5 5" fill="none" stroke="#0F766E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text class="legend-label" x="48" y="26" fill="#115E59">DEPLOYMENT</text>
+    </g>
   </g>
 </svg>

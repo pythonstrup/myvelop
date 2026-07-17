@@ -27,6 +27,24 @@
     <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M0 0 10 5 0 10Z" fill="#7C3AED"/>
     </marker>
+    <symbol id="logo-spring" viewBox="0 0 24 24">
+      <path fill="#6DB33F" d="M21.8537 1.4158a10.4504 10.4504 0 0 1-1.284 2.2471A11.9666 11.9666 0 1 0 3.8518 20.7757l.4445.3951a11.9543 11.9543 0 0 0 19.6316-8.2971c.3457-3.0126-.568-6.8649-2.0743-11.458zM5.5805 20.8745a1.0174 1.0174 0 1 1-.1482-1.4323 1.0396 1.0396 0 0 1 .1482 1.4323zm16.1991-3.5806c-2.9385 3.9263-9.2601 2.5928-13.2852 2.7904 0 0-.7161.0494-1.4323.1481 0 0 .2717-.1234.6174-.2469 2.8398-.9877 4.1732-1.1853 5.9018-2.0743 3.2349-1.6545 6.4698-5.2844 7.1118-9.0379-1.2347 3.6053-4.9881 6.7167-8.3959 7.9761-2.3459.8643-6.5685 1.7039-6.5685 1.7039l-.1729-.0988c-2.8645-1.4076-2.9632-7.6304 2.2718-9.6306 2.2966-.889 4.4696-.395 6.9637-.9877 2.6422-.6174 5.7043-2.5929 6.939-5.1857 1.3828 4.1732 3.062 10.643.0493 14.6434z"/>
+    </symbol>
+    <symbol id="logo-caffeine" viewBox="0 0 24 24">
+      <path d="M5 8h11v5.2a5.3 5.3 0 0 1-5.3 5.3h-.4A5.3 5.3 0 0 1 5 13.2V8Zm11 1.8h1.5a2.7 2.7 0 0 1 0 5.4H16M7 5.5c0-1 1-1.2 1-2.2M11 5.5c0-1 1-1.2 1-2.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="logo-redis" viewBox="0 0 128 128">
+      <path fill="#A41E11" d="M121.8 93.1c-6.7 3.5-41.4 17.7-48.8 21.6-7.4 3.9-11.5 3.8-17.3 1S13 98.1 6.3 94.9c-3.3-1.6-5-2.9-5-4.2V78s48-10.5 55.8-13.2c7.8-2.8 10.4-2.9 17-.5s46.1 9.5 52.6 11.9v12.5c0 1.3-1.5 2.7-4.9 4.4z"/>
+      <path fill="#D82C20" d="M121.8 80.5C115.1 84 80.4 98.2 73 102.1c-7.4 3.9-11.5 3.8-17.3 1-5.8-2.8-42.7-17.7-49.4-20.9C-.3 79-.5 76.8 6 74.3c6.5-2.6 43.2-17 51-19.7 7.8-2.8 10.4-2.9 17-.5s41.1 16.1 47.6 18.5c6.7 2.4 6.9 4.4.2 7.9z"/>
+      <path fill="#A41E11" d="M121.8 72.5C115.1 76 80.4 90.2 73 94.1c-7.4 3.8-11.5 3.8-17.3 1C49.9 92.3 13 77.4 6.3 74.2c-3.3-1.6-5-2.9-5-4.2V57.3s48-10.5 55.8-13.2c7.8-2.8 10.4-2.9 17-.5s46.1 9.5 52.6 11.9V68c0 1.3-1.5 2.7-4.9 4.5z"/>
+      <path fill="#D82C20" d="M121.8 59.8c-6.7 3.5-41.4 17.7-48.8 21.6-7.4 3.8-11.5 3.8-17.3 1C49.9 79.6 13 64.7 6.3 61.5s-6.8-5.4-.3-7.9c6.5-2.6 43.2-17 51-19.7 7.8-2.8 10.4-2.9 17-.5s41.1 16.1 47.6 18.5c6.7 2.4 6.9 4.4.2 7.9z"/>
+      <path fill="#A41E11" d="M121.8 51c-6.7 3.5-41.4 17.7-48.8 21.6-7.4 3.8-11.5 3.8-17.3 1C49.9 70.9 13 56 6.3 52.8c-3.3-1.6-5.1-2.9-5.1-4.2V35.9s48-10.5 55.8-13.2c7.8-2.8 10.4-2.9 17-.5s46.1 9.5 52.6 11.9v12.5c.1 1.3-1.4 2.6-4.8 4.4z"/>
+      <path fill="#D82C20" d="M121.8 38.3C115.1 41.8 80.4 56 73 59.9c-7.4 3.8-11.5 3.8-17.3 1S13 43.3 6.3 40.1s-6.8-5.4-.3-7.9c6.5-2.6 43.2-17 51-19.7 7.8-2.8 10.4-2.9 17-.5s41.1 16.1 47.6 18.5c6.7 2.4 6.9 4.4.2 7.8z"/>
+      <path fill="#FFFFFF" d="m80.4 26.1-10.8 1.2-2.5 5.8-3.9-6.5-12.5-1.1 9.3-3.4-2.8-5.2 8.8 3.4 8.2-2.7-2.2 5.4zM66.5 54.5l-20.3-8.4 29.1-4.4z"/>
+      <ellipse cx="38.4" cy="35.4" rx="15.5" ry="6" fill="#FFFFFF"/>
+      <path fill="#7A0C00" d="m93.3 27.7 17.2 6.8-17.2 6.8z"/>
+      <path fill="#AD2115" d="m74.3 35.3 19-7.6v13.6l-1.9.8z"/>
+    </symbol>
   </defs>
 
   <style>
@@ -40,6 +58,7 @@
     .label { font-size: 15px; font-weight: 700; fill: #475569; paint-order: stroke; stroke: #F8FAFC; stroke-width: 6px; stroke-linejoin: round; }
     .tiny { font-size: 14px; fill: #64748B; }
     .pill { font-size: 14px; font-weight: 800; letter-spacing: 0.45px; }
+    .legend-pill { font-size: 16px; font-weight: 800; letter-spacing: 0.45px; }
     .node { fill: #FFFFFF; stroke: #CBD5E1; stroke-width: 1.5; }
     .read { fill: none; stroke: #334155; stroke-width: 3; marker-end: url(#arrow); stroke-linecap: round; stroke-linejoin: round; }
     .invalidate { fill: none; stroke: #EA580C; stroke-width: 3; marker-end: url(#arrow-orange); stroke-linecap: round; stroke-linejoin: round; }
@@ -51,20 +70,21 @@
   <text class="title" x="60" y="62">Multi-level Cache Architecture</text>
   <text class="subtitle" x="60" y="94">Fast local reads · shared Redis fallback · guarded source API</text>
 
-  <g transform="translate(1132 46)">
-    <rect width="118" height="34" rx="17" fill="#E2E8F0"/>
-    <circle cx="18" cy="17" r="5" fill="#334155"/>
-    <text class="pill" x="31" y="22">READ PATH</text>
+  <g transform="translate(1054 40)">
+    <rect width="146" height="40" rx="20" fill="#E2E8F0"/>
+    <path d="M13 20h20m-5-5 5 5-5 5" fill="none" stroke="#334155" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="legend-pill" x="48" y="26">READ PATH</text>
   </g>
-  <g transform="translate(1262 46)">
-    <rect width="152" height="34" rx="17" fill="#FFEDD5"/>
-    <circle cx="18" cy="17" r="5" fill="#EA580C"/>
-    <text class="pill" x="31" y="22" fill="#9A3412">INVALIDATION</text>
+  <g transform="translate(1212 40)">
+    <rect width="182" height="40" rx="20" fill="#FFEDD5"/>
+    <path d="M13 20h20m-5-5 5 5-5 5" fill="none" stroke="#EA580C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="legend-pill" x="48" y="26" fill="#9A3412">INVALIDATION</text>
   </g>
-  <g transform="translate(1426 46)">
-    <rect width="120" height="34" rx="17" fill="#EDE9FE"/>
-    <circle cx="18" cy="17" r="5" fill="#7C3AED"/>
-    <text class="pill" x="31" y="22" fill="#5B21B6">FALLBACK</text>
+  <g transform="translate(1406 40)">
+    <rect width="140" height="40" rx="20" fill="#EDE9FE"/>
+    <path d="M13 20h11" fill="none" stroke="#7C3AED" stroke-width="2.2" stroke-dasharray="4 3" stroke-linecap="round"/>
+    <path d="M24 20h9m-5-5 5 5-5 5" fill="none" stroke="#7C3AED" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="legend-pill" x="48" y="26" fill="#5B21B6">FALLBACK</text>
   </g>
   <rect x="60" y="130" width="1020" height="370" rx="24" fill="#FFFFFF" fill-opacity="0.78" stroke="#94A3B8" stroke-width="2"/>
   <rect x="86" y="110" width="244" height="42" rx="21" fill="#E2E8F0" stroke="#94A3B8"/>
@@ -78,8 +98,8 @@
 
   <g filter="url(#shadow)">
     <rect class="node" x="105" y="275" width="220" height="118" rx="18"/>
-    <rect x="124" y="296" width="46" height="46" rx="12" fill="#E0E7FF"/>
-    <path d="M137 319h20M151 312l7 7-7 7" fill="none" stroke="#4F46E5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="124" y="296" width="46" height="46" rx="12" fill="#F0FDF4" stroke="#BBF7D0"/>
+    <use href="#logo-spring" x="132" y="304" width="30" height="30" aria-hidden="true"/>
     <text class="node-title" x="187" y="330">Application</text>
     <text class="node-subtitle" x="124" y="373">Cache client &amp; loader</text>
   </g>
@@ -95,7 +115,7 @@
   <g filter="url(#shadow)" transform="translate(-60 0)">
     <rect x="840" y="248" width="200" height="172" rx="20" fill="url(#caffeine)" stroke="#6EE7B7" stroke-width="2"/>
     <circle cx="885" cy="294" r="23" fill="#059669"/>
-    <path d="M875 294h20M885 284v20" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+    <use href="#logo-caffeine" x="873" y="282" width="24" height="24" color="#FFFFFF" aria-hidden="true"/>
     <text class="node-title" x="920" y="292">L1</text>
     <text class="node-title" x="920" y="320">Caffeine</text>
     <text class="metric" x="865" y="365" fill="#047857">~10 ms</text>
@@ -114,8 +134,8 @@
 
   <g filter="url(#shadow)" transform="translate(0 -25)">
     <rect x="1170" y="226" width="320" height="174" rx="20" fill="url(#redis)" stroke="#FDA4AF" stroke-width="2"/>
-    <ellipse cx="1220" cy="276" rx="24" ry="10" fill="#E11D48"/>
-    <path d="M1196 276v32c0 6 11 10 24 10s24-4 24-10v-32M1196 292c0 6 11 10 24 10s24-4 24-10" fill="#E11D48" stroke="#BE123C" stroke-width="2"/>
+    <rect x="1194" y="249" width="52" height="52" rx="12" fill="#FFFFFF" stroke="#FECDD3"/>
+    <use href="#logo-redis" x="1200" y="254" width="40" height="42" aria-hidden="true"/>
     <text class="node-title" x="1263" y="284">L2 · Redis</text>
     <text class="metric" x="1196" y="349" fill="#BE123C">50–100 ms</text>
     <text class="node-subtitle" x="1196" y="378">Shared cache · master/replica</text>
@@ -123,8 +143,8 @@
 
   <g filter="url(#shadow)" transform="translate(0 -50)">
     <rect class="node" x="1170" y="444" width="320" height="96" rx="18"/>
-    <circle cx="1214" cy="492" r="22" fill="#FFF7ED" stroke="#FDBA74"/>
-    <path d="M1203 492h22M1208 484l-7 8 7 8M1220 484l7 8-7 8" fill="none" stroke="#EA580C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="1192" y="470" width="44" height="44" rx="11" fill="#FFFFFF" stroke="#FECDD3"/>
+    <use href="#logo-redis" x="1198" y="475" width="32" height="34" aria-hidden="true"/>
     <text class="node-title" x="1250" y="486">Redis Pub/Sub</text>
     <text class="node-subtitle" x="1250" y="512">cache:evict</text>
   </g>
@@ -132,7 +152,7 @@
   <path class="read" d="M980 334H1170"/>
   <text class="label" x="1040" y="318">on miss</text>
   <path class="invalidate" d="M540 393V442H1170"/>
-  <text class="label" x="720" y="426" fill="#C2410C">evict → publish</text>
+  <text class="label" x="720" y="470" fill="#C2410C">evict → publish</text>
 
   <rect x="500" y="638" width="580" height="200" rx="24" fill="#FFFFFF" fill-opacity="0.78" stroke="#94A3B8" stroke-width="2"/>
   <rect x="526" y="618" width="286" height="42" rx="21" fill="#E2E8F0" stroke="#94A3B8"/>
@@ -142,14 +162,14 @@
   <g filter="url(#shadow)">
     <rect x="530" y="694" width="240" height="98" rx="18" fill="url(#caffeine)" stroke="#6EE7B7" stroke-width="2"/>
     <circle cx="572" cy="743" r="20" fill="#059669"/>
-    <path d="M563 743h18M572 734v18" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"/>
+    <use href="#logo-caffeine" x="560" y="731" width="24" height="24" color="#FFFFFF" aria-hidden="true"/>
     <text class="node-title" x="605" y="738">Instance B · L1</text>
     <text class="node-subtitle" x="605" y="765">Evict local entry</text>
   </g>
   <g filter="url(#shadow)">
     <rect x="800" y="694" width="240" height="98" rx="18" fill="url(#caffeine)" stroke="#6EE7B7" stroke-width="2"/>
     <circle cx="842" cy="743" r="20" fill="#059669"/>
-    <path d="M833 743h18M842 734v18" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"/>
+    <use href="#logo-caffeine" x="830" y="731" width="24" height="24" color="#FFFFFF" aria-hidden="true"/>
     <text class="node-title" x="875" y="738">Instance N · L1</text>
     <text class="node-subtitle" x="875" y="765">Evict local entry</text>
   </g>

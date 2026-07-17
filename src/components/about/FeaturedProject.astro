@@ -1,5 +1,6 @@
 ---
 import cacheArchitectureUrl from '../../assets/portfolio/cache-architecture.svg?url';
+import lohasmealArchitectureUrl from '../../assets/portfolio/lohasmeal-architecture.svg?url';
 import notificationArchitectureUrl from '../../assets/portfolio/notification-architecture.svg?url';
 import type { AboutFeaturedProjectContent } from '../../data/about';
 
@@ -10,7 +11,8 @@ interface Props {
 const { content } = Astro.props;
 // Astro dev serves imported source SVGs through Vite's URL route.
 const visuals = {
-	notification: { url: notificationArchitectureUrl, width: 1700, height: 1580 },
+	notification: { url: notificationArchitectureUrl, width: 1700, height: 1520 },
+	lohasmeal: { url: lohasmealArchitectureUrl, width: 1600, height: 1100 },
 	cache: { url: cacheArchitectureUrl, width: 1600, height: 900 },
 };
 const visual = content.visual ? visuals[content.visual.key] : undefined;
