@@ -1,14 +1,12 @@
 ---
-import { getCollection } from 'astro:content';
 import BaseHead from '../../components/BaseHead.astro';
 import Footer from '../../components/Footer.astro';
 import FormattedDate from '../../components/FormattedDate.astro';
 import Header from '../../components/Header.astro';
 import { SITE_DESCRIPTION_KO, SITE_TITLE } from '../../consts';
+import { getBlogPosts } from '../../lib/blog';
 
-const posts = (await getCollection('blog', ({ id }) => id.startsWith('ko/')))
-	.sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
-	.slice(0, 3);
+const posts = (await getBlogPosts('ko')).slice(0, 3);
 ---
 
 <!doctype html>
