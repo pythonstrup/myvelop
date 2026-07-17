@@ -175,7 +175,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					links: [{ href: '/ko/blog/19/', label: '기술 글 읽기' }],
 					visual: {
 						key: 'notification',
-						alt: '내부 서비스가 Redis와 BullMQ 큐에 작업을 넣고 EKS 알림 Worker가 외부 메시징 API로 전송하며, Pulumi로 배포한 발송 이력 저장 인프라와 관측 파이프라인으로 데이터를 보내는 아키텍처',
+						alt: 'GitHub Actions가 이미지를 ECR에 게시하고 GitOps 브랜치를 갱신하면 Argo CD가 EKS에 배포하며, 내부 서비스의 Redis·BullMQ 작업과 Pulumi로 배포한 발송 이력 저장 인프라, 관측 파이프라인을 연결한 아키텍처',
 						caption:
 							'발송 처리와 이력 보관·분석을 분리하고, 이력 저장 인프라는 Pulumi로 배포한 구성입니다.',
 						linkLabel: '아키텍처 크게 보기',
@@ -412,7 +412,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					links: [{ href: '/blog/19/', label: 'Read the technical write-up' }],
 					visual: {
 						key: 'notification',
-						alt: 'Architecture showing internal services enqueueing work in Redis and BullMQ, EKS notification workers sending through an external messaging API, and a Pulumi-deployed delivery-history infrastructure alongside observability pipelines',
+						alt: 'Architecture showing GitHub Actions publishing images to ECR and updating GitOps branches for Argo CD deployment, internal services enqueueing work in Redis and BullMQ, and Pulumi-deployed delivery-history infrastructure alongside observability pipelines',
 						caption:
 							'The system separates delivery from history archival and analytics, with the history infrastructure deployed through Pulumi.',
 						linkLabel: 'View the architecture',
