@@ -2,7 +2,9 @@
 import cacheArchitectureUrl from '../../assets/portfolio/cache-architecture.svg?url';
 import lohasmealArchitectureUrl from '../../assets/portfolio/lohasmeal-architecture.svg?url';
 import notificationArchitectureUrl from '../../assets/portfolio/notification-architecture.svg?url';
+import zeppelinArchitectureUrl from '../../assets/portfolio/zeppelin-architecture.svg?url';
 import type { AboutFeaturedProjectContent } from '../../data/about';
+import ProjectVisual from './ProjectVisual.astro';
 
 interface Props {
 	content: AboutFeaturedProjectContent;
@@ -14,16 +16,36 @@ const visuals = {
 	notification: { url: notificationArchitectureUrl, width: 1700, height: 1520 },
 	lohasmeal: { url: lohasmealArchitectureUrl, width: 1600, height: 1100 },
 	cache: { url: cacheArchitectureUrl, width: 1600, height: 900 },
+	zeppelin: { url: zeppelinArchitectureUrl, width: 800, height: 1080 },
 };
 const visual = content.visual ? visuals[content.visual.key] : undefined;
 const visualSrc = visual && import.meta.env.DEV ? `${visual.url}?url` : visual?.url;
+const summaryParagraphs = content.summary.split('\n\n');
+const showContextualVisual = content.visual?.key === 'zeppelin' && summaryParagraphs.length > 1;
 ---
 
 <article class="featured-project">
 	<div class="project-copy">
 		<p class="eyebrow">{content.eyebrow}</p>
 		<h3>{content.title}</h3>
-		<p class="summary">{content.summary}</p>
+		<div class="summary">
+			{
+				summaryParagraphs.map((paragraph, index) => (
+					<Fragment>
+						<p>{paragraph}</p>
+						{showContextualVisual && index === 0 && content.visual && visual && visualSrc && (
+							<ProjectVisual
+								visual={content.visual}
+								src={visualSrc}
+								width={visual.width}
+								height={visual.height}
+								contextual
+							/>
+						)}
+					</Fragment>
+				))
+			}
+		</div>
 
 		<ul class="highlights">
 			{
@@ -56,28 +78,14 @@ const visualSrc = visual && import.meta.env.DEV ? `${visual.url}?url` : visual?.
 		</div>
 	</div>
 
-	{
-		content.visual && visual && visualSrc && (
-			<figure>
-				<div class="diagram-frame">
-					<img
-						src={visualSrc}
-						width={visual.width}
-						height={visual.height}
-						alt={content.visual.alt}
-						loading="lazy"
-						decoding="async"
-					/>
-				</div>
-				<figcaption>
-					<span>{content.visual.caption}</span>
-					<a href={visualSrc} target="_blank" rel="noreferrer">
-						{content.visual.linkLabel}<span aria-hidden="true">↗</span>
-					</a>
-				</figcaption>
-			</figure>
-		)
-	}
+	{content.visual && visual && visualSrc && !showContextualVisual && (
+		<ProjectVisual
+			visual={content.visual}
+			src={visualSrc}
+			width={visual.width}
+			height={visual.height}
+		/>
+	)}
 </article>
 
 <style>
@@ -116,6 +124,12 @@ const visualSrc = visual && import.meta.env.DEV ? `${visual.url}?url` : visual?.
 		font-size: 1rem;
 		line-height: 1.75;
 		color: rgb(var(--gray));
+	}
+	.summary p {
+		margin: 0;
+	}
+	.summary p:not(:first-child) {
+		margin-top: 0.8rem;
 	}
 	.highlights {
 		display: grid;
@@ -171,8 +185,7 @@ const visualSrc = visual && import.meta.env.DEV ? `${visual.url}?url` : visual?.
 		gap: 0.25rem 1rem;
 		margin-top: 0.75rem;
 	}
-	.project-link,
-	figcaption a {
+	.project-link {
 		display: inline-flex;
 		min-height: 44px;
 		align-items: center;
@@ -182,48 +195,14 @@ const visualSrc = visual && import.meta.env.DEV ? `${visual.url}?url` : visual?.
 		color: var(--accent);
 		text-underline-offset: 0.2em;
 	}
-	.project-link:hover,
-	figcaption a:hover {
+	.project-link:hover {
 		text-decoration-thickness: 2px;
 	}
-	.project-link:focus-visible,
-	figcaption a:focus-visible {
+	.project-link:focus-visible {
 		border-radius: 4px;
 		outline: 2px solid var(--accent);
 		outline-offset: 3px;
 	}
-	figure {
-		margin: 0;
-		border-top: 1px solid rgb(var(--gray-light));
-	}
-	.diagram-frame {
-		padding: clamp(0.5rem, 2vw, 1rem);
-		background: #f8fafc;
-	}
-	.diagram-frame img {
-		display: block;
-		width: 100%;
-		height: auto;
-		margin: 0 auto;
-	}
-	figcaption {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.75rem 1.25rem;
-		padding: 0.75rem 1.25rem;
-		border-top: 1px solid rgb(var(--gray-light));
-		font-size: 0.84rem;
-		line-height: 1.5;
-		color: rgb(var(--gray));
-	}
-	figcaption > span {
-		max-width: 72ch;
-	}
-	figcaption a {
-		flex: none;
-	}
-
 	@media (max-width: 600px) {
 		.featured-project {
 			border-radius: 16px;
@@ -233,11 +212,6 @@ const visualSrc = visual && import.meta.env.DEV ? `${visual.url}?url` : visual?.
 		}
 		.highlights {
 			grid-template-columns: 1fr;
-		}
-		figcaption {
-			align-items: flex-start;
-			flex-direction: column;
-			padding: 0.85rem 1rem;
 		}
 	}
 

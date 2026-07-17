@@ -43,7 +43,7 @@ export interface AboutProjectLink {
 }
 
 export interface AboutProjectVisual {
-	key: 'notification' | 'lohasmeal' | 'cache';
+	key: 'notification' | 'lohasmeal' | 'cache' | 'zeppelin';
 	alt: string;
 	caption: string;
 	linkLabel: string;
@@ -235,15 +235,34 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					},
 				},
 				{
+					eyebrow: 'OPEN SOURCE · APACHE ZEPPELIN · 2024',
+					title: '인터프리터 자원을 격리한\nApache Zeppelin 컨테이너화',
+					summary:
+						'Flink·JDBC·Spark 등 여러 인터프리터가 하나의 컨테이너에서 자원을 공유하던 구조를 Kubernetes Pod 단위로 분리하는 데 기여했습니다. 특정 인터프리터의 자원 사용이 다른 작업에 미치는 영향을 줄였고 각 인터프리터를 독립적으로 실행·확장할 수 있는 기반을 마련했습니다.\n\n팀 기여가 이어진 기간 동안 Zeppelin은 Kafka·Spark 등을 포함한 Apache TLP 가운데 가장 높은 커뮤니티 건강 지수 10/10을 기록했습니다. 사용자 토론과 PR 리뷰 활동도 각각 246%, 858% 증가했습니다.',
+					highlights: [
+						{ value: '10/10', label: 'Apache TLP 최고 커뮤니티 건강 지수' },
+						{ value: '246%↑', label: '사용자 토론 활동' },
+						{ value: '최우수상', label: '정보통신산업진흥원장상' },
+					],
+					stack: ['Apache Zeppelin', 'Kubernetes', 'Docker'],
+					links: [{ href: '/ko/blog/1/', label: '오픈소스 기여 회고 읽기' }],
+					visual: {
+						key: 'zeppelin',
+						alt: '하나의 Kubernetes Pod에서 Zeppelin Server와 여러 인터프리터가 자원을 공유하던 구조를 Zeppelin Server와 인터프리터별 독립 Pod 구조로 분리한 전후 비교',
+						caption:
+							'하나의 Pod에 모여 있던 인터프리터를 각각 분리해 자원과 장애 영향 범위를 나누고 독립 확장이 가능한 구조로 바꿨습니다.',
+						linkLabel: '컨테이너화 구조 크게 보기',
+					},
+				},
+				{
 					eyebrow: 'OPEN SOURCE · ECC · 2026',
 					title: 'formatter hook을 52배 빠르게 만든\nECC 오픈소스 기여',
 					summary:
-						'프로젝트 설정에 맞춰 Biome 또는 Prettier를 자동으로 실행하도록 formatter hook을 개선했습니다. 중복 검사와 프로세스 호출도 줄여, 로컬 벤치마크에서 포맷팅이 끝날 때까지 걸리는 시간을 약 3.3초에서 63ms로 단축했습니다. 또한 Review→Dedup→Verify 방식의 멀티 에이전트 코드 리뷰 워크플로우를 기여해 예제 기준 검증 대상을 11건에서 4건으로 줄였습니다.',
+						'프로젝트 설정에 맞춰 Biome 또는 Prettier를 자동으로 실행하도록 formatter hook을 개선했습니다. 중복 검사와 프로세스 호출도 줄여, 로컬 벤치마크에서 포맷팅이 끝날 때까지 걸리는 시간을 약 3.3초에서 63ms로 단축했습니다.',
 					highlights: [
 						{ value: '3.3초→63ms', label: '로컬 벤치마크 기준 hook 실행' },
-						{ value: '11→4건', label: '중복 제거 후 검증할 리뷰 항목' },
 					],
-					stack: ['Node.js', 'Biome', 'Prettier', 'Claude Code', 'Open Source'],
+					stack: ['Node.js', 'Biome', 'Prettier', 'Claude Code', 'Codex'],
 					links: [
 						{
 							href: 'https://github.com/affaan-m/ECC/pull/252',
@@ -253,11 +272,6 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 						{
 							href: 'https://github.com/affaan-m/ECC/pull/359',
 							label: '52배 최적화 PR',
-							external: true,
-						},
-						{
-							href: 'https://github.com/affaan-m/everything-claude-code/pull/2400',
-							label: '멀티 에이전트 리뷰 PR',
 							external: true,
 						},
 						{
@@ -458,15 +472,34 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					},
 				},
 				{
+					eyebrow: 'OPEN SOURCE · APACHE ZEPPELIN · 2024',
+					title: 'Containerized Apache Zeppelin\nwith isolated interpreter resources',
+					summary:
+						'Flink, JDBC, Spark, and other interpreters shared resources in one container. I contributed to moving them into separate Kubernetes Pods, reducing how one interpreter’s resource usage affected other workloads and enabling independent execution and scaling.\n\nDuring the contribution period, Zeppelin recorded a 10/10 community health score—the highest among Apache TLPs including Kafka and Spark. User discussion and PR review activity also increased by 246% and 858%, respectively.',
+					highlights: [
+						{ value: '10/10', label: 'Highest community health score among Apache TLPs' },
+						{ value: '+246%', label: 'User discussion activity' },
+						{ value: 'Excellence Award', label: 'NIPA President’s Award' },
+					],
+					stack: ['Apache Zeppelin', 'Kubernetes', 'Docker'],
+					links: [{ href: '/blog/1/', label: 'Read the open-source retrospective' }],
+					visual: {
+						key: 'zeppelin',
+						alt: 'A before-and-after comparison of Zeppelin Server and multiple interpreters sharing one Kubernetes Pod versus Zeppelin Server and each interpreter running in separate Pods',
+						caption:
+							'Separating interpreters into individual Pods divided their resource and failure boundaries and enabled independent scaling.',
+						linkLabel: 'View the containerized architecture',
+					},
+				},
+				{
 					eyebrow: 'OPEN SOURCE · ECC · 2026',
 					title: 'Made ECC formatter hooks\n52× faster',
 					summary:
-						'I added project-aware Biome and Prettier detection to ECC’s post-edit hook, then shortened the execution path by preferring local binaries, removing duplicate checks, and invoking hooks in-process. In a local benchmark, runtime fell from about 3.3 seconds to 63 ms; the work was credited in the ECC v1.9.0 changelog. I also contributed a Review→Dedup→Verify multi-agent workflow that reduced the example set from 11 raw findings to 4 items requiring verification.',
+						'I added project-aware Biome and Prettier detection to ECC’s post-edit hook, then shortened the execution path by preferring local binaries, removing duplicate checks, and invoking hooks in-process. In a local benchmark, runtime fell from about 3.3 seconds to 63 ms.',
 					highlights: [
 						{ value: '3.3s→63ms', label: 'Hook runtime in a local benchmark' },
-						{ value: '11→4', label: 'Review items after duplicate findings were merged' },
 					],
-					stack: ['Node.js', 'Biome', 'Prettier', 'Claude Code', 'Open Source'],
+					stack: ['Node.js', 'Biome', 'Prettier', 'Claude Code', 'Codex'],
 					links: [
 						{
 							href: 'https://github.com/affaan-m/ECC/pull/252',
@@ -476,11 +509,6 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 						{
 							href: 'https://github.com/affaan-m/ECC/pull/359',
 							label: '52× optimization PR',
-							external: true,
-						},
-						{
-							href: 'https://github.com/affaan-m/everything-claude-code/pull/2400',
-							label: 'Multi-agent review PR',
 							external: true,
 						},
 						{

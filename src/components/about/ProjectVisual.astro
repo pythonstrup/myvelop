@@ -1,0 +1,96 @@
+---
+import type { AboutProjectVisual } from '../../data/about';
+
+interface Props {
+	visual: AboutProjectVisual;
+	src: string;
+	width: number;
+	height: number;
+	contextual?: boolean;
+}
+
+const { visual, src, width, height, contextual = false } = Astro.props;
+---
+
+<figure class:list={{ contextual }}>
+	<div class="diagram-frame">
+		<img
+			src={src}
+			width={width}
+			height={height}
+			alt={visual.alt}
+			loading="lazy"
+			decoding="async"
+		/>
+	</div>
+	<figcaption>
+		<span>{visual.caption}</span>
+		<a href={src} target="_blank" rel="noreferrer">
+			{visual.linkLabel}<span aria-hidden="true">↗</span>
+		</a>
+	</figcaption>
+</figure>
+
+<style>
+	figure {
+		margin: 0;
+		border-top: 1px solid rgb(var(--gray-light));
+	}
+	figure.contextual {
+		margin-top: 1.25rem;
+		overflow: hidden;
+		border: 1px solid rgb(var(--gray-light));
+		border-radius: 14px;
+	}
+	.diagram-frame {
+		padding: clamp(0.5rem, 2vw, 1rem);
+		background: #f8fafc;
+	}
+	.diagram-frame img {
+		display: block;
+		width: 100%;
+		height: auto;
+		margin: 0 auto;
+	}
+	figcaption {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem 1.25rem;
+		padding: 0.75rem 1.25rem;
+		border-top: 1px solid rgb(var(--gray-light));
+		font-size: 0.84rem;
+		line-height: 1.5;
+		color: rgb(var(--gray));
+	}
+	figcaption > span {
+		max-width: 72ch;
+	}
+	figcaption a {
+		display: inline-flex;
+		min-height: 44px;
+		flex: none;
+		align-items: center;
+		gap: 0.35rem;
+		font-size: 0.9rem;
+		font-weight: 700;
+		color: var(--accent);
+		text-underline-offset: 0.2em;
+	}
+	figcaption a:hover {
+		text-decoration-thickness: 2px;
+	}
+	figcaption a:focus-visible {
+		border-radius: 4px;
+		outline: 2px solid var(--accent);
+		outline-offset: 3px;
+	}
+
+	@media (max-width: 600px) {
+		figcaption {
+			align-items: flex-start;
+			flex-direction: column;
+			padding: 0.85rem 1rem;
+		}
+	}
+</style>
