@@ -165,7 +165,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					eyebrow: 'NOTIFICATION PLATFORM · 2026',
 					title: '한 달간 3천만 건을 처리한\n알림 발송 플랫폼',
 					summary:
-						'API 서버·어드민·배치에 흩어진 발송 경로를 Redis/BullMQ 기반 단일 큐로 통합했습니다. 수평 확장 가능한 Worker가 외부 API의 rate limit, 재시도, 중복 제거를 일관되게 제어하고, 발송 이력과 관측 데이터는 전달 경로와 분리해 보관·분석하도록 설계했습니다. 발송 이력 저장에 쓰는 SNS·Firehose·SQS/DLQ·Lambda·S3는 Pulumi로 정의하고 배포했습니다.',
+						'알림 발송이 API 서버·어드민·배치에 흩어져 외부 API의 rate limit을 강제할 곳이 없었고, 예약 발송과 벌크 실패 추적도 경로마다 따로 구현해야 했습니다. **아키텍처 설계를 전담해**, 흩어진 발송 경로를 유량 제어·지연·재시도가 내장된 Redis/BullMQ 큐 하나로 묶었고, 수평 확장 가능한 Worker로 한 달간 3천만 건의 알림톡을 안정적으로 처리했습니다.\n\n발송 이력·관측 데이터는 전달 경로와 분리해 Firehose·SQS/DLQ·Lambda·S3로 보관·분석하는 인프라를 Pulumi로 구축했습니다.',
 					highlights: [
 						{ value: '3천만 건', label: '한 달간 처리한 알림톡' },
 						{ value: '약 15만 건', label: '알림 발송으로 이어진 신고 완료' },
@@ -185,7 +185,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					eyebrow: 'LOHASMEAL COMMERCE PLATFORM · 2023–2025',
 					title: '매출 700% 성장과 함께 확장한\n로하스밀 커머스 플랫폼',
 					summary:
-						'10년간 운영된 ASP/VB 시스템과 699개의 스토어드 프로시저를 분석해 주문·결제·회원·상품·포인트·SCM을 Spring Boot 멀티모듈 구조로 재구축하고, 2개월 안에 마이그레이션을 마쳤습니다. Nuxt·Spring 서비스와 Redis Sentinel·MySQL 복제 구성을 Naver Cloud의 Kubernetes 클러스터 안에서 운영했습니다. 서버사이드 Conversion API를 구축해 광고 전환 효율을 168% 높였고, 서비스는 오픈 1년 만에 매출이 700% 성장하고 누적 회원 15만 명·MAU 3만 명 규모로 커졌습니다.',
+						'10년 운영된 ASP/VB 시스템은 비즈니스 로직이 699개 스토어드 프로시저에 묶여 서비스 성장 속도를 따라가기 어려웠습니다. 프로시저를 전수 분석해 주문·결제·회원·상품·포인트·SCM 도메인을 Spring Boot 멀티모듈로 재구축하고 2개월 만에 마이그레이션했습니다. 서버사이드 Conversion API로 광고 전환 효율을 168% 높였고, 오픈 1년 만에 매출 700% 성장, 누적 회원 15만 명·MAU 3만 명으로 커졌습니다.',
 					highlights: [
 						{ value: '700%', label: '오픈 1년 내 매출 성장' },
 						{ value: '누적 15만 명', label: '회원 규모 · MAU 3만 명' },
@@ -218,7 +218,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					eyebrow: 'KURLY 3PL INTEGRATION · 2025',
 					title: '컬리 3PL 전환을 위한\n주문·배송·재고 연동',
 					summary:
-						'자체 보관 중심의 물류 운영을 컬리 3PL로 이관하며 주문 등록·취소, 재고와 배송 가능 여부 조회를 연동했습니다. 기존 배송사의 상차 제약이 사라지면서 익일 새벽배송 주문 마감을 17시에서 19시로 연장했습니다. 500ms~1초가 걸리던 배송 일정 조회에는 Caffeine L1과 Redis L2를 적용해 L1 응답을 약 10ms로 줄였습니다. 외부 API 장애 시에는 서킷 브레이커와 폴백으로 장애 전파를 차단해 주문 과정이 중단되지 않도록 했습니다.',
+						'자체 보관 중심 물류는 배송사 상차 제약으로 익일 새벽배송 주문을 17시에 마감해야 했습니다. 컬리 3PL로 이관해 주문 등록·취소와 재고·배송 조회를 연동하고 마감을 19시로 늦췄습니다.\n\n한 화면에서 40~60건의 날짜별 배송 일정 조회에 외부 API로는 500ms~1초가 걸렸는데, 예측 가능하고 실시간성이 낮은 데이터라 캐시를 택했습니다. Redis만으로는 왕복·직렬화로 50~100ms가 남아, Caffeine L1을 앞단에 두고 Redis Pub/Sub 무효화로 인스턴스 정합성을 지키며 L1 응답을 약 10ms로 줄였습니다.\n\n외부 API 장애는 서킷 브레이커·폴백으로 격리해 주문 흐름이 끊기지 않게 했습니다.',
 					highlights: [
 						{ value: '17시→19시', label: '익일 새벽배송 주문 마감 연장' },
 						{ value: '자체 보관→컬리 3PL', label: '물류 운영 전환' },
@@ -238,11 +238,11 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					eyebrow: 'OPEN SOURCE · APACHE ZEPPELIN · 2024',
 					title: '인터프리터 자원을 격리한\nApache Zeppelin 컨테이너화',
 					summary:
-						'Flink·JDBC·Spark 등 여러 인터프리터가 하나의 컨테이너에서 자원을 공유하던 구조를 Kubernetes Pod 단위로 분리하는 데 기여했습니다. 특정 인터프리터의 자원 사용이 다른 작업에 미치는 영향을 줄였고 각 인터프리터를 독립적으로 실행·확장할 수 있는 기반을 마련했습니다.\n\n팀 기여가 이어진 기간 동안 Zeppelin은 Kafka·Spark 등을 포함한 Apache TLP 가운데 가장 높은 커뮤니티 건강 지수 10/10을 기록했습니다. 사용자 토론과 PR 리뷰 활동도 각각 246%, 858% 증가했습니다.',
+						'Flink·JDBC·Spark 등 여러 인터프리터가 한 컨테이너에서 자원을 공유해, 한 작업의 부하가 다른 작업의 성능·안정성까지 흔드는 구조였습니다. 인터프리터를 Kubernetes Pod 단위로 분리하는 컨테이너화에 기여해 자원·장애 영향 범위를 나누고 독립 실행·확장 기반을 마련했습니다.\n\n이 기여로 오픈소스 컨트리뷰션 아카데미 최우수상(정보통신산업진흥원장상)을 받았습니다. 팀 기여 기간에 Zeppelin은 Kafka·Spark 등 Apache TLP 가운데 커뮤니티 건강 지수 10/10으로 가장 높았고, 사용자 토론과 PR 리뷰도 각각 246%, 858% 늘었습니다.',
 					highlights: [
+						{ value: '최우수상', label: '정보통신산업진흥원장상' },
 						{ value: '10/10', label: 'Apache TLP 최고 커뮤니티 건강 지수' },
 						{ value: '246%↑', label: '사용자 토론 활동' },
-						{ value: '최우수상', label: '정보통신산업진흥원장상' },
 					],
 					stack: ['Apache Zeppelin', 'Kubernetes', 'Docker'],
 					links: [{ href: '/ko/blog/1/', label: '오픈소스 기여 회고 읽기' }],
@@ -258,7 +258,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					eyebrow: 'OPEN SOURCE · ECC · 2026',
 					title: 'formatter hook을 52배 빠르게 만든\nECC 오픈소스 기여',
 					summary:
-						'프로젝트 설정에 맞춰 Biome 또는 Prettier를 자동으로 실행하도록 formatter hook을 개선했습니다. 중복 검사와 프로세스 호출도 줄여, 로컬 벤치마크에서 포맷팅이 끝날 때까지 걸리는 시간을 약 3.3초에서 63ms로 단축했습니다.',
+						'ECC의 formatter hook은 파일 편집마다 실행돼 매번 약 3.3초로 편집 흐름을 끊었습니다. 프로젝트 설정에 맞춰 Biome·Prettier를 자동 선택하는 감지 로직을 넣고, 로컬 바이너리 우선 사용과 중복 검사·프로세스 호출 제거로 실행 경로를 줄였습니다. 로컬 벤치마크 기준 실행 시간을 약 3.3초에서 63ms로 52배 단축했습니다.',
 					highlights: [
 						{ value: '3.3초→63ms', label: '로컬 벤치마크 기준 hook 실행' },
 					],
@@ -293,7 +293,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					role: 'Software Engineer · 세무자동화',
 					summary: '세무자동화 도메인에서 대규모 메시징, 외부 서비스 연동, 비용 최적화를 담당합니다.',
 					bullets: [
-						'BullMQ의 재시도·중복 제거·유량 제어를 활용해 한 달간 3천만 건의 알림톡을 안정적으로 발송했습니다. 알림을 받은 사용자 중 약 15만 명이 신고를 완료했고, 151억 원의 매출 전환으로 이어졌습니다.',
+						'알림 발송 플랫폼의 아키텍처 설계를 전담하고, BullMQ의 재시도·중복 제거·유량 제어로 한 달간 3천만 건의 알림톡을 안정적으로 발송했습니다. 알림을 받은 사용자 중 약 15만 명이 신고를 완료했고, 151억 원의 매출 전환으로 이어졌습니다.',
 						'자리톡·카카오페이 연동을 개발해 일일 가입자 10만 명 달성과 사용자 규모 100% 성장에 기여했습니다.',
 						'Zapier·Make 워크플로우를 내재화해 연간 3천만 원 이상의 외부 도구 비용을 절감했습니다.',
 						'종합소득세 수수료율·할인·할증 정책을 5영업일 안에 설계하고 개발해 일정에 맞춰 출시했습니다.',
@@ -402,7 +402,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					eyebrow: 'NOTIFICATION PLATFORM · 2026',
 					title: 'A notification platform that handled\n30M Kakao messages in one month',
 					summary:
-						'I consolidated delivery paths scattered across API servers, admin tools, and batch jobs behind a single Redis/BullMQ queue. Horizontally scalable workers apply rate limits, retries, and deduplication consistently, while delivery history and observability data flow through separate archival and analytics pipelines. I defined and deployed the SNS, Firehose, SQS/DLQ, Lambda, and S3 resources for delivery-history storage with Pulumi.',
+						'Notification delivery was scattered across API servers, admin tools, and batch jobs, so nothing enforced the external API’s rate limits consistently, and scheduled sends and bulk-failure tracking had to be rebuilt in every path. I **owned the architecture design**, gathering the scattered delivery paths into a single Redis/BullMQ queue with built-in rate limiting, delays, and retries, controlled by horizontally scalable workers—handling 30 million Kakao notifications in a single month.\n\nDelivery history and observability data were separated from the delivery path, with archival and analytics pipelines on Firehose, SQS/DLQ, Lambda, and S3, defined and deployed with Pulumi.',
 					highlights: [
 						{ value: '30M', label: 'Kakao notifications handled in one month' },
 						{ value: '150K', label: 'Tax filings completed after notification delivery' },
@@ -422,7 +422,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					eyebrow: 'LOHASMEAL COMMERCE PLATFORM · 2023–2025',
 					title: 'A commerce platform that scaled alongside\n700% revenue growth',
 					summary:
-						'I analyzed a decade-old ASP/VB system and 699 stored procedures, rebuilding orders, payments, accounts, catalog, points, and SCM as a Spring Boot multi-module platform and completing the migration in two months. Nuxt and Spring services, Redis Sentinel, and replicated MySQL all ran inside a Kubernetes cluster on Naver Cloud. I also built a server-side Conversion API that improved advertising conversion efficiency by 168%. The service grew 700% in revenue within a year, reaching 150K cumulative members and 30K MAU.',
+						'A decade-old ASP/VB system kept its business logic locked inside 699 stored procedures, making it hard to keep pace with a growing service. I analyzed every procedure and rebuilt orders, payments, accounts, catalog, points, and SCM as a Spring Boot multi-module platform, completing the migration in two months. I built a server-side Conversion API that improved ad conversion efficiency by 168%, and the service grew 700% in revenue within a year, reaching 150K cumulative members and 30K MAU.',
 					highlights: [
 						{ value: '700%', label: 'Revenue growth within the first year' },
 						{ value: '150K members', label: 'Cumulative users · 30K MAU' },
@@ -455,7 +455,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					eyebrow: 'KURLY 3PL INTEGRATION · 2025',
 					title: 'Order, delivery, and inventory integration\nfor the move to Kurly 3PL',
 					summary:
-						'I integrated order registration and cancellation, inventory lookup, and delivery eligibility checks while moving fulfillment from in-house storage to Kurly 3PL. Removing the previous carrier’s loading constraint extended the next-day dawn-delivery order cutoff from 5 PM to 7 PM. For delivery-schedule lookups taking 500 ms–1 s, I introduced Caffeine L1 and Redis L2 caching, serving L1 hits in about 10 ms. A circuit breaker and fallback contained external API failures so the ordering flow could continue without interruption.',
+						'In-house fulfillment kept the next-day dawn-delivery order cutoff at 5 PM because of the previous carrier’s loading constraint. Moving to Kurly 3PL, I integrated order registration and cancellation, inventory lookup, and delivery eligibility checks, extending the cutoff to 7 PM.\n\nA single screen needed 40–60 per-date delivery-schedule lookups that took 500 ms–1 s against the external API; the data was predictable by date and tolerated some staleness, so caching was the right fit. Redis alone still cost 50–100 ms in network round-trips and serialization, so I placed Caffeine L1 in front with Redis Pub/Sub invalidation for cross-instance consistency, serving L1 hits in about 10 ms.\n\nA circuit breaker and fallback isolated external API failures so the ordering flow could continue without interruption.',
 					highlights: [
 						{ value: '5 PM→7 PM', label: 'Next-day dawn-delivery order cutoff' },
 						{ value: 'In-house→Kurly 3PL', label: 'Fulfillment operation migrated' },
@@ -475,11 +475,11 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					eyebrow: 'OPEN SOURCE · APACHE ZEPPELIN · 2024',
 					title: 'Containerized Apache Zeppelin\nwith isolated interpreter resources',
 					summary:
-						'Flink, JDBC, Spark, and other interpreters shared resources in one container. I contributed to moving them into separate Kubernetes Pods, reducing how one interpreter’s resource usage affected other workloads and enabling independent execution and scaling.\n\nDuring the contribution period, Zeppelin recorded a 10/10 community health score—the highest among Apache TLPs including Kafka and Spark. User discussion and PR review activity also increased by 246% and 858%, respectively.',
+						'Flink, JDBC, Spark, and other interpreters shared resources in one container, so one interpreter’s heavy workload could shake the performance and stability of everything else. I contributed to moving interpreters into separate Kubernetes Pods, dividing their resource and failure boundaries and enabling independent execution and scaling.\n\nThis work earned the Excellence Award (NIPA President’s Award) at the Open Source Contribution Academy. During the team’s contribution period, Zeppelin recorded a 10/10 community health score—the highest among Apache TLPs including Kafka and Spark—while user discussion and PR review activity grew 246% and 858%, respectively.',
 					highlights: [
+						{ value: 'Excellence Award', label: 'NIPA President’s Award' },
 						{ value: '10/10', label: 'Highest community health score among Apache TLPs' },
 						{ value: '+246%', label: 'User discussion activity' },
-						{ value: 'Excellence Award', label: 'NIPA President’s Award' },
 					],
 					stack: ['Apache Zeppelin', 'Kubernetes', 'Docker'],
 					links: [{ href: '/blog/1/', label: 'Read the open-source retrospective' }],
@@ -495,7 +495,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					eyebrow: 'OPEN SOURCE · ECC · 2026',
 					title: 'Made ECC formatter hooks\n52× faster',
 					summary:
-						'I added project-aware Biome and Prettier detection to ECC’s post-edit hook, then shortened the execution path by preferring local binaries, removing duplicate checks, and invoking hooks in-process. In a local benchmark, runtime fell from about 3.3 seconds to 63 ms.',
+						'ECC’s formatter hook runs after every file edit, and each run took about 3.3 seconds—breaking the editing flow every time. I added project-aware Biome and Prettier detection, then shortened the execution path by preferring local binaries, removing duplicate checks, and invoking hooks in-process. In a local benchmark, runtime fell from about 3.3 seconds to 63 ms—52× faster.',
 					highlights: [
 						{ value: '3.3s→63ms', label: 'Hook runtime in a local benchmark' },
 					],
@@ -530,7 +530,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					role: 'Software Engineer · Tax Automation',
 					summary: 'Building large-scale messaging, external integrations, and cost-efficient systems for tax automation.',
 					bullets: [
-						'Designed a BullMQ pipeline with retries, deduplication, and rate limiting to deliver 30 million Kakao notifications in one month. Recipients completed about 150K filings, leading to ₩15.1B in converted revenue.',
+						'Owned the architecture design of the notification platform, using BullMQ retries, deduplication, and rate limiting to deliver 30 million Kakao notifications in one month. Recipients completed about 150K filings, leading to ₩15.1B in converted revenue.',
 						'Built JariTalk and Kakao Pay integrations that helped reach 100K daily signups and double the user base.',
 						'Replaced Zapier and Make workflows with in-house automation, saving more than ₩30M annually.',
 						'Designed and shipped tax fee, discount, and surcharge policies within five working days.',

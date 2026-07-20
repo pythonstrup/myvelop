@@ -32,7 +32,7 @@ const showContextualVisual = content.visual?.key === 'zeppelin' && summaryParagr
 			{
 				summaryParagraphs.map((paragraph, index) => (
 					<Fragment>
-						<p>{paragraph}</p>
+						<p>{paragraph.split('**').map((part, i) => (i % 2 ? <strong>{part}</strong> : part))}</p>
 						{showContextualVisual && index === 0 && content.visual && visual && visualSrc && (
 							<ProjectVisual
 								visual={content.visual}
