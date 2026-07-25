@@ -6,11 +6,11 @@
   </defs>
   
   <!-- Title -->
-  <text x="400" y="30" font-size="20" font-weight="bold" text-anchor="middle" fill="#333">AQS 락 획득/해제 과정</text>
+  <text x="400" y="30" font-size="20" font-weight="bold" text-anchor="middle" fill="#333">AQS Lock Acquire / Release</text>
   
   <!-- Step 1: Thread A acquires lock -->
   <g transform="translate(0, 60)">
-    <text x="20" y="20" font-size="16" font-weight="bold" fill="#333">1. Thread A가 lock.lock() 호출</text>
+    <text x="20" y="20" font-size="16" font-weight="bold" fill="#333">1. Thread A calls lock.lock()</text>
     
     <!-- Thread A -->
     <circle cx="80" cy="70" r="30" fill="#4CAF50" stroke="#333" stroke-width="2"/>
@@ -27,16 +27,16 @@
     
     <!-- CAS operation -->
     <rect x="380" y="55" width="120" height="30" fill="#FFE082" stroke="#333" stroke-width="1" rx="5"/>
-    <text x="440" y="75" text-anchor="middle" font-size="12" fill="#333">CAS 성공!</text>
+    <text x="440" y="75" text-anchor="middle" font-size="12" fill="#333">CAS success!</text>
     
     <!-- Queue (empty) -->
     <rect x="200" y="120" width="150" height="40" fill="#f9f9f9" stroke="#333" stroke-width="1" stroke-dasharray="3,3"/>
-    <text x="275" y="145" text-anchor="middle" font-size="12" fill="#999">대기 큐: 비어있음</text>
+    <text x="275" y="145" text-anchor="middle" font-size="12" fill="#999">Wait queue: empty</text>
   </g>
   
   <!-- Step 2: Thread B tries to acquire lock -->
   <g transform="translate(0, 280)">
-    <text x="20" y="20" font-size="16" font-weight="bold" fill="#333">2. Thread B가 lock.lock() 호출 (A가 보유 중)</text>
+    <text x="20" y="20" font-size="16" font-weight="bold" fill="#333">2. Thread B calls lock.lock() (A still holds it)</text>
     
     <!-- Thread B -->
     <circle cx="80" cy="70" r="30" fill="#FF5722" stroke="#333" stroke-width="2"/>
@@ -48,29 +48,29 @@
     <!-- AQS State -->
     <rect x="200" y="40" width="150" height="60" fill="#f0f0f0" stroke="#333" stroke-width="2"/>
     <text x="275" y="60" text-anchor="middle" font-size="14" fill="#333">AQS</text>
-    <text x="275" y="80" text-anchor="middle" font-size="12" fill="#333">state: 1 (잠김)</text>
+    <text x="275" y="80" text-anchor="middle" font-size="12" fill="#333">state: 1 (locked)</text>
     <text x="275" y="95" text-anchor="middle" font-size="12" fill="#4CAF50">owner: Thread A</text>
     
     <!-- CAS failure -->
     <rect x="380" y="55" width="120" height="30" fill="#FFCDD2" stroke="#333" stroke-width="1" rx="5"/>
-    <text x="440" y="75" text-anchor="middle" font-size="12" fill="#333">CAS 실패!</text>
+    <text x="440" y="75" text-anchor="middle" font-size="12" fill="#333">CAS failure!</text>
     
     <!-- Queue with Node B -->
     <rect x="200" y="120" width="150" height="60" fill="#f9f9f9" stroke="#333" stroke-width="2"/>
-    <text x="275" y="135" text-anchor="middle" font-size="12" fill="#333">대기 큐</text>
+    <text x="275" y="135" text-anchor="middle" font-size="12" fill="#333">Wait queue</text>
     
     <!-- Node for Thread B -->
     <rect x="220" y="145" width="110" height="25" fill="#FFCDD2" stroke="#333" stroke-width="1" rx="3"/>
     <text x="275" y="162" text-anchor="middle" font-size="11" fill="#333">Node(Thread B)</text>
     
     <!-- Park status -->
-    <text x="380" y="155" font-size="12" fill="#FF5722">→ park() 호출</text>
-    <text x="380" y="170" font-size="11" fill="#FF5722">WAITING 상태</text>
+    <text x="380" y="155" font-size="12" fill="#FF5722">→ calls park()</text>
+    <text x="380" y="170" font-size="11" fill="#FF5722">WAITING state</text>
   </g>
   
   <!-- Step 3: Thread A releases lock -->
   <g transform="translate(0, 520)">
-    <text x="20" y="20" font-size="16" font-weight="bold" fill="#333">3. Thread A가 lock.unlock() 호출</text>
+    <text x="20" y="20" font-size="16" font-weight="bold" fill="#333">3. Thread A calls lock.unlock()</text>
     
     <!-- Thread A -->
     <circle cx="80" cy="70" r="30" fill="#4CAF50" stroke="#333" stroke-width="2"/>
@@ -87,7 +87,7 @@
     
     <!-- Queue check -->
     <rect x="200" y="120" width="150" height="60" fill="#f9f9f9" stroke="#333" stroke-width="2"/>
-    <text x="275" y="135" text-anchor="middle" font-size="12" fill="#333">대기 큐 확인</text>
+    <text x="275" y="135" text-anchor="middle" font-size="12" fill="#333">Check wait queue</text>
     
     <!-- Node for Thread B (being processed) -->
     <rect x="220" y="145" width="110" height="25" fill="#C8E6C9" stroke="#333" stroke-width="1" rx="3"/>
@@ -102,7 +102,7 @@
   
   <!-- Step 4: Thread B acquires lock -->
   <g transform="translate(0, 730)">
-    <text x="20" y="20" font-size="16" font-weight="bold" fill="#333">4. Thread B가 락 획득</text>
+    <text x="20" y="20" font-size="16" font-weight="bold" fill="#333">4. Thread B acquires the lock</text>
     
     <!-- Thread B -->
     <circle cx="80" cy="70" r="30" fill="#4CAF50" stroke="#333" stroke-width="2"/>
@@ -117,23 +117,23 @@
     
     <!-- Queue (empty again) -->
     <rect x="200" y="120" width="150" height="40" fill="#f9f9f9" stroke="#333" stroke-width="1" stroke-dasharray="3,3"/>
-    <text x="275" y="145" text-anchor="middle" font-size="12" fill="#999">대기 큐: 비어있음</text>
+    <text x="275" y="145" text-anchor="middle" font-size="12" fill="#999">Wait queue: empty</text>
   </g>
   
   <!-- Legend -->
   <g transform="translate(550, 100)">
-    <text x="0" y="0" font-size="14" font-weight="bold" fill="#333">범례</text>
+    <text x="0" y="0" font-size="14" font-weight="bold" fill="#333">Legend</text>
     
     <circle cx="15" cy="25" r="10" fill="#4CAF50" stroke="#333" stroke-width="1"/>
-    <text x="35" y="30" font-size="12" fill="#333">락 보유 스레드</text>
+    <text x="35" y="30" font-size="12" fill="#333">Lock holder thread</text>
     
     <circle cx="15" cy="55" r="10" fill="#FF5722" stroke="#333" stroke-width="1"/>
-    <text x="35" y="60" font-size="12" fill="#333">대기 중 스레드</text>
+    <text x="35" y="60" font-size="12" fill="#333">Waiting thread</text>
     
     <rect x="5" y="80" width="20" height="15" fill="#FFE082" stroke="#333" stroke-width="1" rx="2"/>
-    <text x="35" y="92" font-size="12" fill="#333">CAS 성공</text>
+    <text x="35" y="92" font-size="12" fill="#333">CAS success</text>
     
     <rect x="5" y="105" width="20" height="15" fill="#FFCDD2" stroke="#333" stroke-width="1" rx="2"/>
-    <text x="35" y="117" font-size="12" fill="#333">CAS 실패</text>
+    <text x="35" y="117" font-size="12" fill="#333">CAS failure</text>
   </g>
 </svg>

@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 660" role="img" aria-labelledby="ml-title ml-desc">
+  <title id="ml-title">Message history model</title>
+  <desc id="ml-desc">A notification history row is written only after the result is final. When the third-party response arrives, each message is attributed by subtracting messageList and failedMessageList from the sent set, leaving either ACCEPTED or FAILED. A full 4xx rejection is a failure that still came with a response, so it is absorbed into FAILED. Only a missing response throws, and BullMQ retries it; ERROR is written only once all three attempts are exhausted. One message ends as exactly one history row, with no state transitions.</desc>
+
+  <defs>
+    <marker id="ml-arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/>
+    </marker>
+    <marker id="ml-arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0F766E"/>
+    </marker>
+    <marker id="ml-arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#16A34A"/>
+    </marker>
+    <marker id="ml-arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#DC2626"/>
+    </marker>
+    <marker id="ml-arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#EA580C"/>
+    </marker>
+
+    <filter id="ml-soft-shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0F172A" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <style>
+    text { font-family: Pretendard, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0F172A; }
+    .title { font-size: 30px; font-weight: 700; letter-spacing: -0.6px; }
+    .subtitle { font-size: 15px; fill: #64748B; }
+    .node-title { font-size: 15px; font-weight: 700; }
+    .label { font-size: 15px; font-weight: 600; }
+    .small { font-size: 13px; fill: #64748B; }
+    .foot { font-size: 13px; fill: #64748B; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; fill: #64748B; }
+    .edge-label { font-size: 13px; font-weight: 600; fill: #475569; paint-order: stroke; stroke: #F8FAFC; stroke-width: 5px; stroke-linejoin: round; }
+    .node { fill: #FFFFFF; stroke: #CBD5E1; stroke-width: 1.5; }
+    .edge { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .edge-blue { stroke: #2563EB; marker-end: url(#ml-arrow-blue); }
+    .edge-teal { stroke: #0F766E; marker-end: url(#ml-arrow-teal); }
+    .edge-green { stroke: #16A34A; marker-end: url(#ml-arrow-green); }
+    .edge-red { stroke: #DC2626; marker-end: url(#ml-arrow-red); }
+    .edge-orange { stroke: #EA580C; marker-end: url(#ml-arrow-orange); }
+    .edge-dashed { stroke-dasharray: 7 7; }
+  </style>
+
+  <rect width="1240" height="660" fill="#F8FAFC"/>
+
+  <text class="title" x="40" y="46">Message History Model</text>
+  <text class="subtitle" x="40" y="72">Written only after the result is final · 1 message = 1 history row · no state transitions</text>
+
+  <!-- history boundary -->
+  <rect x="890" y="88" width="330" height="462" rx="18" fill="#EFF6FF" fill-opacity="0.62" stroke="#2563EB" stroke-width="1.6" stroke-dasharray="7 5"/>
+  <rect x="914" y="72" width="250" height="32" rx="16" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.2"/>
+  <circle cx="932" cy="88" r="5" fill="#2563EB"/>
+  <text class="label" x="944" y="93" fill="#1D4ED8">1 history row = 1 message</text>
+
+  <!-- BullMQ job -->
+  <g filter="url(#ml-soft-shadow)">
+    <rect class="node" x="40" y="278" width="200" height="76" rx="12"/>
+    <g transform="translate(52 294)">
+      <rect width="44" height="44" rx="8" fill="#2563EB"/>
+      <path d="M12 15 h20 M12 22 h20 M12 29 h20" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round"/>
+    </g>
+    <text class="node-title" x="108" y="310">BullMQ job</text>
+    <text class="small" x="108" y="332">= "tried to send"</text>
+  </g>
+
+  <!-- third-party send() -->
+  <g filter="url(#ml-soft-shadow)">
+    <rect class="node" x="290" y="278" width="236" height="76" rx="12"/>
+    <g transform="translate(302 294)">
+      <g transform="translate(0 10) scale(0.45)">
+        <path d="M18 54 H74 C88 54 96 45 96 34 C96 23 88 14 77 13 C72 4 64 0 54 0 C40 0 29 9 27 22 C17 23 10 30 10 39 C10 47 13 51 18 54 Z" fill="#E2E8F0" stroke="#94A3B8" stroke-width="3.4"/>
+        <rect x="40" y="22" width="28" height="22" rx="4" fill="#FFFFFF" stroke="#64748B" stroke-width="2.2"/>
+        <path d="M41 25 l13 10 l13-10" fill="none" stroke="#64748B" stroke-width="3.8" stroke-linejoin="round"/>
+      </g>
+    </g>
+    <text class="node-title" x="358" y="310">Third-party send()</text>
+    <text class="small" x="358" y="332">bulk submit request</text>
+  </g>
+
+  <!-- per-message attribution -->
+  <g filter="url(#ml-soft-shadow)">
+    <rect class="node" x="570" y="148" width="270" height="104" rx="12"/>
+    <g transform="translate(582 178)">
+      <rect width="44" height="44" rx="8" fill="#7C3AED"/>
+      <circle cx="18" cy="22" r="9" fill="none" stroke="#FFFFFF" stroke-width="3"/>
+      <circle cx="27" cy="22" r="9" fill="none" stroke="#FFFFFF" stroke-width="3"/>
+    </g>
+    <text class="node-title" x="638" y="182">Message attribution</text>
+    <text class="small" x="638" y="202">matched by customFields · to</text>
+    <text class="mono" x="638" y="224">sent − accepted − failed</text>
+  </g>
+
+  <!-- BullMQ retry -->
+  <g filter="url(#ml-soft-shadow)">
+    <rect class="node" x="570" y="428" width="270" height="104" rx="12"/>
+    <g transform="translate(582 458)">
+      <rect width="44" height="44" rx="8" fill="#EA580C"/>
+      <path d="M22 11 A11 11 0 1 1 11 22" fill="none" stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round"/>
+      <path d="M17 6 L23 11 L17 16" fill="none" stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text class="node-title" x="638" y="462">BullMQ retry</text>
+    <text class="mono" x="638" y="482">attempts: 3 · exp backoff</text>
+    <text class="small" x="638" y="504">only when exhausted</text>
+  </g>
+
+  <!-- ACCEPTED -->
+  <g filter="url(#ml-soft-shadow)">
+    <rect class="node" x="914" y="112" width="282" height="76" rx="12"/>
+    <g transform="translate(938 128)">
+      <rect width="44" height="44" rx="8" fill="#16A34A"/>
+      <path d="M12 23 l7 7 l13 -15" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </g>
+    <text class="node-title" x="994" y="144">ACCEPTED</text>
+    <text class="mono" x="994" y="166">matched in messageList</text>
+  </g>
+
+  <!-- FAILED -->
+  <g filter="url(#ml-soft-shadow)">
+    <rect class="node" x="914" y="210" width="282" height="92" rx="12"/>
+    <g transform="translate(938 234)">
+      <rect width="44" height="44" rx="8" fill="#DC2626"/>
+      <path d="M14 14 L30 30 M30 14 L14 30" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" fill="none"/>
+    </g>
+    <text class="node-title" x="994" y="242">FAILED</text>
+    <text class="mono" x="994" y="264">failedList · difference</text>
+    <text class="mono" x="994" y="284">includes 4xx rejections</text>
+  </g>
+
+  <!-- ERROR -->
+  <g filter="url(#ml-soft-shadow)">
+    <rect class="node" x="914" y="442" width="282" height="76" rx="12"/>
+    <g transform="translate(938 458)">
+      <rect width="44" height="44" rx="8" fill="#EA580C"/>
+      <path d="M22 12 V26" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="22" cy="32" r="2.6" fill="#FFFFFF"/>
+    </g>
+    <text class="node-title" x="994" y="474">ERROR</text>
+    <text class="mono" x="994" y="496">no response after retries</text>
+  </g>
+
+  <!-- edges -->
+  <path class="edge edge-blue" d="M 240 316 L 282 316"/>
+
+  <path class="edge edge-teal" d="M 526 316 L 545 316 L 545 200 L 562 200"/>
+  <text class="edge-label" x="550" y="262">response received</text>
+
+  <path class="edge edge-orange" d="M 526 316 L 545 316 L 545 480 L 562 480"/>
+  <text class="edge-label" x="550" y="382">throw · no response</text>
+
+  <path class="edge edge-green" d="M 840 178 L 872 178 L 872 150 L 906 150"/>
+  <path class="edge edge-red" d="M 840 222 L 872 222 L 872 256 L 906 256"/>
+  <path class="edge edge-orange" d="M 840 480 L 906 480"/>
+
+  <!-- retry loop -->
+  <path class="edge edge-orange edge-dashed" d="M 570 505 L 400 505 L 400 362"/>
+  <text class="edge-label" x="486" y="497" text-anchor="middle">retry call</text>
+
+  <!-- footnotes -->
+  <text class="foot" x="40" y="592">There is no REQUESTED state — the record of "we tried to send" is the BullMQ job itself, and the history DB would only copy it.</text>
+  <text class="foot" x="40" y="614">A full 4xx rejection (CLIENT_ERROR) is a failure that <tspan font-weight="700">came with a response</tspan> → absorbed into FAILED. It never throws, so the job ends as completed.</text>
+  <text class="foot" x="40" y="636">The set difference attributes even messages missing from the response, so no row is left open — no reconciliation batch or timeout sweeper is needed.</text>
+</svg>
