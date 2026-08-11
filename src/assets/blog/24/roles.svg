@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 640" role="img" aria-labelledby="roles-title roles-desc">
+  <title id="roles-title">관리자 · 소유자 · 앱 계정의 권한 경계</title>
+  <desc id="roles-desc">DB 계정을 셋으로 나눈 구조. 관리자 계정은 시크릿 매니저 뒤에 있고 사람이 터미널에서만 쓴다. 소유자 role 은 NOLOGIN 이라 접속 자격증명이 존재하지 않으며, 관리자가 SET ROLE 로 전환할 때만 도달한다. 테이블 소유권이 여기 있으므로 DDL 도 여기서만 가능하다. 앱 계정은 IAM 토큰으로 접속하고 DML 만 할 수 있어 DROP 이나 ALTER 를 시도하면 must be owner of table 로 막힌다. 애플리케이션 파드에 로드되는 것은 앱 계정 경로뿐이다.</desc>
+  <style>
+    text { font-family: Pretendard, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0F172A; }
+    .title { font-size: 30px; font-weight: 700; letter-spacing: -0.6px; }
+    .subtitle { font-size: 15px; fill: #64748B; }
+    .card-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 16px; font-weight: 700; }
+    .badge-text { font-size: 12px; font-weight: 700; }
+    .row-key { font-size: 12.5px; fill: #94A3B8; letter-spacing: 0.2px; }
+    .row-val { font-size: 13.5px; font-weight: 600; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+    .edge-label { font-size: 13px; font-weight: 700; fill: #6D28D9; paint-order: stroke; stroke: #F8FAFC; stroke-width: 5px; stroke-linejoin: round; }
+    .foot { font-size: 13px; fill: #64748B; }
+    .card { fill: #FFFFFF; stroke: #CBD5E1; stroke-width: 1.5; }
+    .edge { fill: none; stroke: #7C3AED; stroke-width: 2; stroke-linecap: round; marker-end: url(#roles-arrow); }
+  </style>
+  <defs>
+    <marker id="roles-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7C3AED"/>
+    </marker>
+  </defs>
+
+  <rect width="1240" height="640" fill="#F8FAFC"/>
+
+  <text class="title" x="60" y="56">계정을 셋으로 나누면 무엇이 보장되나</text>
+  <text class="subtitle" x="60" y="84">DDL 권한을 가진 계정이 “로그인 가능한 형태로” 존재하지 않게 만드는 것이 목적이다.</text>
+
+  <!-- ── 카드 1 — 관리자 ── -->
+  <rect class="card" x="60" y="132" width="330" height="292" rx="14"/>
+  <text class="card-name" x="88" y="172">postgres</text>
+  <rect x="88" y="188" width="78" height="24" rx="12" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.2"/>
+  <text class="badge-text" x="127" y="205" text-anchor="middle" fill="#1D4ED8">로그인 O</text>
+
+  <text class="row-key" x="88" y="248">자격증명</text>
+  <text class="row-val" x="88" y="268">시크릿 매니저 뒤 (MFA)</text>
+
+  <text class="row-key" x="88" y="304">할 수 있는 것</text>
+  <text class="row-val" x="88" y="324">전부</text>
+
+  <text class="row-key" x="88" y="360">어디에 로드되나</text>
+  <text class="row-val" x="88" y="380" fill="#15803D">사람의 터미널에만</text>
+  <text class="mono" x="88" y="402" fill="#94A3B8">파드·CI 에는 주입하지 않는다</text>
+
+  <!-- ── 카드 2 — 소유자 ── -->
+  <rect class="card" x="452" y="132" width="330" height="292" rx="14"/>
+  <text class="card-name" x="480" y="172">myapp_owner</text>
+  <rect x="480" y="188" width="84" height="24" rx="12" fill="#FEE2E2" stroke="#DC2626" stroke-width="1.2"/>
+  <text class="badge-text" x="522" y="205" text-anchor="middle" fill="#B91C1C">NOLOGIN</text>
+
+  <text class="row-key" x="480" y="248">자격증명</text>
+  <text class="row-val" x="480" y="268" fill="#B91C1C">존재하지 않음</text>
+
+  <text class="row-key" x="480" y="304">할 수 있는 것</text>
+  <text class="row-val" x="480" y="324">테이블 소유 → DDL 전부</text>
+
+  <text class="row-key" x="480" y="360">도달 방법</text>
+  <text class="row-val" x="480" y="380" fill="#6D28D9">관리자가 SET ROLE 로만</text>
+  <text class="mono" x="480" y="402" fill="#94A3B8">소유권은 회수할 수 없다</text>
+
+  <!-- ── 카드 3 — 앱 ── -->
+  <rect class="card" x="844" y="132" width="330" height="292" rx="14"/>
+  <text class="card-name" x="872" y="172">myapp_app</text>
+  <rect x="872" y="188" width="164" height="24" rx="12" fill="#DCFCE7" stroke="#16A34A" stroke-width="1.2"/>
+  <text class="badge-text" x="954" y="205" text-anchor="middle" fill="#15803D">로그인 O · IAM 토큰</text>
+
+  <text class="row-key" x="872" y="248">자격증명</text>
+  <text class="row-val" x="872" y="268" fill="#15803D">없음 — 매번 계산</text>
+
+  <text class="row-key" x="872" y="304">할 수 있는 것</text>
+  <text class="row-val" x="872" y="324">DML 만</text>
+
+  <text class="row-key" x="872" y="360">DDL 을 시도하면</text>
+  <text class="mono" x="872" y="380" fill="#B91C1C">must be owner of table</text>
+  <text class="mono" x="872" y="402" fill="#94A3B8">소유자가 아니라서 막힌다</text>
+
+  <!-- SET ROLE 화살표 (카드 사이 62px 여백) -->
+  <path class="edge" d="M 392 330 L 448 330"/>
+  <text class="edge-label" x="420" y="316" text-anchor="middle">SET ROLE</text>
+
+  <!-- 앱 파드 범위 -->
+  <rect x="844" y="452" width="330" height="62" rx="12" fill="#DCFCE7" opacity="0.55" stroke="#16A34A" stroke-width="1.5" stroke-dasharray="6 6"/>
+  <text class="row-val" x="1009" y="480" text-anchor="middle" fill="#15803D">애플리케이션 파드에 로드되는 것</text>
+  <text class="mono" x="1009" y="500" text-anchor="middle" fill="#15803D">이 경로 하나뿐</text>
+
+  <text class="foot" x="60" y="480">왼쪽 두 계정은 애플리케이션 런타임에 존재하지 않는다.</text>
+  <text class="foot" x="60" y="502">파드가 탈취되더라도 도달할 수 있는 최대 권한이 오른쪽 카드로 제한된다.</text>
+
+  <text class="foot" x="60" y="568">앱 계정을 테이블 소유자로 두면 이 경계가 통째로 무너진다. 소유자는 언제나 DROP·ALTER·TRUNCATE 를 할 수 있고,</text>
+  <text class="foot" x="60" y="590">그 권한만 떼어내는 문법이 존재하지 않기 때문이다.</text>
+</svg>

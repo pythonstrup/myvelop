@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 780" role="img" aria-labelledby="pt-title pt-desc">
+  <title id="pt-title">GRANT ON ALL TABLES 와 ALTER DEFAULT PRIVILEGES 의 적용 시점 차이</title>
+  <desc id="pt-desc">시간축 위에 테이블이 생성되는 시점들이 있다. 위 레인은 기존 방식으로, GRANT ON ALL TABLES 를 실행한 시점까지 존재하던 테이블에만 권한이 붙고 그 이후 마이그레이션으로 추가된 테이블은 권한이 비어 permission denied 가 난다. 아래 레인은 변경된 방식으로, 테이블이 하나도 없을 때 ALTER DEFAULT PRIVILEGES 를 등록해 두면 그 이후 소유자 role 이 만드는 모든 테이블에 권한이 자동으로 붙는다.</desc>
+  <style>
+    text { font-family: Pretendard, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0F172A; }
+    .title { font-size: 30px; font-weight: 700; letter-spacing: -0.6px; }
+    .subtitle { font-size: 15px; fill: #64748B; }
+    .lane-title { font-size: 17px; font-weight: 700; }
+    .lane-sub { font-size: 13px; fill: #64748B; }
+    .foot { font-size: 13px; fill: #64748B; }
+    .tick { font-size: 13px; font-weight: 600; fill: #475569; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+    .chip-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; font-weight: 600; }
+    .chip-sub { font-size: 12px; }
+    .marker-label { font-size: 13px; font-weight: 700; paint-order: stroke; stroke: #FFFFFF; stroke-width: 5px; stroke-linejoin: round; }
+    .lane { fill: #FFFFFF; stroke: #CBD5E1; stroke-width: 1.5; }
+    .axis { stroke: #94A3B8; stroke-width: 2; stroke-linecap: round; }
+    .guide { stroke: #E2E8F0; stroke-width: 1.5; stroke-dasharray: 4 6; }
+    .cut { stroke: #DC2626; stroke-width: 2; stroke-dasharray: 7 6; }
+    .start { stroke: #16A34A; stroke-width: 2; stroke-dasharray: 7 6; }
+  </style>
+  <defs>
+    <marker id="pt-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94A3B8"/>
+    </marker>
+  </defs>
+
+  <rect width="1240" height="780" fill="#F8FAFC"/>
+
+  <text class="title" x="60" y="56">권한은 언제 걸리는가</text>
+  <text class="subtitle" x="60" y="84">같은 권한을 주더라도 어느 시점에 거느냐에 따라, 이후 생기는 테이블이 덮이거나 빈다.</text>
+
+  <!-- 시간축 -->
+  <g class="tick">
+    <text x="230" y="132" text-anchor="middle">부트스트랩</text>
+    <text x="470" y="132" text-anchor="middle">초기 스키마</text>
+    <text x="730" y="132" text-anchor="middle">마이그레이션 #1</text>
+    <text x="980" y="132" text-anchor="middle">마이그레이션 #2</text>
+  </g>
+  <path class="axis" d="M 150 152 L 1160 152" marker-end="url(#pt-arrow)"/>
+  <text class="foot" x="1150" y="140" text-anchor="end">시간</text>
+  <g fill="#94A3B8">
+    <circle cx="230" cy="152" r="4"/>
+    <circle cx="470" cy="152" r="4"/>
+    <circle cx="730" cy="152" r="4"/>
+    <circle cx="980" cy="152" r="4"/>
+  </g>
+
+  <!-- ══ 레인 1 — 기존 ══ -->
+  <rect class="lane" x="60" y="196" width="1120" height="190" rx="14"/>
+  <g class="guide">
+    <path d="M 470 196 L 470 386"/>
+    <path d="M 730 196 L 730 386"/>
+    <path d="M 980 196 L 980 386"/>
+  </g>
+
+  <text class="lane-title" x="88" y="232">기존 — <tspan class="chip-mono" font-size="16">GRANT … ON ALL TABLES</tspan></text>
+  <text class="lane-sub" x="88" y="256">실행하는 순간의 테이블 목록을 훑어 각각에 grant 를 건다. 목록은 그때 확정된다.</text>
+
+  <path class="cut" d="M 600 300 L 600 372"/>
+  <text class="marker-label" x="600" y="288" text-anchor="middle" fill="#DC2626">grant 실행</text>
+
+  <g>
+    <rect x="392" y="314" width="156" height="48" rx="10" fill="#DCFCE7" stroke="#16A34A" stroke-width="1.5"/>
+    <text class="chip-mono" x="470" y="336" text-anchor="middle" fill="#15803D">app_users</text>
+    <text class="chip-sub" x="470" y="353" text-anchor="middle" fill="#15803D">권한 있음</text>
+  </g>
+  <g>
+    <rect x="652" y="314" width="156" height="48" rx="10" fill="#FEE2E2" stroke="#DC2626" stroke-width="1.5"/>
+    <text class="chip-mono" x="730" y="336" text-anchor="middle" fill="#B91C1C">employees</text>
+    <text class="chip-sub" x="730" y="353" text-anchor="middle" fill="#B91C1C">permission denied</text>
+  </g>
+  <g>
+    <rect x="902" y="314" width="156" height="48" rx="10" fill="#FEE2E2" stroke="#DC2626" stroke-width="1.5"/>
+    <text class="chip-mono" x="980" y="336" text-anchor="middle" fill="#B91C1C">payslips</text>
+    <text class="chip-sub" x="980" y="353" text-anchor="middle" fill="#B91C1C">permission denied</text>
+  </g>
+
+  <text class="foot" x="60" y="410">새 테이블이 생길 때마다 grant 를 다시 실행해야 한다 — 사람이 기억해야 하는 절차.</text>
+
+  <!-- ══ 레인 2 — 변경 ══ -->
+  <rect class="lane" x="60" y="440" width="1120" height="190" rx="14"/>
+  <g class="guide">
+    <path d="M 470 440 L 470 630"/>
+    <path d="M 730 440 L 730 630"/>
+    <path d="M 980 440 L 980 630"/>
+  </g>
+
+  <text class="lane-title" x="88" y="476">변경 — <tspan class="chip-mono" font-size="16">ALTER DEFAULT PRIVILEGES</tspan></text>
+  <text class="lane-sub" x="88" y="500">“앞으로 이 role 이 만들 객체”에 거는 규칙. 소급 적용되지 않으므로 테이블이 없을 때 등록한다.</text>
+
+  <rect x="248" y="550" width="900" height="60" rx="10" fill="#DCFCE7" opacity="0.5"/>
+  <path class="start" d="M 248 544 L 248 616"/>
+  <text class="marker-label" x="248" y="532" text-anchor="middle" fill="#16A34A">규칙 등록</text>
+  <text class="chip-sub" x="1136" y="586" text-anchor="end" fill="#15803D">이후 생성분 전부 자동</text>
+
+  <g>
+    <rect x="392" y="558" width="156" height="44" rx="10" fill="#FFFFFF" stroke="#16A34A" stroke-width="1.5"/>
+    <text class="chip-mono" x="470" y="586" text-anchor="middle" fill="#15803D">app_users</text>
+  </g>
+  <g>
+    <rect x="652" y="558" width="156" height="44" rx="10" fill="#FFFFFF" stroke="#16A34A" stroke-width="1.5"/>
+    <text class="chip-mono" x="730" y="586" text-anchor="middle" fill="#15803D">employees</text>
+  </g>
+  <g>
+    <rect x="902" y="558" width="156" height="44" rx="10" fill="#FFFFFF" stroke="#16A34A" stroke-width="1.5"/>
+    <text class="chip-mono" x="980" y="586" text-anchor="middle" fill="#15803D">payslips</text>
+  </g>
+
+  <text class="foot" x="60" y="654">테이블이 0개일 때 등록하는 것이 요점이다. 규칙은 카탈로그에 남아 이후 생성분에 계속 적용된다.</text>
+
+  <!-- 각주 -->
+  <text class="foot" x="60" y="716">단, 규칙의 <tspan class="mono" fill="#6D28D9">FOR ROLE</tspan> 이 테이블을 실제로 만든 role 과 달라지면 아무 에러 없이 매칭되지 않는다.</text>
+  <text class="foot" x="60" y="740">마이그레이션이 소유자 role 로 도는지(<tspan class="mono" fill="#6D28D9">SET ROLE</tspan>) 확인하는 것이 이 구조의 전제다.</text>
+</svg>
