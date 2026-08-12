@@ -43,6 +43,20 @@ flowchart LR
 </pre>
 ```
 
+## 설명 컴포넌트 (materials)
+
+다이어그램·애니메이션이 필요한 글은 확장자를 `.mdx`로 바꾸고, 컴포넌트를 `src/materials/<번호>/`에 작성한다. 외부 차트·애니메이션 라이브러리는 추가하지 않는다. 상세 규칙과 템플릿은 `/create-material` 스킬(`.claude/skills/create-material/SKILL.md`)에 있다.
+
+```mdx
+import PasswordlessAuthDemo from "@/materials/24/PasswordlessAuthDemo";
+
+<PasswordlessAuthDemo client:visible />
+```
+
+- 정적 다이어그램(`~Diagram`) — SSR 전용 인라인 SVG, 사이트 CSS 변수로 테마 처리, client 디렉티브 없음. 템플릿: `src/materials/24/TrustChainDiagram.tsx`.
+- 애니메이션 데모(`~Demo`) — Canvas 2D + `@/materials/shared`의 `useCanvasScene` 훅, `client:visible` 필수. 테마·DPR·`prefers-reduced-motion`은 훅과 `palette(dark)`가 처리한다. 템플릿: `src/materials/24/PasswordlessAuthDemo.tsx`.
+- 두 유형 모두 `role="img"`와 한국어 `aria-label`을 붙인다.
+
 ## 발행 전 확인
 
 1. `npm run check`를 실행한다.

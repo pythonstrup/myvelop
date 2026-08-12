@@ -7,6 +7,9 @@ dist/
 node_modules/
 _workspace
 
+# agent session artifacts
+.playwright-mcp/
+
 # logs
 npm-debug.log*
 yarn-debug.log*

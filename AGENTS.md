@@ -15,7 +15,7 @@ This file is a map, not the full manual. Read the linked document before changin
 - English routes live at `/`; Korean routes live under `/ko`.
 - Posts live in `src/content/blog/{en,ko}`. Matching filenames are translation pairs.
 - Blog lists are newest-first, five posts per page; each home page shows the latest three.
-- Astro components and native browser APIs are the default. React, Tailwind, and shadcn are limited to search UI unless interactivity requires them elsewhere.
+- Astro components and native browser APIs are the default. React, Tailwind, and shadcn are limited to search UI and interactive post demos in `src/materials` unless interactivity requires them elsewhere.
 
 ## Commands
 
