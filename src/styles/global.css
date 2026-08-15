@@ -220,13 +220,14 @@ html.dark .code-block .copy-btn {
   color: var(--accent);
   opacity: 1;
 }
-.prose table {
-  display: block;
-  width: 100%;
+.prose .table-wrap {
   margin: 2rem 0;
   overflow-x: auto;
   border: 1px solid rgb(var(--gray-light));
   border-radius: 10px;
+}
+.prose table {
+  width: 100%;
   border-collapse: collapse;
   font-size: 0.9em;
   line-height: 1.5;
