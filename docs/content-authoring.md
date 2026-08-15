@@ -15,10 +15,13 @@
 title: "글 제목"
 description: "검색 결과와 소셜 카드에 쓸 요약"
 pubDate: "2026-07-15T09:00:00+09:00"
+socialImage: "../../../assets/blog/25/og.png"
 ---
 ```
 
-선택 필드는 `updatedDate`, `heroImage`, `socialImage`, `tags`다. 스키마의 기준은 `src/content.config.ts`다.
+`socialImage`는 필수다. 스키마가 강제하므로 빠뜨리면 `npm run check`가 실패한다. 1200×630 PNG로 만들고 `src/assets/blog/<번호>/og.png`에 둔다. 번역쌍은 같은 파일을 함께 가리킨다.
+
+선택 필드는 `updatedDate`, `heroImage`, `tags`다. 스키마의 기준은 `src/content.config.ts`다. `heroImage`를 넣으면 글 상단에 `priority`가 붙은 LCP 이미지로 렌더되므로, 성능을 감안해 필요한 글에만 쓴다.
 
 소셜 이미지는 `socialImage`, `heroImage`, `src/assets/og-default.png` 순서로 대체된다. 본문과 대표 이미지는 `src/assets/blog/<번호>/01.png`처럼 보관하고 Markdown에서는 글 파일을 기준으로 상대 경로를 쓴다.
 

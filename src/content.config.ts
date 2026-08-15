@@ -14,7 +14,9 @@ const blog = defineCollection({
 			pubDate: z.coerce.date(),
 			updatedDate: z.coerce.date().optional(),
 			heroImage: z.optional(image()),
-			socialImage: z.optional(image()),
+			// Required: every post needs an OG card. heroImage stays optional
+			// because it renders as the post's LCP image.
+			socialImage: image(),
 			tags: z.array(z.string()).optional(),
 		}),
 });
