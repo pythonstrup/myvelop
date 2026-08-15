@@ -178,20 +178,22 @@ export default function SearchCommand({ lang }: { lang: Language }) {
 					autoCapitalize="none"
 					enterKeyHint="search"
 				/>
+				{/* 안내 문구는 CommandList 밖에 둔다. cmdk가 CommandList에 role="listbox"를 붙이므로
+				    option이 아닌 요소만 담기면 aria-required-children을 위반한다. */}
+				{status === "idle" && (
+					<p className="m-0 px-4 py-10 text-center text-sm text-muted-foreground">{text.hint}</p>
+				)}
+				{status === "loading" && pages.length === 0 && (
+					<p role="status" className="m-0 px-4 py-10 text-center text-sm text-muted-foreground">
+						{text.loading}
+					</p>
+				)}
+				{status === "error" && (
+					<p role="alert" className="m-0 px-4 py-10 text-center text-sm text-destructive">
+						{text.error}
+					</p>
+				)}
 				<CommandList aria-busy={status === "loading" || loadingMore}>
-					{status === "idle" && (
-						<p className="m-0 px-4 py-10 text-center text-sm text-muted-foreground">{text.hint}</p>
-					)}
-					{status === "loading" && pages.length === 0 && (
-						<p role="status" className="m-0 px-4 py-10 text-center text-sm text-muted-foreground">
-							{text.loading}
-						</p>
-					)}
-					{status === "error" && (
-						<p role="alert" className="m-0 px-4 py-10 text-center text-sm text-destructive">
-							{text.error}
-						</p>
-					)}
 					{status === "ready" && resultRefs.length === 0 && (
 						<CommandEmpty>{text.empty(query.trim())}</CommandEmpty>
 					)}
