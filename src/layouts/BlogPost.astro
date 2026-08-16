@@ -1,4 +1,5 @@
 ---
+import type { MarkdownHeading } from 'astro';
 import { Image } from 'astro:assets';
 import type { CollectionEntry } from 'astro:content';
 import BaseHead from '../components/BaseHead.astro';
@@ -6,8 +7,13 @@ import Footer from '../components/Footer.astro';
 import FormattedDate from '../components/FormattedDate.astro';
 import Giscus from '../components/Giscus.astro';
 import Header from '../components/Header.astro';
+import TableOfContents from '../components/TableOfContents.astro';
 
-type Props = CollectionEntry<'blog'>['data'] & { lang?: 'en' | 'ko'; alternatePath?: string };
+type Props = CollectionEntry<'blog'>['data'] & {
+	lang?: 'en' | 'ko';
+	alternatePath?: string;
+	headings?: MarkdownHeading[];
+};
 
 const {
 	title,
@@ -18,6 +24,7 @@ const {
 	socialImage,
 	lang = 'en',
 	alternatePath,
+	headings = [],
 } = Astro.props;
 const backHref = lang === 'ko' ? '/ko/blog' : '/blog';
 const backLabel = lang === 'ko' ? '← 목록으로' : '← Back to blog';
@@ -170,6 +177,7 @@ const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 					<Giscus />
 				</div>
 			</article>
+			<TableOfContents headings={headings} lang={lang} />
 		</main>
 		<Footer />
 

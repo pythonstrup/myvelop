@@ -1,0 +1,261 @@
+---
+import type { MarkdownHeading } from 'astro';
+
+interface Props {
+	headings: MarkdownHeading[];
+	lang?: 'en' | 'ko';
+}
+
+interface TocItem {
+	slug: string;
+	text: string;
+	children: TocItem[];
+}
+
+const { headings, lang = 'en' } = Astro.props;
+const label = lang === 'ko' ? '목차' : 'On this page';
+const toggleLabel = lang === 'ko' ? '하위 목차 접기/펼치기' : 'Toggle subsections';
+
+const tree: TocItem[] = [];
+const stack: { item: TocItem; depth: number }[] = [];
+for (const heading of headings) {
+	if (heading.depth < 2 || heading.depth > 4) continue;
+	const item: TocItem = { slug: heading.slug, text: heading.text, children: [] };
+	while (stack.length > 0 && stack[stack.length - 1].depth >= heading.depth) stack.pop();
+	(stack.length > 0 ? stack[stack.length - 1].item.children : tree).push(item);
+	stack.push({ item, depth: heading.depth });
+}
+---
+
+{
+	tree.length > 0 && (
+		<nav class="toc" aria-label={label}>
+			<p class="toc-title">{label}</p>
+			<ul>
+				{tree.map((section) => (
+					<li class:list={{ 'has-children': section.children.length > 0 }}>
+						<div class="toc-row">
+							<a href={`#${section.slug}`}>{section.text}</a>
+							{section.children.length > 0 && (
+								<button class="toc-toggle" aria-expanded="false" aria-label={toggleLabel}>
+									<svg
+										width="12"
+										height="12"
+										viewBox="0 0 12 12"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="1.5"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										aria-hidden="true"
+									>
+										<path d="M4.5 2.5L8 6l-3.5 3.5" />
+									</svg>
+								</button>
+							)}
+						</div>
+						{section.children.length > 0 && (
+							<ul>
+								{section.children.map((sub) => (
+									<li class:list={{ 'has-children': sub.children.length > 0 }}>
+										<div class="toc-row">
+											<a href={`#${sub.slug}`}>{sub.text}</a>
+											{sub.children.length > 0 && (
+												<button class="toc-toggle" aria-expanded="false" aria-label={toggleLabel}>
+													<svg
+														width="12"
+														height="12"
+														viewBox="0 0 12 12"
+														fill="none"
+														stroke="currentColor"
+														stroke-width="1.5"
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														aria-hidden="true"
+													>
+														<path d="M4.5 2.5L8 6l-3.5 3.5" />
+													</svg>
+												</button>
+											)}
+										</div>
+										{sub.children.length > 0 && (
+											<ul>
+												{sub.children.map((leaf) => (
+													<li>
+														<a href={`#${leaf.slug}`}>{leaf.text}</a>
+													</li>
+												))}
+											</ul>
+										)}
+									</li>
+								))}
+							</ul>
+						)}
+					</li>
+				))}
+			</ul>
+		</nav>
+	)
+}
+
+<style>
+	.toc {
+		display: none;
+		position: fixed;
+		top: 8.5rem;
+		left: calc(50% + 380px);
+		width: 240px;
+		max-height: calc(100vh - 12rem);
+		overflow-y: auto;
+		font-size: 0.85rem;
+		line-height: 1.5;
+	}
+	@media (min-width: 1280px) {
+		.toc {
+			display: block;
+		}
+	}
+	.toc-title {
+		margin: 0 0 0.75rem;
+		font-size: 0.8rem;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		color: rgb(var(--gray-dark));
+	}
+	.toc ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.toc > ul {
+		border-left: 1px solid rgb(var(--gray-light));
+	}
+	.toc-row {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+	}
+	.toc-row a {
+		flex: 1;
+		min-width: 0;
+	}
+	.toc a {
+		display: block;
+		padding: 0.25rem 0 0.25rem 0.75rem;
+		margin-left: -1px;
+		border-left: 2px solid transparent;
+		color: rgb(var(--gray));
+		text-decoration: none;
+		overflow-wrap: anywhere;
+	}
+	.toc ul ul a {
+		padding-left: 1.6rem;
+	}
+	.toc ul ul ul a {
+		padding-left: 2.45rem;
+	}
+	.toc a:hover {
+		color: var(--accent);
+	}
+	.toc a.active {
+		border-left-color: var(--accent);
+		color: var(--accent);
+		font-weight: 600;
+	}
+	.toc-toggle {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		width: 1.4rem;
+		height: 1.4rem;
+		padding: 0;
+		border: 0;
+		background: none;
+		color: rgb(var(--gray));
+		cursor: pointer;
+	}
+	.toc-toggle:hover {
+		color: var(--accent);
+	}
+	.toc-toggle svg {
+		transition: transform 0.15s ease;
+	}
+	.toc li.open > .toc-row .toc-toggle svg {
+		transform: rotate(90deg);
+	}
+	.toc li.has-children:not(.open) > ul {
+		display: none;
+	}
+</style>
+
+<script>
+	const toc = document.querySelector('.toc');
+	if (toc) {
+		const links = new Map<string, HTMLAnchorElement>();
+		for (const link of toc.querySelectorAll<HTMLAnchorElement>('a[href^="#"]')) {
+			links.set(decodeURIComponent(link.hash.slice(1)), link);
+		}
+		const headings = Array.from(links.keys(), (id) => document.getElementById(id)).filter(
+			(el): el is HTMLElement => el !== null,
+		);
+
+		const setOpen = (li: Element, open: boolean) => {
+			li.classList.toggle('open', open);
+			li.querySelector(':scope > .toc-row .toc-toggle')?.setAttribute(
+				'aria-expanded',
+				String(open),
+			);
+		};
+		for (const btn of toc.querySelectorAll<HTMLButtonElement>('.toc-toggle')) {
+			btn.addEventListener('click', () => {
+				const li = btn.closest('li');
+				if (li) setOpen(li, !li.classList.contains('open'));
+			});
+		}
+
+		let active: HTMLAnchorElement | undefined;
+		const setActive = (id: string | undefined) => {
+			const link = id ? links.get(id) : undefined;
+			if (link === active) return;
+			active?.classList.remove('active');
+			link?.classList.add('active');
+			active = link;
+
+			// 현재 섹션의 조상만 펼치고 나머지는 접는다. 수동 토글은 다음 섹션 이동 전까지 유지된다.
+			const keepOpen = new Set<Element>();
+			for (
+				let li: Element | null = link?.closest('li.has-children') ?? null;
+				li;
+				li = li.parentElement?.closest('li.has-children') ?? null
+			) {
+				keepOpen.add(li);
+			}
+			for (const li of toc.querySelectorAll('li.has-children')) setOpen(li, keepOpen.has(li));
+		};
+
+		// ponytail: rAF-throttled scroll walk instead of IntersectionObserver —
+		// deterministic on scroll-up and trivial for a few dozen headings.
+		let ticking = false;
+		const update = () => {
+			ticking = false;
+			let current: HTMLElement | undefined;
+			for (const heading of headings) {
+				if (heading.getBoundingClientRect().top <= 100) current = heading;
+				else break;
+			}
+			setActive(current?.id);
+		};
+		window.addEventListener(
+			'scroll',
+			() => {
+				if (!ticking) {
+					ticking = true;
+					requestAnimationFrame(update);
+				}
+			},
+			{ passive: true },
+		);
+		update();
+	}
+</script>
