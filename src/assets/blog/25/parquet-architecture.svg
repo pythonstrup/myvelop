@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 560" role="img" aria-labelledby="pa-title pa-desc">
+  <title id="pa-title">Delivery history query layer with a daily Parquet CronJob</title>
+  <desc id="pa-desc">Notification workers keep writing one raw JSON object per job into the History S3 bucket, exactly as before. Nothing reacts to those objects: there is no S3 event notification, no SQS queue and no Lambda consumer. Instead a Kubernetes CronJob runs once a day, reads the whole partition for the finished day, and writes it back as a single columnar Parquet file. A query engine then reads the Parquet files for yesterday and before, plus today's JSON straight from the landing zone. Every AWS resource inside the delivery-history boundary is defined and deployed with IaC such as Pulumi or Terraform.</desc>
+
+  <defs>
+    <marker id="pa-arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/>
+    </marker>
+    <marker id="pa-arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0F766E"/>
+    </marker>
+    <marker id="pa-arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94A3B8"/>
+    </marker>
+    <filter id="pa-soft-shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0F172A" flood-opacity="0.08"/>
+    </filter>
+
+    <!-- AWS Architecture Icons, Asset Package 07312025 -->
+    <symbol id="pa-icon-s3-bucket" viewBox="0 0 80 80">
+      <rect width="80" height="80" rx="4" fill="#3F8624"/>
+      <ellipse cx="40" cy="23" rx="24" ry="8" fill="none" stroke="#FFFFFF" stroke-width="4"/>
+      <path d="M16 23l6 39c.7 4.8 8.2 8 18 8s17.3-3.2 18-8l6-39" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="40" cy="39" r="3" fill="#FFFFFF"/>
+      <path d="M43 39l18 9c6.2 3.1 9 1.5 7.5-2.2-1.1-2.8-3.5-5.2-7.2-7" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+    </symbol>
+  </defs>
+
+  <style>
+    text { font-family: Pretendard, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0F172A; }
+    .title { font-size: 30px; font-weight: 700; letter-spacing: -0.6px; }
+    .subtitle { font-size: 15px; fill: #64748B; }
+    .node-title { font-size: 15px; font-weight: 700; }
+    .label { font-size: 15px; font-weight: 600; }
+    .small { font-size: 13px; fill: #64748B; }
+    .edge-label { font-size: 13px; font-weight: 600; fill: #475569; paint-order: stroke; stroke: #F8FAFC; stroke-width: 5px; stroke-linejoin: round; }
+    .edge-label-muted { font-size: 13px; font-weight: 600; fill: #64748B; paint-order: stroke; stroke: #F8FAFC; stroke-width: 5px; stroke-linejoin: round; }
+    .node { fill: #FFFFFF; stroke: #CBD5E1; stroke-width: 1.5; }
+    .edge-blue { fill: none; stroke: #2563EB; stroke-width: 2; marker-end: url(#pa-arrow-blue); stroke-linecap: round; stroke-linejoin: round; }
+    .edge-teal { fill: none; stroke: #0F766E; stroke-width: 2; marker-end: url(#pa-arrow-teal); stroke-linecap: round; stroke-linejoin: round; }
+    .edge-gray-dashed { fill: none; stroke: #94A3B8; stroke-width: 2; stroke-dasharray: 7 5; marker-end: url(#pa-arrow-gray); stroke-linecap: round; stroke-linejoin: round; }
+    .edge-dashed { stroke-dasharray: 7 7; }
+  </style>
+
+  <rect width="1120" height="560" fill="#F8FAFC"/>
+
+  <text class="title" x="40" y="46">Delivery History Query Layer</text>
+  <text class="subtitle" x="40" y="72">Same landing zone, no event trigger → a k8s CronJob folds one finished day into a single Parquet file → an engine reads it</text>
+
+  <!-- IaC manages only the delivery-history resources. -->
+  <rect x="310" y="110" width="500" height="400" rx="18" fill="#FAF5FF" fill-opacity="0.62" stroke="#8A3391" stroke-width="1.6" stroke-dasharray="7 5"/>
+  <rect x="590" y="494" width="180" height="32" rx="16" fill="#F3E8FF" stroke="#8A3391" stroke-width="1.2"/>
+  <circle cx="608" cy="510" r="5" fill="#8A3391"/>
+  <text class="label" x="620" y="515" fill="#6B2473">Delivery History</text>
+
+  <!-- Worker -->
+  <g filter="url(#pa-soft-shadow)">
+    <rect class="node" x="40" y="150" width="220" height="66" rx="12"/>
+    <g transform="translate(52 161)">
+      <rect width="44" height="44" rx="8" fill="#326CE5"/>
+      <path d="M11 16 h22 M11 23 h16 M11 30 h9" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round"/>
+    </g>
+    <text class="node-title" x="108" y="180">Worker</text>
+    <text class="small" x="108" y="202">delivery result event</text>
+  </g>
+
+  <!-- History S3 · JSON landing zone -->
+  <g filter="url(#pa-soft-shadow)">
+    <rect class="node" x="420" y="150" width="260" height="66" rx="12"/>
+    <use href="#pa-icon-s3-bucket" x="428" y="159" width="48" height="48"/>
+    <text class="node-title" x="484" y="180">History S3 · JSON</text>
+    <text class="small" x="484" y="202">raw · landing zone</text>
+  </g>
+
+  <!-- k8s CronJob -->
+  <g filter="url(#pa-soft-shadow)">
+    <rect class="node" x="420" y="290" width="260" height="66" rx="12"/>
+    <g transform="translate(432 301)">
+      <rect width="44" height="44" rx="8" fill="#326CE5"/>
+      <circle cx="22" cy="22" r="13" fill="none" stroke="#FFFFFF" stroke-width="2.5"/>
+      <path d="M22 14 V22 L28 26" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text class="node-title" x="488" y="320">k8s CronJob</text>
+    <text class="small" x="488" y="342">once a day · whole partition</text>
+  </g>
+
+  <!-- History S3 · Parquet -->
+  <g filter="url(#pa-soft-shadow)">
+    <rect class="node" x="420" y="410" width="260" height="66" rx="12"/>
+    <use href="#pa-icon-s3-bucket" x="428" y="419" width="48" height="48"/>
+    <text class="node-title" x="484" y="440">History S3 · Parquet</text>
+    <text class="small" x="484" y="462">one file per day · columnar</text>
+  </g>
+
+  <!-- Engine -->
+  <g filter="url(#pa-soft-shadow)">
+    <rect class="node" x="840" y="410" width="240" height="66" rx="12"/>
+    <g transform="translate(852 421)">
+      <rect width="44" height="44" rx="8" fill="#475569"/>
+      <path d="M14 32 V22 M22 32 V12 M30 32 V17" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/>
+      <path d="M10 32 H34" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+    </g>
+    <text class="node-title" x="908" y="440">Engine</text>
+    <text class="small" x="908" y="462">Parquet + today's JSON</text>
+  </g>
+
+  <!-- IaC card -->
+  <g filter="url(#pa-soft-shadow)">
+    <rect class="node" x="40" y="350" width="220" height="150" rx="14"/>
+    <g transform="translate(74.5 368)">
+      <rect width="44" height="44" rx="8" fill="#8A3391"/>
+      <path transform="translate(7 7) scale(1.25)" d="M11.997 0C10.226 0 8.79.83 8.79 1.856c0 1.025 1.436 1.856 3.207 1.856 1.772 0 3.208-.831 3.208-1.856C15.205.83 13.77 0 11.997 0zM5.95 3.488c-1.772 0-3.208.83-3.208 1.856C2.742 6.369 4.178 7.2 5.95 7.2c1.771 0 3.207-.831 3.207-1.856 0-1.025-1.436-1.856-3.207-1.856zm12.103 0c-1.772 0-3.208.83-3.208 1.856 0 1.025 1.436 1.856 3.208 1.856 1.771 0 3.207-.831 3.207-1.856 0-1.025-1.436-1.856-3.207-1.856zm-6.056 3.495c-1.771 0-3.207.831-3.207 1.856 0 1.025 1.436 1.856 3.207 1.856 1.772 0 3.208-.83 3.208-1.856 0-1.025-1.436-1.856-3.208-1.856zm-10.127.67a1.157 1.157 0 0 0-.55.151c-.888.513-.89 2.172-.004 3.706.886 1.534 2.324 2.362 3.211 1.85.888-.513.89-2.171.003-3.706-.72-1.246-1.803-2.027-2.66-2zm20.257.004c-.857-.026-1.941.754-2.661 2-.886 1.535-.884 3.194.003 3.707.888.512 2.325-.316 3.211-1.85.886-1.534.885-3.193-.003-3.706a1.157 1.157 0 0 0-.55-.15zm-6.048 3.492c-.857-.026-1.94.754-2.66 2-.886 1.535-.885 3.194.003 3.706.887.513 2.325-.316 3.21-1.85.887-1.534.885-3.193-.003-3.706a1.157 1.157 0 0 0-.55-.15zm-8.16.001a1.157 1.157 0 0 0-.55.151c-.888.513-.89 2.172-.004 3.706.886 1.535 2.324 2.363 3.211 1.85.888-.512.89-2.171.003-3.705-.72-1.247-1.803-2.028-2.66-2.002zm-6.047 3.494a1.157 1.157 0 0 0-.55.151c-.888.513-.89 2.172-.004 3.706.886 1.534 2.324 2.362 3.212 1.85.887-.513.888-2.172.003-3.706-.72-1.246-1.804-2.027-2.661-2.001zm20.258.002c-.857-.026-1.941.755-2.66 2.001-.887 1.535-.885 3.193.003 3.706.887.512 2.325-.316 3.21-1.85.886-1.534.885-3.193-.003-3.706a1.157 1.157 0 0 0-.55-.15zm-6.047 3.492c-.858-.026-1.942.754-2.661 2-.886 1.535-.885 3.194.003 3.706.888.513 2.325-.315 3.21-1.85.887-1.533.885-3.193-.002-3.705a1.157 1.157 0 0 0-.55-.151zm-8.163.003a1.157 1.157 0 0 0-.55.151c-.887.513-.889 2.172-.003 3.706.886 1.534 2.323 2.363 3.211 1.85.888-.512.89-2.171.004-3.706-.72-1.246-1.804-2.027-2.662-2z" fill="#FFFFFF"/>
+    </g>
+    <g transform="translate(166 368)">
+      <rect width="44" height="44" rx="8" fill="#844FBA"/>
+      <path transform="translate(7 7) scale(1.25)" d="M1.44 0v7.575l6.561 3.79V3.787zm21.12 4.227l-6.561 3.791v7.574l6.56-3.787zM8.72 4.23v7.575l6.561 3.787V8.018zm0 8.405v7.575L15.28 24v-7.578z" fill="#FFFFFF"/>
+    </g>
+    <text class="node-title" x="150" y="442" text-anchor="middle">Pulumi or Terraform</text>
+    <text class="small" x="150" y="480" text-anchor="middle">AWS infra as code</text>
+  </g>
+  <path class="edge-teal edge-dashed" d="M260 425 H306"/>
+  <text class="edge-label" x="283" y="412" text-anchor="middle" fill="#0F766E">Deploy</text>
+
+  <!-- flow: the write path is unchanged from part 3 -->
+  <path class="edge-blue" d="M260 183 H416"/>
+  <text class="edge-label" x="348" y="172" text-anchor="middle">PutObject · single · bulk</text>
+
+  <!-- the event chain of part 3 is gone; a schedule pulls instead -->
+  <path class="edge-blue" d="M550 216 V286"/>
+  <text class="edge-label" x="562" y="245">read a finished day</text>
+  <text class="edge-label-muted" x="562" y="266">no s3:ObjectCreated</text>
+
+  <path class="edge-blue" d="M550 356 V406"/>
+  <text class="edge-label" x="562" y="386">write · one file</text>
+
+  <path class="edge-blue" d="M680 443 H836"/>
+  <text class="edge-label" x="758" y="432" text-anchor="middle">read</text>
+
+  <!-- today's partition has no Parquet yet -->
+  <path class="edge-gray-dashed" d="M680 183 H960 V406"/>
+  <text class="edge-label-muted" x="820" y="172" text-anchor="middle">today only · as JSON</text>
+</svg>
