@@ -353,7 +353,7 @@ const relatedLabel = lang === 'ko' ? '관련 글' : 'Related posts';
 				</header>
 				{
 					nav?.series && (
-						<details class="series-box">
+						<details class="series-box" data-series={nav.series.name}>
 							<summary>
 								<span class="series-tag">{seriesLabel}</span>
 								{nav.series.name}
@@ -451,6 +451,21 @@ const relatedLabel = lang === 'ko' ? '관련 글' : 'Related posts';
 		<Footer />
 
 		<script>
+			// 페이지를 이동해도 열어둔 시리즈 박스가 열린 채 유지되게 한다.
+			const seriesBox = document.querySelector<HTMLDetailsElement>('.series-box');
+			if (seriesBox) {
+				const seriesKey = `series-open:${seriesBox.dataset.series ?? ''}`;
+				try {
+					if (sessionStorage.getItem(seriesKey)) seriesBox.open = true;
+					seriesBox.addEventListener('toggle', () => {
+						if (seriesBox.open) sessionStorage.setItem(seriesKey, '1');
+						else sessionStorage.removeItem(seriesKey);
+					});
+				} catch {
+					/* storage unavailable */
+				}
+			}
+
 			const isKorean = document.documentElement.lang === 'ko';
 			const copyText = isKorean ? '복사' : 'Copy';
 			const copiedText = isKorean ? '복사됨' : 'Copied';
