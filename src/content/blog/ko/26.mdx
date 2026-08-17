@@ -2,7 +2,7 @@
 title: "BullMQ로 알림 시스템 운영하기 5편 - 큐는 순서를 보장하지 않는다, 그룹 발송의 동시성"
 description: "1만 건이 넘는 같은 분류의 알림톡을 그룹 하나로 묶어 보내는 기능을 붙이자, batch 서버가 청크로 잘라 던진 job들이 비동기로 소비되기 시작했다. 그 위에서 그룹은 하나, 발송은 한 번을 지키는 waiting-children의 자리와, 경합 다섯을 하나씩 막고 불변식으로 검증한 과정을 정리했다."
 pubDate: "2026-08-20T21:00:00+09:00"
-tags: ["BullMQ", "waiting-children", "architecture", "concurrency"]
+tags: ["BullMQ", "waiting-children", "architecture", "concurrency", "redis"]
 socialImage: "../../../assets/blog/26/og.png"
 ---
 
