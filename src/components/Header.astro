@@ -52,7 +52,6 @@ if (pathname === '/404' || pathname === '/404/') {
 	<nav class="header-inner" aria-label={isKo ? '주요 메뉴' : 'Primary navigation'}>
 		<a class="site-brand" href={homeHref} aria-label={`${SITE_TITLE} ${isKo ? '홈' : 'home'}`}>
 			<span>{SITE_TITLE}</span>
-			<span class="brand-dot" aria-hidden="true"></span>
 		</a>
 
 		<div class="desktop-nav">
@@ -166,14 +165,6 @@ if (pathname === '/404' || pathname === '/404/') {
 
 	.site-brand:hover {
 		color: rgb(var(--black));
-	}
-
-	.brand-dot {
-		width: 6px;
-		height: 6px;
-		margin-top: 2px;
-		background: var(--accent);
-		border-radius: 999px;
 	}
 
 	.desktop-nav {
