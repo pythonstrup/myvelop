@@ -1,0 +1,24 @@
+---
+import BlogTagList from '../../../layouts/BlogTagList.astro';
+import { getBlogTags, type TagGroup } from '../../../lib/blog';
+
+export async function getStaticPaths() {
+	const tags = await getBlogTags('en');
+	return [...tags.entries()].map(([slug, group]) => ({
+		params: { tag: slug },
+		props: group,
+	}));
+}
+type Props = TagGroup;
+
+const { label, posts } = Astro.props;
+const { tag } = Astro.params;
+const hasKoTag = (await getBlogTags('ko')).has(tag);
+---
+
+<BlogTagList
+	tag={label}
+	posts={posts}
+	lang="en"
+	alternatePath={hasKoTag ? `/blog/tags/${tag}/` : undefined}
+/>

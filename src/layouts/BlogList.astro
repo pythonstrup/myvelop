@@ -1,10 +1,10 @@
 ---
-import { Image } from 'astro:assets';
 import type { CollectionEntry } from 'astro:content';
 import BaseHead from '../components/BaseHead.astro';
 import Footer from '../components/Footer.astro';
-import FormattedDate from '../components/FormattedDate.astro';
 import Header from '../components/Header.astro';
+import PostList from '../components/PostList.astro';
+import TagSidebar from '../components/TagSidebar.astro';
 import { SITE_DESCRIPTION, SITE_DESCRIPTION_KO, SITE_TITLE } from '../consts';
 import { getBlogPageCount } from '../lib/blog';
 
@@ -53,123 +53,62 @@ const alternatePath =
 		<Header />
 		<main>
 			<h1>{listTitle}</h1>
-			<ul class="post-list">
-				{
-					posts.map((post) => (
-						<li class="post-item">
-							<a href={`${basePath}/${post.id.replace(`${lang}/`, '')}/`}>
-								<Image
-									class="thumb"
-									src={post.data.heroImage ?? post.data.socialImage}
-									alt=""
-									width={320}
-									height={168}
-									loading="lazy"
-								/>
-								<div class="post-text">
-									<h2 class="title">{post.data.title}</h2>
-									<p class="date">
-										<FormattedDate date={post.data.pubDate} />
-									</p>
-									<p class="desc">{post.data.description}</p>
-								</div>
-							</a>
-						</li>
-					))
-				}
-			</ul>
-			{
-				totalPages > 1 && (
-					<nav class="pagination" aria-label={isKo ? '페이지 탐색' : 'Pagination'}>
-						<ol>
-							{pageNumbers.map((pageNumber) => (
-								<li>
-									{pageNumber === currentPage ? (
-										<span aria-current="page">{pageNumber}</span>
-									) : (
-										<a
-											href={pageHref(pageNumber)}
-											aria-label={isKo ? `${pageNumber}페이지로 이동` : `Go to page ${pageNumber}`}
-										>
-											{pageNumber}
-										</a>
-									)}
-								</li>
-							))}
-						</ol>
-					</nav>
-				)
-			}
+			<div class="list-layout">
+				<TagSidebar lang={lang} />
+				<div>
+					<PostList posts={posts} lang={lang} />
+					{
+						totalPages > 1 && (
+							<nav class="pagination" aria-label={isKo ? '페이지 탐색' : 'Pagination'}>
+								<ol>
+									{pageNumbers.map((pageNumber) => (
+										<li>
+											{pageNumber === currentPage ? (
+												<span aria-current="page">{pageNumber}</span>
+											) : (
+												<a
+													href={pageHref(pageNumber)}
+													aria-label={
+														isKo ? `${pageNumber}페이지로 이동` : `Go to page ${pageNumber}`
+													}
+												>
+													{pageNumber}
+												</a>
+											)}
+										</li>
+									))}
+								</ol>
+							</nav>
+						)
+					}
+				</div>
+			</div>
 		</main>
 		<Footer />
 	</body>
 </html>
 
 <style>
+	/* 태그 사이드바가 붙는 목록 페이지만 본문 폭을 넓힌다. */
+	main {
+		width: min(1020px, calc(100% - 2em));
+	}
 	main > h1 {
 		margin-bottom: 1.5rem;
 		font-size: clamp(2.2rem, 8vw, 3rem);
 	}
-	.post-list {
-		list-style: none;
-		margin: 0;
-		padding: 0;
+	.list-layout {
+		display: grid;
+		grid-template-columns: 200px minmax(0, 1fr);
+		gap: 3rem;
 	}
-	.post-item {
-		padding: 1.75rem 0;
-		border-bottom: 1px solid rgb(var(--gray-light));
-	}
-	.post-item:first-child {
-		padding-top: 0.5rem;
-	}
-	.post-item a {
-		display: flex;
-		gap: 1.1rem;
-		align-items: flex-start;
-		text-decoration: none;
-	}
-	.post-item .thumb {
-		flex: none;
-		width: 160px;
-		height: auto;
-		/* OG 카드 비율에 맞춰 고정한다. 본문 스크린샷처럼 비율이 다른
-		   이미지도 목록에서는 같은 크기로 보이게 잘라낸다. */
-		aspect-ratio: 1200 / 630;
-		object-fit: cover;
-		border: 1px solid rgb(var(--gray-light));
-		border-radius: 8px;
-	}
-	.post-item .post-text {
-		min-width: 0;
-	}
-	.post-item .title {
-		margin: 0 0 0.3rem;
-		font-size: 1.5rem;
-		color: rgb(var(--black));
-		transition: color 0.2s ease;
-	}
-	.post-item .date {
-		margin: 0 0 0.6rem;
-		font-size: 0.9rem;
-		color: rgb(var(--gray));
-	}
-	.post-item .desc {
-		margin: 0;
-		display: -webkit-box;
-		overflow: hidden;
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 2;
-		font-size: 1rem;
-		line-height: 1.6;
-		color: rgb(var(--gray-dark));
-	}
-	.post-item a:hover .title {
-		color: var(--accent);
-	}
-	.post-item a:focus-visible {
-		outline: 2px solid var(--accent);
-		outline-offset: 6px;
-		border-radius: 4px;
+	@media (max-width: 880px) {
+		.list-layout {
+			display: block;
+		}
+		.list-layout > :global(.tag-sidebar) {
+			margin-bottom: 1.75rem;
+		}
 	}
 	.pagination {
 		margin-top: 2rem;
@@ -211,24 +150,5 @@ const alternatePath =
 		color: var(--accent-foreground);
 		background: var(--accent);
 		border-color: var(--accent);
-	}
-	@media (max-width: 520px) {
-		.post-item {
-			padding: 1.4rem 0;
-		}
-		.post-item a {
-			gap: 0.85rem;
-		}
-		.post-item .thumb {
-			width: 96px;
-		}
-		.post-item .title {
-			font-size: 1.35rem;
-			line-height: 1.35;
-		}
-		.post-item .desc {
-			font-size: 0.95rem;
-			-webkit-line-clamp: 3;
-		}
 	}
 </style>

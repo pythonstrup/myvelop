@@ -10,6 +10,7 @@ pythonstrup은 Astro 7로 빌드하는 정적 다국어 블로그다. 서버 런
 | 글 목록 | `/blog/` | `/ko/blog/` | `BlogList.astro` |
 | 페이지네이션 | `/blog/page/:page/` | `/ko/blog/page/:page/` | `src/pages/**/blog/page/[page].astro` |
 | 글 | `/blog/:slug/` | `/ko/blog/:slug/` | `BlogPost.astro` |
+| 태그별 글 | `/blog/tags/:tag/` | `/ko/blog/tags/:tag/` | `BlogTagList.astro` |
 | 검색 | `/search/` | `/ko/search/` | `SearchCommand.tsx` |
 | 소개 | `/about/` | `/ko/about/` | `AboutPortfolio.astro` |
 | RSS | `/rss.xml` | `/ko/rss.xml` | `src/pages/**/rss.xml.js` |

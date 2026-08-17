@@ -8,6 +8,7 @@ import FormattedDate from '../components/FormattedDate.astro';
 import Giscus from '../components/Giscus.astro';
 import Header from '../components/Header.astro';
 import TableOfContents from '../components/TableOfContents.astro';
+import { tagSlug } from '../lib/blog';
 
 type Props = CollectionEntry<'blog'>['data'] & {
 	lang?: 'en' | 'ko';
@@ -145,12 +146,25 @@ const tagsLabel = lang === 'ko' ? '태그' : 'Tags';
 				list-style: none;
 			}
 			.tag {
+				display: inline-block;
 				padding: 0.35rem 0.8rem;
 				border: 1px solid rgb(var(--gray-light));
 				border-radius: 999px;
 				font-size: 0.85rem;
 				line-height: 1.4;
 				color: rgb(var(--gray-dark));
+				text-decoration: none;
+				transition:
+					color 160ms ease,
+					border-color 160ms ease;
+			}
+			.tag:hover {
+				color: var(--accent);
+				border-color: var(--accent);
+			}
+			.tag:focus-visible {
+				outline: 2px solid var(--accent);
+				outline-offset: 2px;
 			}
 			.tag::before {
 				content: '#';
@@ -200,7 +214,11 @@ const tagsLabel = lang === 'ko' ? '태그' : 'Tags';
 					tags && tags.length > 0 && (
 						<ul class="tag-list" aria-label={tagsLabel}>
 							{tags.map((tag) => (
-								<li class="tag">{tag}</li>
+								<li>
+									<a class="tag" href={`${backHref}/tags/${tagSlug(tag)}/`}>
+										{tag}
+									</a>
+								</li>
 							))}
 						</ul>
 					)

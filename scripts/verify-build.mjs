@@ -55,7 +55,14 @@ function localPath(value) {
 	}
 }
 
-async function builtTargetExists(pathname) {
+async function builtTargetExists(encodedPathname) {
+	// URL의 pathname은 퍼센트 인코딩되어 있고 dist 디렉터리는 디코딩된 이름(한글 태그 등)을 쓴다.
+	let pathname;
+	try {
+		pathname = decodeURIComponent(encodedPathname);
+	} catch {
+		pathname = encodedPathname;
+	}
 	const target = resolve(dist, `.${pathname}`);
 	const relativeTarget = relative(dist, target);
 	if (relativeTarget === '..' || relativeTarget.startsWith(`..${sep}`) || isAbsolute(relativeTarget)) return false;

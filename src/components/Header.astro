@@ -1,7 +1,7 @@
 ---
 import { getCollection } from 'astro:content';
 import { SITE_TITLE } from '../consts';
-import { getBlogPageCount } from '../lib/blog';
+import { getBlogPageCount, getBlogTags } from '../lib/blog';
 import { externalLinks, navLinks } from '../lib/nav';
 import HeaderLink from './HeaderLink.astro';
 import MobileNav from './MobileNav.astro';
@@ -18,6 +18,7 @@ const linkedinUrl = externalLinks.find((link) => link.label === 'LinkedIn')?.hre
 // 글 상세 페이지는 번역본이 있으면 그 글로, 없으면 해당 언어의 글 목록으로 보낸다.
 let langSwitchHref: string;
 const blogPageMatch = pathname.match(/^\/(?:ko\/)?blog\/page\/(\d+)\/?$/);
+const blogTagMatch = pathname.match(/^\/(?:ko\/)?blog\/tags\/([^/]+)\/?$/);
 const blogMatch = pathname.match(/^\/(?:ko\/)?blog\/(.+?)\/?$/);
 if (pathname === '/404' || pathname === '/404/') {
 	langSwitchHref = '/ko/404/';
@@ -27,6 +28,12 @@ if (pathname === '/404' || pathname === '/404/') {
 	const targetPages = await getBlogPageCount(isKo ? 'en' : 'ko');
 	const base = isKo ? '/blog' : '/ko/blog';
 	langSwitchHref = page <= targetPages ? `${base}/page/${page}/` : `${base}/`;
+} else if (blogTagMatch) {
+	// 상대 언어에 같은 태그가 있으면 그 태그 페이지로, 없으면 목록으로 보낸다.
+	const slug = decodeURIComponent(blogTagMatch[1]);
+	const otherTags = await getBlogTags(isKo ? 'en' : 'ko');
+	const base = isKo ? '/blog' : '/ko/blog';
+	langSwitchHref = otherTags.has(slug) ? `${base}/tags/${slug}/` : `${base}/`;
 } else if (blogMatch) {
 	const slug = blogMatch[1];
 	const targetLang = isKo ? 'en' : 'ko';

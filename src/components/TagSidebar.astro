@@ -1,0 +1,130 @@
+---
+import { getBlogTags } from '../lib/blog';
+
+interface Props {
+	lang: 'en' | 'ko';
+	activeSlug?: string;
+}
+
+const { lang, activeSlug } = Astro.props;
+const isKo = lang === 'ko';
+const base = isKo ? '/ko/blog' : '/blog';
+// 글이 2편 이상인 태그만 보여준다. 한 편짜리 태그가 전체의 4분의 3이라 다 나열하면 소음이 된다.
+const tags = [...(await getBlogTags(lang)).entries()]
+	.filter(([, group]) => group.posts.length >= 2)
+	.sort(([, a], [, b]) => b.posts.length - a.posts.length || a.label.localeCompare(b.label));
+---
+
+<nav class="tag-sidebar" aria-label={isKo ? '태그' : 'Tags'}>
+	<h2>{isKo ? '태그' : 'Tags'}</h2>
+	<ul>
+		{
+			tags.map(([slug, group]) => (
+				<li>
+					<a
+						href={`${base}/tags/${slug}/`}
+						class:list={{ active: slug === activeSlug }}
+						aria-current={slug === activeSlug ? 'page' : undefined}
+					>
+						<span class="hash" aria-hidden="true">#</span>
+						{group.label}
+						<span class="count">{group.posts.length}</span>
+					</a>
+				</li>
+			))
+		}
+	</ul>
+</nav>
+
+<style>
+	.tag-sidebar {
+		position: sticky;
+		top: 96px;
+		align-self: start;
+	}
+	/* 사이드바 전체가 안 들어가는 낮은 창에서 고정하면 아래쪽 태그가 잘리거나
+	   내부 스크롤이 페이지 휠을 가로채므로, 그때는 본문과 함께 흘려보낸다.
+	   ponytail: 830px는 현재 태그 수(~20개, 약 700px) 기준 — 태그가 늘면 같이 올린다. */
+	@media (max-height: 830px) {
+		.tag-sidebar {
+			position: static;
+		}
+	}
+	.tag-sidebar h2 {
+		margin: 0 0 0.8rem;
+		font-size: 0.8rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: rgb(var(--gray));
+	}
+	.tag-sidebar ul {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.tag-sidebar a {
+		display: flex;
+		align-items: baseline;
+		gap: 0.35rem;
+		padding: 0.3rem 0.55rem;
+		border-radius: 8px;
+		font-size: 0.92rem;
+		line-height: 1.4;
+		color: rgb(var(--gray-dark));
+		text-decoration: none;
+		transition:
+			color 160ms ease,
+			background-color 160ms ease;
+	}
+	.tag-sidebar .hash {
+		color: var(--accent);
+	}
+	.tag-sidebar .count {
+		margin-left: auto;
+		font-size: 0.8rem;
+		color: rgb(var(--gray));
+	}
+	.tag-sidebar a:hover {
+		color: rgb(var(--black));
+		background: rgba(var(--gray-light), 0.66);
+	}
+	.tag-sidebar a.active {
+		font-weight: 700;
+		color: var(--accent);
+	}
+	.tag-sidebar a:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+
+	/* 좁은 화면에서는 세로 레일 대신 알약 칩을 가로로 흘린다. */
+	@media (max-width: 880px) {
+		.tag-sidebar {
+			position: static;
+		}
+		.tag-sidebar h2 {
+			display: none;
+		}
+		.tag-sidebar ul {
+			flex-direction: row;
+			flex-wrap: wrap;
+			gap: 0.5rem;
+		}
+		.tag-sidebar a {
+			padding: 0.3rem 0.75rem;
+			border: 1px solid rgb(var(--gray-light));
+			border-radius: 999px;
+			font-size: 0.85rem;
+		}
+		.tag-sidebar a.active {
+			border-color: var(--accent);
+		}
+		.tag-sidebar .count {
+			margin-left: 0.1rem;
+		}
+	}
+</style>
