@@ -18,6 +18,8 @@ const blog = defineCollection({
 			// because it renders as the post's LCP image.
 			socialImage: image(),
 			tags: z.array(z.string()).optional(),
+			// Same series string groups posts into a series; order follows pubDate.
+			series: z.string().optional(),
 		}),
 });
 

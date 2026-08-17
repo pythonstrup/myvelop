@@ -1,6 +1,7 @@
 ---
 import { type CollectionEntry, getCollection, render } from 'astro:content';
 import BlogPost from '../../layouts/BlogPost.astro';
+import { getPostNav } from '../../lib/blog';
 
 export async function getStaticPaths() {
 	const posts = await getCollection('blog', ({ id }) => id.startsWith('en/'));
@@ -15,6 +16,7 @@ const post = Astro.props;
 const { Content, headings } = await render(post);
 const slug = post.id.replace(/^en\//, '');
 const hasTranslation = (await getCollection('blog')).some((entry) => entry.id === `ko/${slug}`);
+const nav = await getPostNav(post);
 ---
 
 <BlogPost
@@ -22,6 +24,7 @@ const hasTranslation = (await getCollection('blog')).some((entry) => entry.id ==
 	lang="en"
 	headings={headings}
 	alternatePath={hasTranslation ? `/blog/${slug}/` : undefined}
+	nav={nav}
 >
 	<Content />
 </BlogPost>

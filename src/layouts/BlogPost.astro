@@ -8,12 +8,13 @@ import FormattedDate from '../components/FormattedDate.astro';
 import Giscus from '../components/Giscus.astro';
 import Header from '../components/Header.astro';
 import TableOfContents from '../components/TableOfContents.astro';
-import { tagSlug } from '../lib/blog';
+import { type PostNav, tagSlug } from '../lib/blog';
 
 type Props = CollectionEntry<'blog'>['data'] & {
 	lang?: 'en' | 'ko';
 	alternatePath?: string;
 	headings?: MarkdownHeading[];
+	nav?: PostNav;
 };
 
 const {
@@ -27,11 +28,17 @@ const {
 	lang = 'en',
 	alternatePath,
 	headings = [],
+	nav,
 } = Astro.props;
 const backHref = lang === 'ko' ? '/ko/blog' : '/blog';
 const backLabel = lang === 'ko' ? '← 목록으로' : '← Back to blog';
 const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 const tagsLabel = lang === 'ko' ? '태그' : 'Tags';
+const seriesLabel = lang === 'ko' ? '시리즈' : 'Series';
+const prevLabel = lang === 'ko' ? '← 이전 글' : '← Previous';
+const nextLabel = lang === 'ko' ? '다음 글 →' : 'Next →';
+const postNavLabel = lang === 'ko' ? '이전/다음 글' : 'Previous and next posts';
+const relatedLabel = lang === 'ko' ? '관련 글' : 'Related posts';
 ---
 
 <html lang={lang}>
@@ -176,6 +183,150 @@ const tagsLabel = lang === 'ko' ? '태그' : 'Tags';
 				padding-top: 2rem;
 				border-top: 1px solid rgb(var(--gray-light));
 			}
+			.series-box {
+				margin-bottom: 2rem;
+				border: 1px solid rgb(var(--gray-light));
+				border-radius: 10px;
+				font-size: 0.95rem;
+			}
+			.series-box summary {
+				padding: 0.8rem 1rem;
+				cursor: pointer;
+				font-weight: 600;
+				color: rgb(var(--gray-dark));
+			}
+			.series-box summary .series-tag {
+				margin-right: 0.6em;
+				font-size: 0.8rem;
+				font-weight: 700;
+				color: var(--accent);
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+			}
+			.series-box summary .series-count {
+				margin-left: 0.5em;
+				font-weight: 400;
+				color: rgb(var(--gray));
+			}
+			.series-box ol {
+				margin: 0;
+				padding: 0 1rem 0.9rem 2.4rem;
+			}
+			.series-box li {
+				margin: 0.35rem 0;
+				color: rgb(var(--gray));
+			}
+			.series-box li[aria-current='page'] {
+				font-weight: 600;
+				color: rgb(var(--gray-dark));
+			}
+			.series-box a {
+				color: inherit;
+				text-decoration: none;
+			}
+			.series-box a:hover {
+				color: var(--accent);
+			}
+			.post-nav {
+				display: flex;
+				justify-content: space-between;
+				gap: 1rem;
+				margin-bottom: 2rem;
+			}
+			.post-nav-link {
+				display: block;
+				max-width: 48%;
+				font-weight: 600;
+				color: rgb(var(--gray-dark));
+				text-decoration: none;
+			}
+			.post-nav-link:hover {
+				color: var(--accent);
+			}
+			.post-nav-link .dir {
+				display: block;
+				margin-bottom: 0.25rem;
+				font-size: 0.8rem;
+				font-weight: 400;
+				color: rgb(var(--gray));
+			}
+			.post-nav-link.next {
+				margin-left: auto;
+				text-align: right;
+			}
+			.related-posts {
+				margin-top: 3rem;
+				padding-top: 2rem;
+				border-top: 1px solid rgb(var(--gray-light));
+			}
+			.related-posts h2 {
+				margin: 0 0 1.2rem;
+				font-size: 1.2rem;
+			}
+			.related-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+				gap: 1.2rem;
+			}
+			.related-card {
+				display: block;
+				text-decoration: none;
+			}
+			.related-card :global(.related-thumb) {
+				display: block;
+				width: 100%;
+				height: auto;
+				aspect-ratio: 1200 / 630;
+				object-fit: cover;
+				border: 1px solid rgb(var(--gray-light));
+				border-radius: 8px;
+			}
+			.related-title {
+				margin: 0.7rem 0 0.35rem;
+				display: -webkit-box;
+				overflow: hidden;
+				-webkit-box-orient: vertical;
+				-webkit-line-clamp: 2;
+				font-size: 1.02rem;
+				line-height: 1.4;
+				color: rgb(var(--black));
+				transition: color 0.2s ease;
+			}
+			.related-desc {
+				margin: 0 0 0.45rem;
+				display: -webkit-box;
+				overflow: hidden;
+				-webkit-box-orient: vertical;
+				-webkit-line-clamp: 2;
+				font-size: 0.88rem;
+				line-height: 1.5;
+				color: rgb(var(--gray-dark));
+			}
+			.related-date {
+				margin: 0;
+				font-size: 0.82rem;
+				color: rgb(var(--gray));
+			}
+			.related-card:hover .related-title {
+				color: var(--accent);
+			}
+			.related-card:focus-visible {
+				outline: 2px solid var(--accent);
+				outline-offset: 4px;
+				border-radius: 8px;
+			}
+			@media (max-width: 640px) {
+				.post-nav {
+					flex-direction: column;
+				}
+				.post-nav-link {
+					max-width: 100%;
+				}
+				.post-nav-link.next {
+					margin-left: 0;
+					text-align: left;
+				}
+			}
 		</style>
 	</head>
 
@@ -201,6 +352,30 @@ const tagsLabel = lang === 'ko' ? '태그' : 'Tags';
 					</div>
 				</header>
 				{
+					nav?.series && (
+						<details class="series-box">
+							<summary>
+								<span class="series-tag">{seriesLabel}</span>
+								{nav.series.name}
+								<span class="series-count">
+									{nav.series.index}/{nav.series.posts.length}
+								</span>
+							</summary>
+							<ol>
+								{nav.series.posts.map((p) =>
+									p.current ? (
+										<li aria-current="page">{p.title}</li>
+									) : (
+										<li>
+											<a href={p.href}>{p.title}</a>
+										</li>
+									),
+								)}
+							</ol>
+						</details>
+					)
+				}
+				{
 					heroImage && (
 						<div class="hero-image">
 							<Image width={1020} height={510} src={heroImage} alt="" priority />
@@ -224,7 +399,51 @@ const tagsLabel = lang === 'ko' ? '태그' : 'Tags';
 					)
 				}
 				<div class="post-footer">
+					{
+						(nav?.prev || nav?.next) && (
+							<nav class="post-nav" aria-label={postNavLabel}>
+								{nav?.prev && (
+									<a class="post-nav-link prev" href={nav.prev.href}>
+										<span class="dir">{prevLabel}</span>
+										{nav.prev.title}
+									</a>
+								)}
+								{nav?.next && (
+									<a class="post-nav-link next" href={nav.next.href}>
+										<span class="dir">{nextLabel}</span>
+										{nav.next.title}
+									</a>
+								)}
+							</nav>
+						)
+					}
 					<Giscus />
+					{
+						nav && nav.related.length > 0 && (
+							<section class="related-posts">
+								<h2>{relatedLabel}</h2>
+								<div class="related-grid">
+									{nav.related.map((p) => (
+										<a class="related-card" href={`${backHref}/${p.id.replace(/^(en|ko)\//, '')}/`}>
+											<Image
+												class="related-thumb"
+												src={p.data.heroImage ?? p.data.socialImage}
+												alt=""
+												width={400}
+												height={210}
+												loading="lazy"
+											/>
+											<h3 class="related-title">{p.data.title}</h3>
+											<p class="related-desc">{p.data.description}</p>
+											<p class="related-date">
+												<FormattedDate date={p.data.pubDate} />
+											</p>
+										</a>
+									))}
+								</div>
+							</section>
+						)
+					}
 				</div>
 			</article>
 			<TableOfContents headings={headings} lang={lang} />
