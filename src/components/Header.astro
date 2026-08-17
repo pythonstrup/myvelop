@@ -1,6 +1,7 @@
 ---
 import { getCollection } from 'astro:content';
 import { SITE_TITLE } from '../consts';
+import { getBlogPageCount } from '../lib/blog';
 import { externalLinks, navLinks } from '../lib/nav';
 import HeaderLink from './HeaderLink.astro';
 import MobileNav from './MobileNav.astro';
@@ -21,8 +22,11 @@ const blogMatch = pathname.match(/^\/(?:ko\/)?blog\/(.+?)\/?$/);
 if (pathname === '/404' || pathname === '/404/') {
 	langSwitchHref = '/ko/404/';
 } else if (blogPageMatch) {
-	const page = blogPageMatch[1];
-	langSwitchHref = `${isKo ? '' : '/ko'}/blog/page/${page}/`;
+	// 상대 언어에 같은 번호의 목록 페이지가 없으면(글 수가 달라 페이지 수가 다르면) 목록 첫 페이지로 보낸다.
+	const page = Number(blogPageMatch[1]);
+	const targetPages = await getBlogPageCount(isKo ? 'en' : 'ko');
+	const base = isKo ? '/blog' : '/ko/blog';
+	langSwitchHref = page <= targetPages ? `${base}/page/${page}/` : `${base}/`;
 } else if (blogMatch) {
 	const slug = blogMatch[1];
 	const targetLang = isKo ? 'en' : 'ko';

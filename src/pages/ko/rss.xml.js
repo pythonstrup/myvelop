@@ -1,9 +1,9 @@
 import rss from '@astrojs/rss';
 import { SITE_DESCRIPTION_KO, SITE_TITLE } from '../../consts';
-import { getBlogPostsByDate } from '../../lib/blog';
+import { getBlogPosts } from '../../lib/blog';
 
 export async function GET(context) {
-	const posts = await getBlogPostsByDate('ko');
+	const posts = await getBlogPosts('ko');
 	const self = new URL('ko/rss.xml', context.site);
 	return rss({
 		title: SITE_TITLE,

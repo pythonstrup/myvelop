@@ -6,6 +6,7 @@ import Footer from '../components/Footer.astro';
 import FormattedDate from '../components/FormattedDate.astro';
 import Header from '../components/Header.astro';
 import { SITE_DESCRIPTION, SITE_DESCRIPTION_KO, SITE_TITLE } from '../consts';
+import { getBlogPageCount } from '../lib/blog';
 
 interface Props {
 	posts: CollectionEntry<'blog'>[];
@@ -28,7 +29,15 @@ const description = isKo ? SITE_DESCRIPTION_KO : SITE_DESCRIPTION;
 const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1);
 const pageHref = (pageNumber: number) =>
 	pageNumber === 1 ? `${basePath}/` : `${basePath}/page/${pageNumber}/`;
-const alternatePath = currentPage === 1 ? '/blog/' : `/blog/page/${currentPage}/`;
+// 두 언어의 글 수가 달라 상대 언어에는 같은 번호의 목록 페이지가 없을 수 있다.
+// 그때는 hreflang을 내지 않는다 — 존재하지 않는 페이지를 가리키는 것보다 없는 쪽이 맞다.
+const otherPages = await getBlogPageCount(isKo ? 'en' : 'ko');
+const alternatePath =
+	currentPage > otherPages
+		? undefined
+		: currentPage === 1
+			? '/blog/'
+			: `/blog/page/${currentPage}/`;
 ---
 
 <!doctype html>

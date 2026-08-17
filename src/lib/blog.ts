@@ -8,8 +8,6 @@ export async function getBlogPosts(lang: 'en' | 'ko') {
 	);
 }
 
-export async function getBlogPostsByDate(lang: 'en' | 'ko') {
-	return [...(await getBlogPosts(lang))].sort(
-		(a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
-	);
+export async function getBlogPageCount(lang: 'en' | 'ko') {
+	return Math.max(1, Math.ceil((await getBlogPosts(lang)).length / BLOG_PAGE_SIZE));
 }
