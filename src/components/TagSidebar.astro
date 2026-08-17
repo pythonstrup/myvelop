@@ -9,10 +9,9 @@ interface Props {
 const { lang, activeSlug } = Astro.props;
 const isKo = lang === 'ko';
 const base = isKo ? '/ko/blog' : '/blog';
-// 글이 2편 이상인 태그만 보여준다. 한 편짜리 태그가 전체의 4분의 3이라 다 나열하면 소음이 된다.
-const tags = [...(await getBlogTags(lang)).entries()]
-	.filter(([, group]) => group.posts.length >= 2)
-	.sort(([, a], [, b]) => b.posts.length - a.posts.length || a.label.localeCompare(b.label));
+const tags = [...(await getBlogTags(lang)).entries()].sort(
+	([, a], [, b]) => b.posts.length - a.posts.length || a.label.localeCompare(b.label),
+);
 ---
 
 <nav class="tag-sidebar" aria-label={isKo ? '태그' : 'Tags'}>
@@ -37,18 +36,9 @@ const tags = [...(await getBlogTags(lang)).entries()]
 </nav>
 
 <style>
+	/* 태그 전체(80개 이상)를 나열하면 어떤 화면보다 길어서 고정하지 않고 본문과 함께 스크롤한다. */
 	.tag-sidebar {
-		position: sticky;
-		top: 96px;
 		align-self: start;
-	}
-	/* 사이드바 전체가 안 들어가는 낮은 창에서 고정하면 아래쪽 태그가 잘리거나
-	   내부 스크롤이 페이지 휠을 가로채므로, 그때는 본문과 함께 흘려보낸다.
-	   ponytail: 830px는 현재 태그 수(~20개, 약 700px) 기준 — 태그가 늘면 같이 올린다. */
-	@media (max-height: 830px) {
-		.tag-sidebar {
-			position: static;
-		}
 	}
 	.tag-sidebar h2 {
 		margin: 0 0 0.8rem;
