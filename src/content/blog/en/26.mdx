@@ -1,0 +1,224 @@
+---
+title: "Running a Notification System with BullMQ, Part 5 - The Queue Guarantees No Order: Concurrency in Group Sends"
+description: "Grouping 10,000+ same-category notifications into one third-party group meant the chunks a batch server throws as jobs get consumed asynchronously. Where waiting-children fits in keeping one group and one send on top of that, and how five races were closed one by one and verified with invariants."
+pubDate: "2026-08-20T21:00:00+09:00"
+tags: ["BullMQ", "waiting-children", "architecture", "concurrency"]
+socialImage: "../../../assets/blog/26/og.png"
+---
+
+import WaitingChildrenDemo from "@/materials/26/WaitingChildrenDemo";
+import PrematureSendDemo from "@/materials/26/PrematureSendDemo";
+import GroupFanInDiagram from "@/materials/26/GroupFanInDiagram";
+import FlowProducerMismatchDemo from "@/materials/26/FlowProducerMismatchDemo";
+import { CreateRaceDemo, HeartbeatWatchdogDemo, ReportOnceDemo, ResendGuardDemo, RestageDemo, RolloverRaceDemo, SendDedupeDemo } from "@/materials/26/GroupRaceDemos";
+
+## Introduction
+
+[Part 2](/blog/21) tuned the rate limit, and [Part 3](/blog/22) and [Part 4](/blog/25) covered delivery history. Through all of that, the send itself stayed simple. One chunk job sent its share right away, and that was it.
+
+This installment is about adding a feature that collects a bulk send into a group. The subject is less the feature itself than the problems that came from building it. From the moment the notification server starts consuming the jobs the batch server throws, neither arrival order nor processing timing is guaranteed — yet on top of that, there must be exactly one group and exactly one send. Dealing with that concurrency is what led me to BullMQ's parent-child jobs (waiting-children). This post covers where waiting-children fits and where it doesn't, and how the concurrency races this flow created were solved one by one and then verified for completeness.
+
+## Group Sends: Collect Everything, Then Send Once
+
+In retargeting-style bulk sends, more than 10,000 same-category notification messages go out at once. Until now, the batch server sliced the targets into chunks, added them as jobs, and each job sent its share immediately — and in that structure, a batch is just a heap of individual sends. There is nowhere to ask, at the batch level, how far a campaign has gone and what came of it.
+
+The third party has a group API for exactly this. You create a group, stage messages into it in parts, and trigger the send once after everything is in. Collect one category into one group, and both the send and the result lookup fall out at the group level. And since staging and sending are separated, a mid-flight failure ends not as "sent wrong" but as <strong>"not sent"</strong> — a fail-closed safety that comes along for free.
+
+Our side of the flow looks like this. The target query runs to millions of rows, so the batch server cannot read them in one go, and the third party also caps how much a single request can carry. So the batch server slices the targets into chunks and adds them as jobs, and each chunk job, instead of sending, only stages into the group while recording its share in a Redis hash. After writing the record it checks whether everything is in now, and the job that sees completion triggers the send. Not the chunk that was staged last — <strong>the chunk that finished processing last</strong> pulls the trigger. The queue guarantees no order.
+
+The whole structure, with scattered chunks converging on one group, looks like this.
+
+<GroupFanInDiagram lang="en" />
+
+## Concurrency Starts at the Queue
+
+The hard part of this structure begins the moment the batch server throws the jobs. The queue is asynchronous. Nothing guarantees which order the chunks arrive in, when they run, or which worker picks them up. Yet the flow has a single destination. Chunks consumed all over the place must converge on one and the same group, and the send must happen once per batch. Scattered consumption, single destination — that combination is the archetype of every concurrency problem in this post. When no group exists, several workers try to create one at once; several chunks can see "everything is in" at once; and a retry brings the same chunk twice.
+
+What happens if this is handled badly? If the chunk carrying the last-marker finishes before a middle chunk, the group goes out underfilled.
+
+<PrematureSendDemo client:visible lang="en" />
+
+One more problem stacks on top: where the calls live. The third-party calls around a group are not just staging — there are group creation and the send trigger, and at first both were called inline in the middle of processing a chunk job. But an inline call is one the limiter tuned in [Part 2](/blog/21) cannot count, and one whose retries, backoff, and failure records — everything a job simply gets from the queue — have to be rebuilt inside the handler. So on the principle that <strong>every call to the third party must be a job</strong>, both were pulled out into internal jobs. Staging already is one: one chunk job sends one request.
+
+## Dependencies Between Jobs: waiting-children
+
+The moment a call becomes a job, dependencies between jobs appear. A chunk can continue staging only after the group exists.
+
+### A Tree You Can't Declare Up Front
+
+BullMQ has FlowProducer, which declares dependencies between jobs. Declare parent and child jobs as a tree, and the parent runs after all its children finish. "Create the group → stage the chunks → send" is exactly tree-shaped, so this was the first thing I looked at.
+
+I set it aside because our flow is not static. FlowProducer requires declaring the whole tree at add time. But whether a group is needed <strong>is decided only at processing time.</strong> If the group already exists, there must be no creation step at all, and who triggers the send depends on which chunk happens to finish last. At add time, none of this is known.
+
+The declaration happens at add time; the decision lands at processing time.
+
+<FlowProducerMismatchDemo client:visible lang="en" />
+
+I set it aside, but the tree would have bought something too. In a tree, one parent owns all follow-up execution. If only one actor creates the group and only one triggers the send, those races never exist in the first place — exactly the single-writer principle: with one writer, no mutual exclusion is needed. Moving the decision to the moment the producer slices the chunks, with a coordinator job per batch, could have made the tree static — but that road is blocked by the generation extension coming later. How many groups a batch needs is only known by filling them, and a pre-declared tree cannot hold that. The price of this choice also shows up later: it is where counting five races begins.
+
+Instead of the tree, there was a lower-level tool that achieves the same goal dynamically: `moveToWaitingChildren`.
+
+### Parent and Child: Sleeping Until the Group Exists
+
+I added two internal jobs. They go into the same queue and are routed by job name so they don't collide with the producer's payload.
+
+- `group.create` — creates the group and writes its id to Redis.
+- `group.send` — triggers the send of a completed group.
+
+`group.send` is simple: the chunk that sees completion adds it, and that's that. The hard one is `group.create`. The moment you learn there is no group is when a chunk job is about to stage — and that chunk must <strong>wait, then continue</strong> staging once the group exists. The queue is asynchronous, so a child job's result cannot be received on the spot.
+
+waiting-children is what carries this "wait, then continue." The skeleton looks like this.
+
+```ts
+// while processing a chunk job, on the signal that no group exists yet
+await queue.add(
+  "group.create",
+  { groupKey },
+  {
+    jobId: `create-${seq}-${groupKey}`,
+    parent: { id: job.id, queue: job.queueQualifiedName },
+    failParentOnFailure: true,
+  },
+);
+if (await job.moveToWaitingChildren(token)) {
+  throw new WaitingChildrenError();
+}
+```
+
+Read in order:
+
+1. Add the child job with `parent` pointing at yourself. That link is the declaration: "wake me when the child finishes."
+2. `moveToWaitingChildren(token)` moves the job into the waiting-children state. It returns `true` while unfinished children exist.
+3. Throw `WaitingChildrenError`. This error is not a failure but a <strong>state-transition signal</strong>. The worker skips failure handling for this one type, so no retry attempts are consumed.
+
+When the child finishes, the parent returns to the wait list and <strong>runs again from the top.</strong> It does not resume from where it stopped. That is why re-entry idempotency is required. In our implementation, the Redis lookup at the head of processing plays that role: on re-entry the group id is found, so the job moves straight to staging without the creation signal.
+
+This approach has a cost. A chunk that found no group sleeps through its first run without making a call and only stages on the re-run, spending a worker slot twice, and a child that sees an already-stored id and simply returns takes a slot too. It shaves a little throughput, but the loss is confined to the short window while a group is being created, so I accepted it.
+
+The parent sleeps, the child passes the limiter and creates the group, and the parent re-runs from the top.
+
+<WaitingChildrenDemo client:visible lang="en" />
+
+### What Happens When They Arrive Together
+
+Say twenty chunks of 5,000 come in. While job-0 waits on group creation, job-1 and job-2 arrive — what happens?
+
+The answer: each spawns its own child and each goes to sleep. job-1 also sees there is no group and spawns its own child. More than one child now exists, and that is fine, because the group-creation handler settles the race with Redis `SET NX`. A child that runs late sees the already-stored id and simply returns, and if two really did create groups at the same time, the loser deletes the empty group it made.
+
+Here is where intuition breaks. Child jobIds are keyed per <strong>chunk (seq)</strong>, not per batch. "Group creation is once per batch, so one jobId per batch" looks natural — but in BullMQ, a second add with the same jobId is absorbed into the existing job and <strong>the parent link is never attached.</strong> If job-1's child is absorbed into job-0's child, job-1 sleeps with no child to wake it. So every parent spawns its own child, and duplicate-creation prevention is left not to the jobId but to the handler's `SET NX`.
+
+### The Send Has No Reason to Wait for a Job
+
+`group.send` uses no parent-child relationship. The criterion is single: <strong>is there work to continue after waiting for a result?</strong>
+
+Group creation has some — the chunk must go on staging. The send has none. The chunk that saw completion is done once it adds the send job, and no job anywhere waits on the send's result. Using parent-child where no one waits only wastes a waiting state.
+
+The send job has a different race instead: several chunks can see completion at almost the same time. This one was solved with the jobId. Derive the send jobId from the group id, as in `send-${groupId}`, and even concurrent adds leave exactly one job — the queue accepts one atomically. The very property that forced child jobIds to be per-seq, that the same jobId gets absorbed, becomes the solution here. <strong>The same property is a trap in one place and a tool in another.</strong>
+
+## Solving the Concurrency Problems One by One
+
+With all of this built, before deploying I counted every concurrency issue in the flow. The queue is asynchronous, workers are many, and the same job can come twice as a retry. Under those conditions, this chapter looks at the places where the same thing gets touched at the same time, one by one, and finishes by verifying that the list is complete.
+
+Concurrency control runs on Redis. Two reasons. Workers are spread across processes, so shared state has to live outside the process — and since BullMQ runs on Redis, every worker is already connected to it. Keep the group id, the staging records, and the done marker in the same place, and not a single piece of infrastructure is added. And the races in this flow are not something to block with locks: they are <strong>first-writer-wins</strong> problems, and the atomicity of a single `SET NX` command is enough. There is nothing to acquire and release and the loser just steps back. Redis is not trusted to the end, though. The premise that a marker can be lost carries into the second gate of the resending section.
+
+### 1. Group Creation — Many Makers
+
+Since every parent spawns its own child, several group-creation children run at once. Earlier I said the handler settles the race with `SET NX`. Replayed at the level of the commands a worker exchanges with Redis, the queue, and the third party, it looks like this. Neither is stopped from creating a group. The referee stands not at group creation but at the moment the id is written to Redis.
+
+<CreateRaceDemo client:visible lang="en" />
+
+### 2. Send Trigger — Many Observers of Completion
+
+When the last two chunks finish almost together, both see "everything is in now." Two observers, but there must be exactly one send job.
+
+<SendDedupeDemo client:visible lang="en" />
+
+One more race attaches to the completion check, and it already went by above: <strong>arrival-order inversion</strong>. The chunk carrying the `isLast` marker can finish before a middle chunk. This one is absorbed not by a gate but by the completion check itself, because the check is a <strong>count equation</strong>, not "has the last chunk arrived." The last-marker only records the fact that the final number is N, and the send holds only when everything from 0 to N is recorded. With a gap in the middle, the equation does not hold and nothing happens.
+
+### 3. Restaging — a Retry Stages Everything Again
+
+A chunk that broke off mid-staging comes back as a retry and stages its whole share again. The defense here is not a device but write order. The staging record is written <strong>only after the last piece succeeds</strong>. A chunk that broke off midway has no record, so the retry stages everything again and the group's duplicate check drops what is already in. Had the record been written first and the staging done after, we would have gained resume-from-the-break logic — and its bugs — together. <strong>One write order replaces the whole recovery logic.</strong>
+
+In the round trip where a broken chunk comes back to stage again, watch when the Redis record gets written.
+
+<RestageDemo client:visible lang="en" />
+
+### 4. Resending — a Retry That Only Lost the Reply
+
+If the reply is lost after the send job makes its call, the retry tries to send once more. The send's idempotency is not something the jobId protects. jobId dedupe is an <strong>add-time device</strong>: it only ensures one job comes into being, and once a completed job ages out of retention, a late observer adding the same jobId gets a new job that actually runs. The send's "once" is protected by <strong>two run-time gates</strong>. The first is the done marker: a send-finished flag left with `SET NX` and checked on every entry. The second is the third party's status query. A retry whose send call succeeded but whose reply was lost comes back with no marker — it broke off before writing one — and then the judgment runs on what the third party sees, not on our memory. Trust the marker alone and a Redis loss equals a double send; trust the status query alone and hundreds of thousands of messages hang on that one response — so the two gates are layered. The end-to-end argument's conclusion, that "exactly once" is completed by verification at the ends rather than by devices in the middle, repeats here.
+
+<ResendGuardDemo client:visible lang="en" />
+
+### 5. Reporting — Many Places See the Ending
+
+Many places see a batch's ending, so many places try to put out the report. The report must go out once per batch, and this too falls to `SET NX`. The first write passes and the rest simply fold.
+
+Two observers split at the gate.
+
+<ReportOnceDemo client:visible lang="en" />
+
+### How Do We Know That Was All of Them?
+
+Solving one by one leaves a question: is this everything? The worry that something must have slipped through somewhere does not go away by rereading the code. It goes away by making a list of <strong>who can touch the same thing, and when</strong>.
+
+The basis of the list is not races but invariants. A list of races you think up carries no guarantee that you thought of them all, so I first wrote down the sentences this flow must keep.
+
+- Each batch has exactly one group.
+- The send happens only when everything is staged, exactly once per batch.
+- A message is staged into the group at most once.
+- One report goes out per batch.
+
+Ask of each sentence "who has to walk in where, at the same time, to break this," and the races follow instead of being hunted. What came out of that check is the five above. Summarized in the table below, and the controls are effectively just two: Redis's `SET NX`, and BullMQ's jobId dedupe.
+
+| Race | When it happens | Control |
+| --- | --- | --- |
+| Group creation | several children create the group at once | `SET NX` — one winner; the loser deletes the empty group |
+| Send trigger | several chunks see completion at once | send jobId dedupe — the queue accepts one |
+| Restaging | a broken chunk's retry stages everything again | the group's duplicate check — the count doesn't grow |
+| Resending | a job that lost its reply returns as a retry | done marker (1st) + third-party status query (2nd) |
+| Reporting | many places see the ending | `SET NX` — one pass per batch |
+
+Five is not a coincidence; the structure set that number. The creation, trigger, and report rows are races born of many workers sharing the same role — the kind that would have no place at all if the single-writer given up with FlowProducer were still here. The restaging and resending rows come from the same job arriving twice as a retry, and they remain even when the roles are gathered.
+
+### Past the Cap, More Races
+
+A third-party group caps how many messages it can hold. Overfill it and the excess is quietly refused, and the pre-send count check cannot tell that shortfall from ordinary per-message rejections: a quiet partial send. So when the cap is reached, the batch splits into <strong>generations</strong> — send the full group out immediately, create a new one, and keep staging. Adding this extension creates a few more races.
+
+- <strong>Exactly one actor closes a generation.</strong> If two close it, the generation number climbs twice and an empty generation appears. The rollover performer is also claimed with `SET NX`, and the loser backs off with a retryable error and joins the raised generation.
+- <strong>The admission counter is never refunded.</strong> Per-generation admission is judged by the `HINCRBY` return value, and refunding a failed chunk's share opens a window for a late admission to squeeze into a closed generation. With no refunds, that window arithmetically does not exist. A retry's double increment only inflates the counter — an error in the safe direction, early rollover.
+- <strong>Assignment is recorded before staging.</strong> If a retry arriving after a rollover lands in the new generation, the duplicate check does not span groups and the message goes out twice. Pin which generation a seq belongs to before staging, and a retry always returns to its original generation's group.
+- <strong>A closed generation goes out only when its share is fully recorded.</strong> If an assigned chunk is still staging (a straggler), the send job throws and the retry waits. Sending now means a partial send missing that chunk.
+
+Solving these four took almost no new machinery. The only newcomer is the `HINCRBY` counter that counts admissions; electing the closer falls to the same `SET NX` as group creation, assignment to write order, stragglers to the queue's retries. The first row, the race to close a generation, plays out below: two chunks see the overflow side by side, the winner closes the generation, and the loser joins the new one.
+
+<RolloverRaceDemo client:visible lang="en" />
+
+### What We Couldn't Block Fails Loudly
+
+Counting everything is not blocking everything. Two windows could not be blocked, and I chose to record that fact.
+
+One is <strong>the double run of a stalled worker</strong>. If a worker freezes for more than 30 seconds, BullMQ marks the job stalled and another worker reprocesses it — and if the original worker is still alive, the same job runs twice at once. jobId dedupe is an <strong>add-time device</strong> and has no say over the double run of a job already in the queue. The send job's status check is check-then-act, with a gap between query and send, and in that window both can call the send. The defense hangs on whether the third party rejects re-triggering an already-triggered group, and that is something to confirm by measurement, not by code.
+
+The other is the <strong>micro gap</strong> between admission and the assignment record. If the process stalls for seconds between those two Redis commands, a closing generation's send can go out without seeing the straggler. A Lua script would atomize it and close the window. I still passed — less because of the single-command-atomicity constraint itself than because closing this window still leaves the double-run window above. If the watchdog below has to catch both anyway, buying one more atomicity layer for one of them costs more than it returns.
+
+What the two windows share is that <strong>their outcomes are not quiet</strong>. A double run surfaces as an error on the second call, and a chunk that fell into the gap keeps failing to stage into an already-sent group, leaving the batch incomplete. And incomplete batches are caught by a separate watchdog: each batch leaves its last staging time as a heartbeat, and a periodic sweep flags batches that have been quiet too long. This watchdog had its own concurrency trap. If the delete condition (the final ending) and the write condition (any processing) disagree, a retry arriving after the ending resurrects a deleted entry into a permanent false alarm. Deletion happens <strong>only when every generation's ending is confirmed</strong>, and entries that revive anyway are read and deleted by the watchdog itself (self-heal). When the blocking device and the catching device disagree, the final say must go to the catching device.
+
+A chunk that fell into the gap surfaces as errors, and the watchdog picks out the stalled heartbeat.
+
+<HeartbeatWatchdogDemo client:visible lang="en" />
+
+## Takeaways
+
+First, concurrency control turned out to be less about adding devices than about <strong>writing the invariants first</strong>. With the four sentences to keep written down, the five races followed as the places that break them, and everything reduced to two devices, `SET NX` and jobId dedupe. For the remaining two windows, letting them fail loudly was cheaper than blocking them. The number five is itself a design outcome. A design that gathers roles into one place removes races instead of counting them; we traded that away for the generation extension and chose to count. The fewer the devices, the sharper the line between what each one blocks and what it cannot. That jobId dedupe cannot block a double run follows directly from its definition as an add-time device.
+
+Second, the place for parent-child jobs is narrower than it looks. It fits only where <strong>there is work to continue after waiting for a result</strong>, and for every other dependency, independent jobs plus jobId dedupe were cheaper and simpler. In this implementation, waiting-children appears in exactly one place: group creation.
+
+Third, make <strong>every outbound third-party call a job</strong>, and retries, failure records, and flow control all converge on the queue. An inline call is one the limiter cannot count, and one whose retry logic must be rebuilt inside a handler when it fails. Concurrency devices like jobId dedupe also stand on the premise that a call is a job.
+
+## References
+
+- [BullMQ - Flows](https://docs.bullmq.io/guide/flows)
+- [BullMQ - Process Step Jobs](https://docs.bullmq.io/patterns/process-step-jobs)
+- [BullMQ - Deduplication](https://docs.bullmq.io/guide/jobs/deduplication)
+- [Saltzer, Reed, Clark - End-to-End Arguments in System Design](https://web.mit.edu/Saltzer/www/publications/endtoend/endtoend.pdf)
+- [Martin Thompson - Single Writer Principle](https://mechanical-sympathy.blogspot.com/2011/09/single-writer-principle.html)
