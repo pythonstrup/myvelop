@@ -1,0 +1,122 @@
+---
+title: "Dissecting Parquet"
+description: "From why columns are stored together, through row groups, chunks, pages and the table of contents at the tail, a walk through the inside of a Parquet file. Seven animations show min/max and Bloom filters pruning row groups and HTTP Range fetching just the needed slices."
+pubDate: "2026-08-22T21:00:00+09:00"
+tags: ["parquet", "s3", "bloom filter"]
+socialImage: "../../../assets/blog/27/og.png"
+---
+import BloomFalsePositiveDemo from "@/materials/27/BloomFalsePositiveDemo";
+import BloomFilterDemo from "@/materials/27/BloomFilterDemo";
+import BloomPruningDemo from "@/materials/27/BloomPruningDemo";
+import FileLayoutDemo from "@/materials/27/FileLayoutDemo";
+import FooterTocDemo from "@/materials/27/FooterTocDemo";
+import RangeReadDemo from "@/materials/27/RangeReadDemo";
+import StorageOrderDemo from "@/materials/27/StorageOrderDemo";
+import UnitHierarchyDiagram from "@/materials/27/UnitHierarchyDiagram";
+
+## Column-oriented storage
+
+Here is a small table — four rows, three columns.
+
+| user_id | name | status |
+| ------- | ---- | ------ |
+| 1       | Kim  | OK     |
+| 2       | Lee  | OK     |
+| 3       | Park | OK     |
+| 4       | Choi | FAIL   |
+
+Say we store this table as a file. A file is ultimately a single line of bytes, so laying a two-dimensional table into it means picking an order first.
+
+CSV lays rows down first: `1, Kim, OK`, then `2, Lee, OK`. One user's fields stay in one place, which is the right layout for a service DB that reads and writes whole records. Parquet lays columns down first: four user_ids come first, then four names, then four statuses.
+
+Here is the same table laid out both ways.
+
+<StorageOrderDemo client:visible lang="en" />
+
+Why do it this way? Say we aggregate failure rates by status. In a row-major file, status shows up every third slot, so user_id and name get dragged along even though status is all we need. Column-oriented, one status block is all there is to read. Analytical queries usually touch many rows and only a few columns, which is why analytical formats converged on columns.
+
+Compression differs too. A column holds values of one type that look alike. Three consecutive OKs can be written as one entry, and a small set of distinct values can be replaced by dictionary numbers. A row-major file, alternating numbers, names and statuses, rarely gets that chance.
+
+## File structure
+
+Parquet gathers columns, but not across the whole table at once. It first cuts the rows into row groups and gathers columns only within each group. Millions of rows mean several row groups.
+
+The physical order of the file is the order of writing. It opens with the four-byte magic number `PAR1`, and row groups pile up one after another. Inside a row group there is one chunk per column (the column chunk), and chunks are cut again into pages. Each page starts with a page header recording how many bytes and how many values it holds.
+
+Followed in writing order, the file assembles like this.
+
+<FileLayoutDemo client:visible lang="en" />
+
+Three units are easy to mix up, and each is cut by a different rule. Row groups cut along rows. Chunks are not cut at all — one simply appears wherever a row group and a column intersect. Pages cut by size: values accumulate until the encoded bytes hit a threshold, then the page closes and the next one opens — a boundary of quantity, not of meaning. Their jobs differ too: skipping works per row group, I/O per chunk, compression and encoding per page.
+
+The three units, stacked into one picture.
+
+<UnitHierarchyDiagram lang="en" />
+
+Once the data is written, the tail follows. Auxiliary indexes — page indexes and Bloom filters — come first, and the footer comes last. Along with the schema, it records where each column chunk of each row group starts and ends in bytes, and what range of values sits inside (min/max). A 4-byte footer length and `PAR1` close the file.
+
+Why no index sits between row groups comes down to how the file is written. A group's position and statistics are only known after it is fully written. So the writer streams forward without ever going back, and appends the footer at the very end, when everything is known. Readers benefit as well: with all the indexes in one place, one read of the tail yields a map of the whole file.
+
+## Skipping row groups
+
+After reading the footer, the engine first picks which row groups to read. Say we look for the row with `user_id = 42`. The footer holds each group's user_id min/max. If the data was written sorted by user_id, the ranges split — group 1 is 1–25, group 2 is 26–50, group 3 is 51–99 — and only group 2 can contain 42. The rest are never opened. Not a single byte of the data has been read yet; the decision came from the footer alone.
+
+Unfolding the footer and picking 42, step by step.
+
+<FooterTocDemo client:visible lang="en" />
+
+The premise of this skip is that the ranges split apart, and they only split when the data is sorted by that column. In a file written in time order, every group spans user_id 1 to 99; 42 could be anywhere and nothing can be skipped.
+
+Sorting helps only once, because there is a single sort axis. Sort by user_id and its min/max splits, but another column like message_id overlaps again. Some column will always be beyond min/max. That is why Parquet keeps a Bloom filter per row group — but first, what is a Bloom filter?
+
+## Bloom filters
+
+A Bloom filter is a set. You put values in and later ask, "is this value here?" — and the answer is peculiar. It only ever says <strong>definitely no</strong> or <strong>maybe</strong>. It cannot say "definitely yes".
+
+The shape is simple: a bit array initialized to zeros, plus a few hash functions. Say the array has 12 slots and there are 3 hashes.
+
+Insertion works like this. Insert "alice" and the three hashes each produce a slot; if they say 2, 5 and 9, those three slots turn on. Insert "bob" and 4, 5 and 11 turn on the same way. Slot 5 is already on, and it stays as it is. Nothing records who turned it on.
+
+A query runs the same hashes again. Ask about "carol" and they say 4, 7 and 9. Slot 7 is 0. Had carol ever been inserted, slot 7 would have to be on, so the answer ends right here: definitely no. The remaining slots are not even checked.
+
+The trouble is the other direction. Ask about "dave" and the hashes say 2, 4 and 11 — all on. But those slots were turned on by alice and bob. dave was never inserted, yet the answer comes back "maybe". That is a false positive, and it happens when a value steps only on slots that others turned on. The opposite error cannot happen: an inserted value's slots are all on by construction, so a "no" is always right.
+
+The two inserts and two queries, replayed as is.
+
+<BloomFilterDemo client:visible lang="en" />
+
+It looks like an odd data structure, but the payoff is size. A Bloom filter stores no values — only which slots are on. Millions of values still fit the array size chosen up front, and a bigger array with more hashes drives the false-positive rate down. A 1% filter needs about 10 bits per value, orders of magnitude below an index that stores the values themselves.
+
+Watch what happens as the array fills up.
+
+<BloomFalsePositiveDemo client:visible lang="en" />
+
+There is also no deleting. Turning a slot back to 0 breaks every other value sharing it. So Bloom filters suit places built once and never edited — exactly the condition of a Parquet file, written once and immutable.
+
+## Parquet and Bloom filters
+
+Parquet can build one Bloom filter per row group, holding every value of a column in that group. The filters are stored as auxiliary indexes near the tail, and the footer points at them.
+
+Say we look for `message_id = 'M-42'`. message_id is not the sort axis, so min/max overlaps across groups and the footer alone prunes nothing. Instead the engine hashes M-42 and puts the same question to all four groups' filters. Three answer "definitely no" and are skipped without opening the data. Only the one that answers "maybe" is read.
+
+The same question, put to four row groups at once.
+
+<BloomPruningDemo client:visible lang="en" />
+
+What if a false positive fires? One extra group gets read that did not contain the value. The engine looks, finds nothing, and moves on — the result stays correct, and the waste is bounded by the error rate. What matters is the guarantee in the other direction. Skipping a group that did contain the value would corrupt the result, and since a Bloom filter's "no" is always right, skipping is safe. A structure that cannot say "definitely yes" but can say "definitely no" fits pruning exactly.
+
+## Reading from the tail
+
+Which chunks of which groups to read is now settled. What remains is fetching. On a local disk you would seek to the position and read, but S3 is not a filesystem — it is a store that speaks HTTP, and the default is one GET returning the whole object.
+
+HTTP already has a way to fetch a slice. Put a byte range in the request — `Range: bytes=1000-1199` — and the server answers `206 Partial Content` with exactly that span. S3 supports the header as is.
+
+Writing down an address and receiving just the slice looks like this.
+
+<RangeReadDemo client:visible lang="en" />
+
+Put the whole read path together, front to back. The engine fetches the end of the file with a Range request and reads the footer. min/max and the Bloom filters pick the row groups. The byte offsets in the footer drive further Range requests for just the needed chunks. Even on a 100MB file, what actually crosses the wire is the footer and a few chunks — a few MB. At no point is the file downloaded whole.
+
+## Wrapping up
+
+Everything in Parquet's design serves reading less. Columns gather so only the needed columns are read; row groups cut so only the needed groups are read; pages cut so only the needed pages are decompressed. The footer at the tail says where to read, and Bloom filters prune where min/max cannot. Even with the file on S3, Range fetches just the slices. The comparison with JSONL comes in the next post.
