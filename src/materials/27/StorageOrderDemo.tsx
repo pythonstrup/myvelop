@@ -1,7 +1,7 @@
 import { type Colors, clamp01, drawBadge, ease, FONT, palette, useCanvasScene } from "@/materials/shared";
 
 // 같은 표를 두 가지 순서로 파일에 늘어놓는다.
-// 행 지향은 행 단위로 섞이고, Parquet은 같은 열끼리 모은다.
+// 행 지향은 행 단위로 섞이고, Parquet는 같은 열끼리 모은다.
 const UNTIL = [2800, 6400, 10000, 13600, 17200];
 const CYCLE = 17200;
 const HEIGHT = 290;
@@ -26,8 +26,8 @@ const LABELS = {
 	captions: [
 		"① 표 하나가 있다 — 행 4개, 열 3개",
 		"② 행 지향은 한 행씩 통째로 이어 붙인다 — 열이 섞인다",
-		"③ Parquet은 반대다 — 같은 열끼리 모아서 저장한다",
-		"④ status만 읽을 때: 행 지향은 흩어지고, Parquet은 한 블록이다",
+		"③ Parquet는 반대다 — 같은 열끼리 모아서 저장한다",
+		"④ status만 읽을 때: 행 지향은 흩어지고, Parquet는 한 블록이다",
 		"⑤ 같은 값이 이웃해 있어 압축도 잘 먹는다",
 	],
 	laneA: "행 지향 — 한 행씩",
@@ -36,7 +36,7 @@ const LABELS = {
 	oneBlock: "한 블록",
 	dict: '사전 인코딩: "OK"×3 · "FAIL"',
 		vals: [["1", "2", "3", "4"], ["김", "이", "박", "최"], ["OK", "OK", "OK", "FAIL"]],
-	aria: "같은 표를 두 가지 순서로 파일에 저장하는 차이를 반복 재생하는 애니메이션. 행 4개와 user_id, name, status 열 3개짜리 표를 놓고, 행 지향 저장은 한 행씩 통째로 이어 붙여 열이 섞이고, Parquet은 같은 열끼리 모아 저장하는 것을 보여준다. status만 읽는 조회에서 행 지향은 값이 네 곳에 흩어져 있지만 Parquet은 한 블록이라 그것만 읽으면 되고, OK처럼 같은 값이 이웃해 있어 사전 인코딩 압축도 잘 먹는다.",
+	aria: "같은 표를 두 가지 순서로 파일에 저장하는 차이를 반복 재생하는 애니메이션. 행 4개와 user_id, name, status 열 3개짜리 표를 놓고, 행 지향 저장은 한 행씩 통째로 이어 붙여 열이 섞이고, Parquet는 같은 열끼리 모아 저장하는 것을 보여준다. status만 읽는 조회에서 행 지향은 값이 네 곳에 흩어져 있지만 Parquet는 한 블록이라 그것만 읽으면 되고, OK처럼 같은 값이 이웃해 있어 사전 인코딩 압축도 잘 먹는다.",
 },
 	en: {
 		captions: [
@@ -221,7 +221,7 @@ function makeScene(lang: Lang) {
 		});
 	}
 
-	// ④ status만 읽는다면 — 행 지향은 흩어지고 Parquet은 한 블록
+	// ④ status만 읽는다면 — 행 지향은 흩어지고 Parquet는 한 블록
 	if (step >= 3) {
 		const a = fade(t, UNTIL[2], 450) * (step >= 4 ? 0.55 : 1);
 		ctx.save();

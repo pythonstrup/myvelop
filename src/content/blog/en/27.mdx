@@ -3,6 +3,7 @@ title: "Dissecting Parquet"
 description: "From why columns are stored together, through row groups, chunks, pages and the table of contents at the tail, a walk through the inside of a Parquet file. Seven animations show min/max and Bloom filters pruning row groups and HTTP Range fetching just the needed slices."
 pubDate: "2026-08-22T21:00:00+09:00"
 tags: ["parquet", "s3", "bloom filter"]
+series: "Parquet and S3"
 socialImage: "../../../assets/blog/27/og.png"
 ---
 import BloomFalsePositiveDemo from "@/materials/27/BloomFalsePositiveDemo";
@@ -119,4 +120,4 @@ Put the whole read path together, front to back. The engine fetches the end of t
 
 ## Wrapping up
 
-Everything in Parquet's design serves reading less. Columns gather so only the needed columns are read; row groups cut so only the needed groups are read; pages cut so only the needed pages are decompressed. The footer at the tail says where to read, and Bloom filters prune where min/max cannot. Even with the file on S3, Range fetches just the slices. The comparison with JSONL comes in the next post.
+Everything in Parquet's design serves reading less. Columns gather so only the needed columns are read; row groups cut so only the needed groups are read; pages cut so only the needed pages are decompressed. The footer at the tail says where to read, and Bloom filters prune where min/max cannot. Even with the file on S3, Range fetches just the slices. The comparison with JSONL comes in [the next post](/blog/28/).
