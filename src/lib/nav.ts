@@ -17,9 +17,11 @@ export function isActivePath(current: string, target: string): boolean {
 	return t === "/" ? c === "/" : c === t || c.startsWith(t + "/");
 }
 
-const navItems = [
+const navItems: { label: { en: string; ko: string }; path: string; koOnly?: boolean }[] = [
 	{ label: { en: "Home", ko: "홈" }, path: "" },
 	{ label: { en: "Blog", ko: "블로그" }, path: "/blog" },
+	// 노트는 한국어로만 쓰므로 영어 메뉴에는 넣지 않는다.
+	{ label: { en: "Notes", ko: "노트" }, path: "/notes", koOnly: true },
 	{ label: { en: "About", ko: "소개" }, path: "/about" },
 	{ label: { en: "Search", ko: "검색" }, path: "/search" },
 ];
@@ -27,10 +29,12 @@ const navItems = [
 /** Nav links with the locale base applied (Home resolves to "/" or "/ko"). */
 export function navLinks(isKo: boolean): { label: string; href: string }[] {
 	const base = isKo ? "/ko" : "";
-	return navItems.map(({ label, path }) => ({
-		label: isKo ? label.ko : label.en,
-		href: path ? `${base}${path}` : base || "/",
-	}));
+	return navItems
+		.filter((item) => isKo || !item.koOnly)
+		.map(({ label, path }) => ({
+			label: isKo ? label.ko : label.en,
+			href: path ? `${base}${path}` : base || "/",
+		}));
 }
 
 export const externalLinks = [

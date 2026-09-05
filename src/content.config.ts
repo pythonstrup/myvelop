@@ -1,6 +1,7 @@
 import { defineCollection } from 'astro:content';
 import { glob } from 'astro/loaders';
 import { z } from 'astro/zod';
+import { tagSlug } from './lib/slug';
 
 const blog = defineCollection({
 	// Load Markdown and MDX files in the `src/content/blog/` directory.
@@ -23,4 +24,14 @@ const blog = defineCollection({
 		}),
 });
 
-export const collections = { blog };
+// 제텔카스텐 노트. frontmatter가 없고 파일명이 곧 제목이다. URL slug는 태그와 같은 규칙으로 만든다.
+// 사용법은 src/content/notes/README.md에 있다.
+const notes = defineCollection({
+	loader: glob({
+		base: './src/content/notes',
+		pattern: 'ko/**/*.md',
+		generateId: ({ entry }) => entry.replace(/\.md$/, '').split('/').map(tagSlug).join('/'),
+	}),
+});
+
+export const collections = { blog, notes };

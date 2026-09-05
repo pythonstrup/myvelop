@@ -22,6 +22,9 @@ const blogTagMatch = pathname.match(/^\/(?:ko\/)?blog\/tags\/([^/]+)\/?$/);
 const blogMatch = pathname.match(/^\/(?:ko\/)?blog\/(.+?)\/?$/);
 if (pathname === '/404' || pathname === '/404/') {
 	langSwitchHref = '/ko/404/';
+} else if (/^\/ko\/notes(?:\/|$)/.test(pathname)) {
+	// 노트는 한국어로만 쓴다. 영어 쪽에 대응 경로가 없으니 홈으로 보낸다.
+	langSwitchHref = '/';
 } else if (blogPageMatch) {
 	// 상대 언어에 같은 번호의 목록 페이지가 없으면(글 수가 달라 페이지 수가 다르면) 목록 첫 페이지로 보낸다.
 	const page = Number(blogPageMatch[1]);
