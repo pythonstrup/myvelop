@@ -1,12 +1,12 @@
 ---
 name: create-material
 description: Create a diagram or animated demo component (material) that explains a concept in a blog post. Use for requests like "draw an explanatory diagram", "make an animation demo", "turn this into a diagram component", "animate this SVG". Covers two types - static SSR SVG diagrams and Canvas animation demos.
-argument-hint: "[post number and the concept to explain]"
+argument-hint: "[post slug and the concept to explain]"
 ---
 
 # Create a blog material (explanatory component)
 
-Build a concept-explaining component under `src/materials/<post number>/` and wire it into the post's MDX.
+Build a concept-explaining component under `src/materials/<slug>/` and wire it into the post's MDX.
 
 ## User input
 
@@ -21,13 +21,13 @@ $ARGUMENTS
 
 ## File conventions
 
-- Location: `src/materials/<post number>/ComponentName.tsx`, default export.
+- Location: `src/materials/<slug>/ComponentName.tsx`, default export.
 - Naming: `~Demo` suffix for animations, `~Diagram` suffix for static diagrams.
 - Shared helpers: `@/materials/shared` — `palette(dark)`, `ease`, `lerp`, `clamp01`, `drawBadge`, `useCanvasScene`.
 - MDX wiring: if the post is `.md`, rename it to `.mdx` (the build verifier accepts `.mdx`). Put imports right below the frontmatter.
 
 ```mdx
-import FooDemo from "@/materials/25/FooDemo";
+import FooDemo from "@/materials/bullmq-notification-part-4-reading-history/FooDemo";
 
 <FooDemo client:visible />   <!-- animation: client:visible is required -->
 <BarDiagram />               <!-- static: SSR only, no client directive -->
@@ -37,7 +37,7 @@ import FooDemo from "@/materials/25/FooDemo";
 
 ## Type 1 — static diagram (SSR-only SVG)
 
-**Template: `src/materials/24/TrustChainDiagram.tsx`**
+**Template: `src/materials/passwordless-db-access-least-privilege/TrustChainDiagram.tsx`**
 
 - Draw an inline `<svg>` in JSX. No client directive — it renders with zero bytes of JS.
 - Never hardcode colors; use the site's CSS variables: `var(--foreground)`, `var(--muted-foreground)`, `var(--secondary)`, `var(--accent)`, `var(--background)`, `rgb(var(--gray))`. Theme switching is then handled by CSS automatically.
@@ -48,7 +48,7 @@ import FooDemo from "@/materials/25/FooDemo";
 
 ## Type 2 — animated demo (Canvas 2D)
 
-**Templates: `src/materials/24/PasswordlessAuthDemo.tsx`, `PrivilegesTimingDemo.tsx`**
+**Templates: `src/materials/passwordless-db-access-least-privilege/PasswordlessAuthDemo.tsx`, `PrivilegesTimingDemo.tsx`**
 
 - No external chart/animation libraries. Canvas 2D plus the `useCanvasScene` hook only.
 - Deterministic timeline: `STEPS = [{ until, caption }, …]` plus a `CYCLE` constant (ms) so every cycle replays the same scene. No `Math.random()` or wall-clock dependence.

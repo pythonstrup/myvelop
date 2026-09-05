@@ -79,7 +79,7 @@ Astro가 Markdown 이미지와 `<Image>`에 `srcset`과 `sizes`를 생성한다.
 Lighthouse는 실행마다 점수가 흔들릴 수 있다. 전체 회귀 검사는 sitemap의 canonical URL을 한 번씩 순차 측정해 중앙값을 비교하고, 특정 페이지를 진단할 때는 세 번 실행한 중앙값을 사용한다. 같은 장비에서 병렬 실행하면 CPU 경합으로 결과가 왜곡될 수 있다.
 
 ```sh
-npx --yes lighthouse@13.2.0 https://pythonstrup.com/ko/blog/17/ \
+npx --yes lighthouse@13.2.0 https://pythonstrup.com/ko/blog/2025-retrospective/ \
   --only-categories=performance \
   --throttling-method=simulate \
   --output=json \
