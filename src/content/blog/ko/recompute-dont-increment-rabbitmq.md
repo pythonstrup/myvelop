@@ -1,0 +1,274 @@
+---
+title: "RabbitMQ 이벤트로 리뷰 통계를 다시 집계한 이유"
+description: "리뷰 변경 트랜잭션과 통계 계산을 분리하고 RabbitMQ 이벤트를 받은 Review Consumer가 처리 시점의 데이터를 다시 집계하도록 설계한 과정을 정리한다. 중복 이벤트에 증감값이 누적되지 않는 구조와 당시 남아 있던 유실 구간도 함께 살펴본다."
+pubDate: "2026-07-17T21:25:00+09:00"
+tags: ["Kotlin", "Spring", "RabbitMQ", "메시지 큐", "멱등성"]
+socialImage: "../../../assets/blog/recompute-dont-increment-rabbitmq/og.png"
+---
+
+## 리뷰 변경과 통계 갱신을 분리한 이유
+
+로하스밀의 리뷰에는 별점만 있는 것이 아니다. 이유식의 양과 농도, 입자감도 각각 세 단계로 평가한다. 리뷰 화면에는 상품 유형별 평균 평점과 전체 리뷰 수, 세 항목의 응답 비율이 함께 표시된다.
+
+![평균 평점과 용량·입자·농도별 응답 비율을 보여주는 리뷰 화면](../../../assets/blog/recompute-dont-increment-rabbitmq/01.png)
+
+이 값을 매번 원본 리뷰에서 계산하려면 전체 개수와 평점 합계, 양·농도·입자감별 개수를 구해야 한다. 실제 집계 쿼리에는 `COUNT`, 평점 `SUM`, 아홉 개의 조건부 `SUM`이 들어간다. 조회할 때마다 같은 집계를 반복하는 대신 결과를 `review_stats`에 미리 저장하기로 했다.
+
+문제는 통계를 언제 갱신하느냐였다. 고객용 `api-shop`에서는 리뷰를 생성하고 수정한다. 관리자용 `api-scm`에서는 생성·수정·삭제뿐 아니라 숨김과 숨김 해제도 일어난다. 두 애플리케이션의 일곱 가지 변경 경로가 모두 통계에 반영되어야 했다.
+
+리뷰 저장과 통계 계산을 한 트랜잭션에 넣으면 두 애플리케이션의 각 변경 경로가 같은 집계 로직을 알아야 한다. 이때 집계가 실패하면 리뷰 저장도 함께 실패한다. 반면 리뷰 통계는 원본에서 다시 만드는 파생 데이터다. 리뷰 변경을 먼저 확정하고 통계를 별도로 처리하면 두 작업의 책임도 분리할 수 있었다.
+
+## 참고한 설계를 서비스에 맞게 바꿨다
+
+이 구조를 설계할 때 우아한형제들 기술 블로그의 [리뷰프로덕트팀 신입 개발자의 파일럿 프로젝트](https://techblog.woowahan.com/10600/)를 참고했다. 특히 리뷰 API와 통계 집계기를 분리한 설계, 변경 종류별 증감 대신 현재 노출 중인 리뷰를 다시 집계한 방식에서 아이디어를 얻었다.
+
+이를 로하스밀 구조에 적용하면서 구현은 다음처럼 달라졌다.
+
+| 구분 | 참고한 프로젝트 | 로하스밀 |
+| --- | --- | --- |
+| 메시지 전달 | SNS · SQS | RabbitMQ Direct Exchange |
+| 집계 기준 | 가게 | 상품 유형 `ItemType` |
+| 집계 결과 | 별점별 리뷰 수 | 평균 평점과 양·농도·입자감 비율 |
+| 변경 경로 | 리뷰 API | 고객 API와 관리자 API |
+
+사용한 도구와 집계 대상은 달랐지만 원본 리뷰를 먼저 저장하고 `Review Consumer`가 커밋된 데이터로 통계를 다시 만든다는 원칙은 같았다.
+
+## 리뷰 변경부터 통계 조회까지
+
+<pre class="mermaid">
+flowchart TB
+  accTitle: RabbitMQ로 리뷰 변경과 통계 갱신을 분리한 구조
+  accDescr: 고객 API나 관리자 API에서 리뷰가 바뀌면 트랜잭션 커밋 후 RabbitMQ에 이벤트를 발행한다. Review Consumer는 이벤트를 받아 현재 노출 중인 리뷰를 상품 유형별로 다시 집계하고 ReviewStats를 갱신한다. 조회 API는 미리 계산된 통계를 읽는다.
+
+  subgraph Producers["리뷰 변경 API"]
+    direction LR
+    Shop["api-shop&lt;br/&gt;생성 · 수정"]
+    Admin["api-scm&lt;br/&gt;생성 · 수정 · 삭제 · 숨김"]
+  end
+
+  AfterCommit["트랜잭션 커밋 후&lt;br/&gt;리뷰 변경 이벤트"]
+
+  subgraph MQ["RabbitMQ"]
+    direction LR
+    Exchange["Direct Exchange&lt;br/&gt;review.events"]
+    Queue[("review.updated.queue")]
+    Exchange --&gt; Queue
+  end
+
+  Consumer["Review Consumer"]
+  Reviews[("review")]
+  Aggregate["현재 노출 리뷰 재집계&lt;br/&gt;평점 · 양 · 농도 · 입자감"]
+  Stats[("review_stats")]
+  Read["리뷰 통계 조회 API"]
+
+  Shop --&gt; AfterCommit
+  Admin --&gt; AfterCommit
+  AfterCommit --&gt; Exchange
+  Queue --&gt; Consumer
+  Consumer --&gt; Aggregate
+  Reviews --&gt; Aggregate
+  Aggregate --&gt; Stats
+  Stats --&gt; Read
+</pre>
+
+`api-shop`과 `api-scm`에서 발생한 변경은 같은 `UpdatedReviewEvent`로 모인다. RabbitMQ는 이벤트를 환경별 작업 큐로 전달한다. 큐를 구독한 `Review Consumer`가 결과를 계산한다. 조회 API는 원본 리뷰를 집계하지 않고 `review_stats`에서 상품 유형에 해당하는 값을 읽는다.
+
+## 이벤트 발행은 커밋이 끝난 뒤에
+
+이벤트를 비동기로 처리해도 발행 시점은 중요하다. 커밋 전에 메시지를 보내면 소비자가 아직 저장되지 않은 리뷰를 읽는 문제가 생긴다. 메시지는 발행됐지만 리뷰 트랜잭션이 롤백되는 경우도 생긴다.
+
+리뷰 변경 이벤트를 AMQP 이벤트로 바꾸는 작업은 `AFTER_COMMIT` 단계에서 실행했다.
+
+실제 LOHG는 Java와 Kotlin을 함께 쓰는 멀티모듈 프로젝트다. 이 글에서는 예제마다 언어가 바뀌어 흐름을 끊지 않도록 동작은 그대로 두고 코드 조각을 Kotlin으로 옮겨 적었다.
+
+```kotlin
+@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+@Async
+fun handleReviewUpdatedEvent(event: ReviewUpdatedEvent) {
+  publishReviewEventToAmqp(
+    event.reviewId(),
+    event.itemId(),
+    event.userId(),
+  )
+}
+```
+
+리뷰 트랜잭션이 성공해야 리스너가 실행된다. 소비자는 커밋된 원본을 기준으로 통계를 계산한다. Spring의 [`@TransactionalEventListener` 문서](https://docs.spring.io/spring-framework/reference/data-access/transaction/event.html)에서 설명하는 트랜잭션 단계 중 `AFTER_COMMIT`을 선택한 이유다.
+
+여기에 `@Async`를 붙여 리뷰 요청이 RabbitMQ 발행을 기다리지 않게 했다. 통계 계산은 큐를 구독한 `Review Consumer`가 따로 수행한다. 다만 `AFTER_COMMIT`은 데이터베이스 커밋과 RabbitMQ 발행을 하나의 트랜잭션으로 만들어 주지 않는다.
+
+## 이벤트를 재집계 신호로 쓴 이유
+
+메시지에는 `userId`, `reviewId`, `itemType`만 담았다.
+
+```kotlin
+data class UpdatedReviewEvent(
+  val userId: String = "",
+  val reviewId: Long = 0L,
+  val itemType: String = "",
+)
+```
+
+세 필드의 역할은 서로 다르다. `itemType`은 재집계 범위를 정한다. `userId`는 사용자별 통계를 만드는 값이 아니라 `review_stats`의 `createId`와 `updateId`에 변경 주체를 남기는 감사 정보다. `reviewId`는 실패한 이벤트를 로그에서 식별할 때 쓰인다. 통계를 계산할 때는 `itemType`만 사용한다.
+
+별점이 몇 점에서 몇 점으로 바뀌었는지, 생성인지 삭제인지는 보내지 않는다. 소비 코드에서도 `reviewId`로 통계를 증감하지 않고 `itemType`만 재집계 기준으로 사용한다.
+
+```kotlin
+reviewMessageListener.addHandler { event ->
+  reviewStatsService.calculateAndUpdateStats(
+    event.userId,
+    ItemType.valueOf(event.itemType),
+  )
+}
+```
+
+메시지는 “이 리뷰의 값만큼 통계를 변경하라”는 명령이 아니다. “이 상품 유형의 통계가 오래됐을 수 있다”는 신호다.
+
+변경량을 전달하는 방식이었다면 계산도 이벤트마다 달라진다. 생성은 리뷰 수와 평점 합계를 늘린다. 삭제와 숨김은 기존 값을 빼야 한다. 수정에는 이전 값과 새 값이 모두 필요하다. 같은 생성 이벤트가 두 번 전달되거나 처리 순서가 바뀌는 상황에는 별도 방어 로직도 필요하다.
+
+메시지를 재계산 신호로 정의하자 `Review Consumer`에서 이런 분기가 사라졌다.
+
+## 현재 리뷰를 기준으로 통계를 덮어썼다
+
+`Review Consumer`는 메시지를 받으면 숨김·삭제되지 않은 리뷰만 다시 집계한다. Kotlin으로 옮긴 QueryDSL의 핵심 부분은 다음과 같다.
+
+```kotlin
+fun getReviewStatsByItemType(itemType: ItemType): ReviewStatsAggregation {
+  val projection = QReviewStatsAggregation(
+    review.count(),
+    review.rating.sumBigDecimal().coalesce(BigDecimal.ZERO),
+    countWhen(review.capacity, CapacityReview.SMALL),
+    countWhen(review.capacity, CapacityReview.ENOUGH),
+    countWhen(review.capacity, CapacityReview.PLENTY),
+    countWhen(review.density, DensityReview.WATERY),
+    countWhen(review.density, DensityReview.SMOOTH),
+    countWhen(review.density, DensityReview.THICK),
+    countWhen(review.particle, ParticleReview.SMALL),
+    countWhen(review.particle, ParticleReview.MEDIUM),
+    countWhen(review.particle, ParticleReview.LARGE),
+  )
+
+  return queryFactory
+    .select(projection)
+    .from(review)
+    .join(item).on(review.itemId.eq(item.id))
+    .where(
+      item.itemType.eq(itemType),
+      review.hiddenAt.isNull(),
+      review.deletedAt.isNull(),
+    )
+    .fetchOne()
+    ?: ReviewStatsAggregation.empty()
+}
+
+private fun <T : Enum<T>> countWhen(
+  path: EnumPath<T>,
+  value: T,
+): NumberExpression<Long> =
+  Expressions.numberTemplate(
+    Long::class.javaObjectType,
+    "COALESCE(SUM(CASE WHEN {0} = {1} THEN 1 ELSE 0 END), 0)",
+    path,
+    value,
+  )
+```
+
+집계한 개수로 평균 평점과 각 응답 비율을 계산한 뒤 상품 유형별 `review_stats`를 생성하거나 갱신한다.
+
+이 방식에서는 통계가 이벤트 처리 횟수가 아니라 원본 리뷰의 현재 상태로 결정된다.
+
+```text
+통계 = f(현재 노출 중인 리뷰 집합)
+```
+
+원본이 바뀌지 않았다면 같은 이벤트를 다시 처리해도 증감값이 누적되지 않는다. 뒤늦게 도착한 이벤트도 과거 값을 적용하지 않고 처리 시점의 원본을 다시 읽는다. 메시지 자체를 정확히 한 번 처리하는 것은 아니지만 중복과 순서 변경이 통계에 미치는 영향을 줄이는 기능적 멱등성을 얻었다.
+
+이 멱등성은 평점과 비율 같은 통계 수치에 한정된다. 이벤트를 처리할 때마다 `updateId`와 `updatedAt`은 마지막 메시지를 기준으로 바뀔 수 있으므로 `review_stats` 행 전체가 완전히 같은 상태로 남는 것은 아니다.
+
+## 재집계 비용과 선택 기준
+
+재집계가 늘 저렴한 것은 아니다. 다만 이 쿼리는 서비스의 모든 리뷰를 한꺼번에 읽지 않는다. 코드에 정의된 `ItemType`은 9개다. 이벤트 하나를 처리할 때 그중 한 상품 유형의 리뷰만 조회한다. `COUNT`와 평점 합계, 아홉 개 조건별 개수도 한 쿼리에서 계산해 결과 한 행으로 돌려받는다.
+
+집계 대상 행 수는 리뷰가 쌓일수록 늘어난다. 반면 집계 기준은 9개로 제한된다. 재집계를 선택하면 두 애플리케이션의 일곱 가지 변경 경로에서 이전 값과 이벤트 순서를 다루는 코드가 사라진다. 도입 당시에는 이 단순성과 복구 가능성을 증분 계산보다 우선했다.
+
+재집계 비용이 무시할 만큼 작다고 단정할 근거도 없다. 쿼리 실행 시간이나 전환 기준을 별도로 측정하지 않았기 때문이다. 당시 집계 쿼리 시간, 큐 대기 시간, 같은 상품 유형의 반복 집계 횟수까지 측정하지 못해 판단 근거가 충분하지 않았다. 수치가 허용 범위를 넘을 때 상품 유형별 이벤트를 짧게 모아 처리하거나, 주기적으로 통계를 보정하거나, 멱등성 키를 둔 증분 집계로 전환하는 기준도 함께 정해 뒀어야 했다.
+
+## RabbitMQ에는 신호 전달만 맡겼다
+
+리뷰 이벤트는 `review.events` Direct Exchange로 발행한다. 환경 이름이 포함된 Routing Key와 Queue를 사용해 개발·운영 이벤트가 섞이지 않게 했다.
+
+### Direct Exchange를 선택한 이유
+
+Publisher는 메시지를 Queue가 아니라 Exchange로 보낸다. Exchange는 유형과 Binding에 따라 어느 Queue로 전달할지 결정한다. 이 기능에서 비교할 대상은 Queue의 저장 방식이 아니라 Exchange의 라우팅 방식이었다.
+
+| 유형 | 라우팅 방식 | 이 기능에서의 판단 |
+| --- | --- | --- |
+| [Direct Exchange](https://www.rabbitmq.com/docs/exchanges#direct) | 메시지의 Routing Key와 Queue의 Binding Key가 정확히 같을 때 전달한다. | 환경과 이벤트 종류가 명시된 `${profile}.review.updated`를 같은 키로 바인딩한 리뷰 갱신 Queue에만 보낸다. |
+| [Topic Exchange](https://www.rabbitmq.com/docs/exchanges#topic) | `*`와 `#`를 사용한 Binding Key 패턴으로 하나 이상의 Queue를 선택한다. | 여러 리뷰 이벤트를 `*.review.*`처럼 묶어 구독할 때 유용하지만 당시에는 하나의 정확한 키만 사용해 패턴 라우팅이 필요하지 않았다. |
+| [Fanout Exchange](https://www.rabbitmq.com/docs/exchanges#fanout) | Routing Key를 무시하고 바인딩된 모든 Queue에 메시지 사본을 보낸다. | 같은 이벤트를 여러 독립 기능에 방송할 때 적합하지만 당시 재집계 신호의 목적지는 리뷰 갱신 Queue 하나뿐이었다. |
+
+당시 구조에는 Direct Exchange가 가장 단순했다. `${profile}.review.updated`라는 Routing Key를 가진 메시지는 같은 Binding Key의 Queue에만 전달됐다. 개발·운영 이벤트도 키 수준에서 나뉘었다. 패턴 구독이나 전체 방송이라는 확장성을 미리 넣을 이유는 없었다.
+
+Direct Exchange가 메시지를 한 Queue에만 전달하도록 보장하는 것은 아니다. 같은 Binding Key로 다른 Queue를 연결하면 그 Queue에도 메시지가 전달된다. 당시 구성에는 작업 Queue 하나만 연결했다. 여러 `Review Consumer` 인스턴스가 필요했다면 같은 Queue를 함께 소비하도록 늘릴 수 있었다.
+
+설정 코드에서도 Direct Exchange와 정확히 일치하는 Binding Key를 선언했다.
+
+```kotlin
+@Bean
+open fun reviewDirectExchange(): DirectExchange =
+  DirectExchange(REVIEW_EXCHANGE)
+
+@Bean
+open fun reviewBinding(): Binding =
+  BindingBuilder.bind(reviewWorkQueue())
+    .to(reviewDirectExchange())
+    .with(getReviewRoutingKey())
+```
+
+리뷰 생성·수정·삭제 이벤트를 서로 다른 Queue가 패턴으로 구독하는 요구가 있었다면 Topic Exchange가 더 어울렸겠다. 검색 색인, 알림, 감사 로그처럼 여러 기능이 모든 리뷰 변경을 받아야 했다면 Fanout Exchange가 더 자연스럽다. 당시 요구사항에는 둘 다 필요하지 않았다.
+
+| 구성 | 설정 |
+| --- | --- |
+| Exchange | `review.events` Direct Exchange |
+| Routing Key | `${profile}.review.updated` |
+| Binding Key | `${profile}.review.updated` |
+| 작업 Queue | `${profile}.review.updated.queue` |
+| Queue | Durable, Exclusive·Auto-delete 비활성화, 최대 1,000건 |
+| 메시지 TTL | 메시지별 10초 |
+| 실패 경로 | `review.events.dlx`와 Dead Letter Queue |
+
+Direct Exchange를 선택한 이유는 라우팅 요구로 설명할 수 있다. 다만 10초와 1,000건이라는 구체적인 값을 정한 근거는 코드와 커밋 기록에서 찾지 못했다. 재집계 신호는 변경 이력을 보존하기보다 최신 상태를 다시 읽게 하는 데 의미가 있으므로 보관 시간을 짧게 둘 이유는 있었다. 이 Queue는 상품 유형별로 이벤트를 합치지 않는다. 마지막 신호가 반드시 남는다고 보장하지도 않는다. 그래서 두 값을 처리량에 맞춰 계산한 설정이라고 보기는 어렵다.
+
+두 값은 처리량을 바탕으로 계산한 운영값이라기보다 Queue가 끝없이 늘어나는 상황을 막기 위한 초기 제한값에 가까웠다. 실제 운영값으로 다듬으려면 최대 발행량, 허용 가능한 통계 지연, 소비자 복구 시간, DLQ 처리 절차를 함께 측정했어야 했다.
+
+Publisher Confirm과 Return Callback, 전송 예외에 대한 지수 백오프도 설정했다. RabbitMQ의 [신뢰성 가이드](https://www.rabbitmq.com/docs/reliability)가 설명하듯 Publisher Confirm과 Consumer Acknowledgement는 브로커가 메시지를 넘겨받았는지, 소비자가 처리를 마쳤는지를 확인하는 서로 다른 장치다.
+
+당시 RabbitMQ는 복잡한 라우팅을 맡지 않았다. Direct Exchange로 목적지를 명확히 정하고 리뷰 변경 API와 통계 계산을 분리한 뒤 재집계할 일을 `Review Consumer`에 전달했다.
+
+## 비동기 처리 뒤에도 남은 유실 구간
+
+큐와 DLQ를 만들었다고 전달이 저절로 보장되지는 않는다. 당시 코드에는 세 가지 빈틈이 있었다.
+
+Transactional Outbox가 없었다. 리뷰가 커밋된 직후 애플리케이션이 종료되거나 발행이 실패하면 변경은 남지만 통계 갱신 신호가 사라질 수 있었다. Publisher Confirm과 Return Callback도 실패를 로그로 남길 뿐 재발행할 데이터를 보관하지 않았다.
+
+소비 실패 횟수와 재처리 절차도 명시돼 있지 않았다. 작업 큐에는 DLX와 DLQ가 연결되어 있었지만 모든 처리 예외를 정해진 횟수만큼 재시도한 뒤 DLQ로 보내는 정책은 없었다. DLQ 리스너도 오류를 기록하는 수준이었다.
+
+메시지 TTL과 큐 길이 제한도 빈틈이 될 수 있었다. TTL은 10초, 큐 길이는 1,000건까지였다. RabbitMQ는 [TTL이 지난 메시지](https://www.rabbitmq.com/docs/ttl)나 길이 제한을 넘긴 메시지를 설정된 DLX로 보낸다. 마지막 재계산 신호가 사라진 뒤 새 이벤트가 오지 않으면 통계는 이전 값에 머물 수 있었다.
+
+지금 다시 설계한다면 Outbox와 재처리 가능한 DLQ를 먼저 추가했을 것 같다. 상품 유형별 이벤트를 짧게 모으고 전체 통계를 주기적으로 다시 계산하는 보정 작업까지 넣었다면 마지막 신호가 유실되더라도 통계를 다시 맞추는 데 도움이 됐을 것 같다.
+
+## 메시지를 재계산 신호로 정의한 결과
+
+이 작업에서 RabbitMQ보다 더 오래 고민한 것은 메시지의 의미였다. 변경량을 메시지에 실었다면 소비자는 생성·수정·삭제·숨김을 구분하고 이전 값과 처리 순서를 관리해야 했다. 메시지를 재계산 신호로 정의하자 소비자는 커밋된 원본만 바라보면 됐다.
+
+리뷰 변경과 통계 계산을 분리했다. 조회 요청에서는 11개의 집계식 대신 미리 계산된 통계 한 건을 읽게 했다. 구체적인 응답 시간이나 데이터베이스 부하는 따로 측정하지 않았으므로 성능 개선으로 적지는 않았다. 이번 설계로 리뷰 저장, 통계 계산, 통계 조회의 책임이 분리됐다.
+
+`AFTER_COMMIT`은 커밋이 끝난 뒤에만 리스너를 실행한다. Publisher Confirm은 브로커가 메시지를 받았는지 확인한다. DLQ는 처리에 실패한 메시지를 보관한다. 셋은 서로 다른 실패 구간을 다룰 뿐 데이터베이스 커밋부터 실패 메시지 재처리까지 이어지는 전체 경로를 보장하지는 않는다. 이 빈틈을 줄이려면 Outbox와 명시적인 소비 실패 정책이 필요했다.
+
+## 참고 자료
+
+- [리뷰프로덕트팀 신입 개발자의 파일럿 프로젝트 — 우아한형제들 기술블로그](https://techblog.woowahan.com/10600/)
+- [Transaction-bound Events — Spring Framework](https://docs.spring.io/spring-framework/reference/data-access/transaction/event.html)
+- [Exchanges — RabbitMQ](https://www.rabbitmq.com/docs/exchanges)
+- [Reliability Guide — RabbitMQ](https://www.rabbitmq.com/docs/reliability)
+- [Time-To-Live and Expiration — RabbitMQ](https://www.rabbitmq.com/docs/ttl)

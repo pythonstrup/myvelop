@@ -172,7 +172,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 						{ value: '151억 원', label: '알림 발송으로 이어진 매출 전환' },
 					],
 					stack: ['BullMQ', 'Redis', 'Kubernetes', 'AWS', 'Pulumi', 'BigQuery', 'Elastic', 'OpenTelemetry'],
-					links: [{ href: '/ko/blog/20/', label: '기술 글 읽기' }],
+					links: [{ href: '/ko/blog/bullmq-notification-part-1-what-is-bullmq/', label: '기술 글 읽기' }],
 					visual: {
 						key: 'notification',
 						alt: 'GitHub Actions가 이미지를 ECR에 게시하고 GitOps 브랜치를 갱신하면 Argo CD가 EKS에 배포하며, 내부 서비스의 Redis·BullMQ 작업과 Pulumi로 배포한 발송 이력 저장 인프라, 관측 파이프라인을 연결한 아키텍처',
@@ -204,7 +204,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 						'Elastic Stack',
 					],
 					links: [
-						{ href: '/ko/blog/10/', label: '외부 API 장애 대응 글 읽기' },
+						{ href: '/ko/blog/external-api-virtual-threads/', label: '외부 API 장애 대응 글 읽기' },
 					],
 					visual: {
 						key: 'lohasmeal',
@@ -225,7 +225,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 						{ value: '500ms~1초→약 10ms', label: '외부 API 대비 L1 캐시 응답' },
 					],
 					stack: ['Java', 'Spring Cache', 'Caffeine', 'Redis', 'Redis Pub/Sub'],
-					links: [{ href: '/ko/blog/6/', label: '캐시 설계 글 읽기' }],
+					links: [{ href: '/ko/blog/distributed-cache-sync-redis-pubsub/', label: '캐시 설계 글 읽기' }],
 					visual: {
 						key: 'cache',
 						alt: '애플리케이션이 CompositeCache를 통해 Caffeine L1과 Redis L2를 차례로 조회하고, 모두 미스이면 서킷 브레이커를 거쳐 컬리 API를 호출하며, 회로가 열리면 폴백으로 처리하고 Redis Pub/Sub 무효화 이벤트를 다른 인스턴스의 로컬 캐시에 전파하는 구조',
@@ -245,7 +245,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 						{ value: '246%↑', label: '사용자 토론 활동' },
 					],
 					stack: ['Apache Zeppelin', 'Kubernetes', 'Docker'],
-					links: [{ href: '/ko/blog/1/', label: '오픈소스 기여 회고 읽기' }],
+					links: [{ href: '/ko/blog/2024-retrospective/', label: '오픈소스 기여 회고 읽기' }],
 					visual: {
 						key: 'zeppelin',
 						alt: '하나의 Kubernetes Pod에서 Zeppelin Server와 여러 인터프리터가 자원을 공유하던 구조를 Zeppelin Server와 인터프리터별 독립 Pod 구조로 분리한 전후 비교',
@@ -409,7 +409,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 						{ value: '₩15.1B', label: 'Revenue converted after notification delivery' },
 					],
 					stack: ['BullMQ', 'Redis', 'Kubernetes', 'AWS', 'Pulumi', 'BigQuery', 'Elastic', 'OpenTelemetry'],
-					links: [{ href: '/blog/20/', label: 'Read the technical write-up' }],
+					links: [{ href: '/blog/bullmq-notification-part-1-what-is-bullmq/', label: 'Read the technical write-up' }],
 					visual: {
 						key: 'notification',
 						alt: 'Architecture showing GitHub Actions publishing images to ECR and updating GitOps branches for Argo CD deployment, internal services enqueueing work in Redis and BullMQ, and Pulumi-deployed delivery-history infrastructure alongside observability pipelines',
@@ -441,7 +441,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 						'Elastic Stack',
 					],
 					links: [
-						{ href: '/blog/10/', label: 'Read the external API resilience post' },
+						{ href: '/blog/external-api-virtual-threads/', label: 'Read the external API resilience post' },
 					],
 					visual: {
 						key: 'lohasmeal',
@@ -462,7 +462,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 						{ value: '500ms–1s→~10ms', label: 'L1 latency versus the external API' },
 					],
 					stack: ['Java', 'Spring Cache', 'Caffeine', 'Redis', 'Redis Pub/Sub'],
-					links: [{ href: '/blog/6/', label: 'Read the cache design' }],
+					links: [{ href: '/blog/distributed-cache-sync-redis-pubsub/', label: 'Read the cache design' }],
 					visual: {
 						key: 'cache',
 						alt: 'The application reading Caffeine L1 and Redis L2 through CompositeCache, calling the Kurly API through a circuit breaker after both miss, falling back when the circuit is open, and propagating Redis Pub/Sub invalidation events to local caches across application instances',
@@ -482,7 +482,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 						{ value: '+246%', label: 'User discussion activity' },
 					],
 					stack: ['Apache Zeppelin', 'Kubernetes', 'Docker'],
-					links: [{ href: '/blog/1/', label: 'Read the open-source retrospective' }],
+					links: [{ href: '/blog/2024-retrospective/', label: 'Read the open-source retrospective' }],
 					visual: {
 						key: 'zeppelin',
 						alt: 'A before-and-after comparison of Zeppelin Server and multiple interpreters sharing one Kubernetes Pod versus Zeppelin Server and each interpreter running in separate Pods',

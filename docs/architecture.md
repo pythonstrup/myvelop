@@ -43,7 +43,7 @@ pythonstrup은 Astro 7로 빌드하는 정적 다국어 블로그다. 서버 런
 
 `npm run check`가 정적 빌드와 Pagefind 생성 뒤 다음을 기계적으로 확인한다.
 
-- 문서 링크와 글 번호의 연속성;
+- 문서 링크, 글 파일명의 slug 형식, `public/_redirects` 목적지;
 - 필수 산출물, sitemap과 canonical의 대응;
 - HTML의 title, h1, description, lang, 내부 링크와 정적 자산;
 - RSS의 글 집합과 최신순 정렬;

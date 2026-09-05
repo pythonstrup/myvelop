@@ -93,26 +93,28 @@ async function verifyMarkdownLinks() {
 	}
 }
 
-async function verifyPostNumbers() {
-	const counts = {};
+async function verifyPostNames() {
+	// 파일명이 URL slug가 된다. 소문자 kebab-case만 허용하고, 번역쌍은 같은 이름을 쓴다.
+	const names = {};
 	for (const lang of ['en', 'ko']) {
 		const directory = join(root, 'src/content/blog', lang);
-		const names = (await readdir(directory))
+		names[lang] = (await readdir(directory))
 			.filter((name) => /\.(?:md|mdx)$/.test(name))
 			.map((name) => name.replace(/\.(?:md|mdx)$/, ''));
-		const invalid = names.filter((name) => !/^[1-9]\d*$/.test(name));
-		if (invalid.length) fail(`${displayPath(directory)}: non-numeric post names: ${invalid.join(', ')}`);
-
-		const numbers = names.filter((name) => /^[1-9]\d*$/.test(name)).map(Number).sort((a, b) => a - b);
-		for (let index = 0; index < numbers.length; index += 1) {
-			if (numbers[index] !== index + 1) {
-				fail(`${displayPath(directory)}: post numbers must be contiguous from 1; found ${numbers.join(', ')}`);
-				break;
-			}
-		}
-		counts[lang] = names.length;
+		const invalid = names[lang].filter((name) => !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name));
+		if (invalid.length) fail(`${displayPath(directory)}: post names must be lowercase kebab-case slugs: ${invalid.join(', ')}`);
 	}
-	return counts;
+	return names;
+}
+
+async function verifyRedirects() {
+	// public/_redirects의 목적지가 실제로 빌드됐는지 확인한다. slug를 바꾸면 이 파일도 따라가야 한다.
+	const source = await readFile(join(root, 'public/_redirects'), 'utf8');
+	for (const line of source.split('\n')) {
+		const [from, to] = line.trim().split(/\s+/);
+		if (!from || from.startsWith('#')) continue;
+		if (!to || !(await builtTargetExists(to))) fail(`public/_redirects: ${from} points to a missing page ${to ?? ''}`);
+	}
 }
 
 async function verifyRequiredOutput() {
@@ -226,19 +228,19 @@ async function verifySitemap(canonicalUrls) {
 	}
 }
 
-async function verifyRss(postCounts) {
+async function verifyRss(postNames) {
 	for (const lang of ['en', 'ko']) {
 		const path = lang === 'en' ? join(dist, 'rss.xml') : join(dist, 'ko/rss.xml');
 		const xml = await readFile(path, 'utf8');
 		const items = [...xml.matchAll(/<item>(.*?)<\/item>/gs)].map((match) => match[1]);
-		if (items.length !== postCounts[lang]) {
-			fail(`${displayPath(path)}: expected ${postCounts[lang]} items, found ${items.length}`);
+		if (items.length !== postNames[lang].length) {
+			fail(`${displayPath(path)}: expected ${postNames[lang].length} items, found ${items.length}`);
 		}
 
 		const links = new Set(items.map((item) => item.match(/<link>([^<]+)<\/link>/)?.[1]).filter(Boolean));
 		const prefix = lang === 'en' ? '/blog' : '/ko/blog';
-		for (let number = 1; number <= postCounts[lang]; number += 1) {
-			const expected = `https://pythonstrup.com${prefix}/${number}/`;
+		for (const name of postNames[lang]) {
+			const expected = `https://pythonstrup.com${prefix}/${name}/`;
 			if (!links.has(expected)) fail(`${displayPath(path)}: missing item ${expected}`);
 		}
 
@@ -270,11 +272,12 @@ async function verifyFontCss() {
 }
 
 await verifyMarkdownLinks();
-const postCounts = await verifyPostNumbers();
+const postNames = await verifyPostNames();
 await verifyRequiredOutput();
 const { htmlCount, canonicalUrls } = await verifyHtml();
 await verifySitemap(canonicalUrls);
-await verifyRss(postCounts);
+await verifyRss(postNames);
+await verifyRedirects();
 await verifyFontCss();
 
 if (failures.length) {
@@ -283,4 +286,4 @@ if (failures.length) {
 	process.exit(1);
 }
 
-console.log(`Verified ${htmlCount} HTML pages, ${canonicalUrls.size} canonical URLs, and ${postCounts.en + postCounts.ko} posts.`);
+console.log(`Verified ${htmlCount} HTML pages, ${canonicalUrls.size} canonical URLs, and ${postNames.en.length + postNames.ko.length} posts.`);
