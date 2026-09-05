@@ -14,7 +14,7 @@ This file is a map, not the full manual. Read the linked document before changin
 - Node.js `>=22.12.0`; use npm and the committed `package-lock.json`.
 - English routes live at `/`; Korean routes live under `/ko`.
 - Posts live in `src/content/blog/{en,ko}`. Matching filenames are translation pairs.
-- Zettelkasten notes live in `src/content/notes/ko` (Korean only, served under `/ko/notes`). The filename is the title and `[[title]]` links notes; usage is in `src/content/notes/README.md`.
+- Zettelkasten notes live in `src/content/notes/{en,ko}` (served under `/notes` and `/ko/notes`, no translation pairing). The filename is the title and `[[title]]` links notes within a language; usage is in `src/content/notes/README.md`.
 - Blog lists are newest-first, five posts per page; each home page shows the latest three.
 - Astro components and native browser APIs are the default. React, Tailwind, and shadcn are limited to search UI and interactive post demos in `src/materials` unless interactivity requires them elsewhere.
 

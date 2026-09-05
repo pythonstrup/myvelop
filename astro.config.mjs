@@ -8,7 +8,7 @@ import { defineConfig } from "astro/config";
 
 import tailwindcss from "@tailwindcss/vite";
 import { readdirSync } from "node:fs";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tagSlug } from "./src/lib/slug.ts";
 
@@ -50,16 +50,19 @@ function rehypeWrapTables() {
 
 // [[제목]]과 [[제목|별칭]]을 노트 링크로 바꾼다. 같은 이름의 노트 파일이 없으면 일반 텍스트로 두어
 // verify-build의 내부 링크 검사에 걸리지 않게 한다. 사용법은 src/content/notes/README.md에 있다.
-const NOTES_DIR = fileURLToPath(new URL("./src/content/notes/ko", import.meta.url));
+const NOTES_ROOT = fileURLToPath(new URL("./src/content/notes/", import.meta.url));
 const WIKILINK = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
 
 function remarkWikilinks() {
   /** @param {any} tree @param {{ path?: string }} file */
   return (tree, file) => {
     if (file.path && !file.path.includes("/content/notes/")) return;
+    // 영어 노트(en/)와 영어 색인(index.en.md)은 /notes/ 아래로, 나머지는 /ko/notes/ 아래로 푼다.
+    const lang = /\/notes\/(?:en\/|index\.en\.md$)/.test(file.path ?? "") ? "en" : "ko";
+    const base = lang === "en" ? "/notes/" : "/ko/notes/";
     // ponytail: 노트 파일마다 디렉토리를 다시 읽는다. 노트 수백 개까지는 비용이 없다.
     const titles = new Set(
-      readdirSync(NOTES_DIR)
+      readdirSync(join(NOTES_ROOT, lang))
         .filter((name) => name.endsWith(".md"))
         .map((name) => basename(name, ".md")),
     );
@@ -80,7 +83,7 @@ function remarkWikilinks() {
           if (match.index > last) parts.push({ type: "text", value: child.value.slice(last, match.index) });
           parts.push(
             titles.has(target)
-              ? { type: "link", url: `/ko/notes/${tagSlug(target)}/`, children: [{ type: "text", value: label }] }
+              ? { type: "link", url: `${base}${tagSlug(target)}/`, children: [{ type: "text", value: label }] }
               : { type: "text", value: label },
           );
           last = match.index + raw.length;

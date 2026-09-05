@@ -11,8 +11,8 @@ pythonstrup은 Astro 7로 빌드하는 정적 다국어 블로그다. 서버 런
 | 페이지네이션 | `/blog/page/:page/` | `/ko/blog/page/:page/` | `src/pages/**/blog/page/[page].astro` |
 | 글 | `/blog/:slug/` | `/ko/blog/:slug/` | `BlogPost.astro` |
 | 태그별 글 | `/blog/tags/:tag/` | `/ko/blog/tags/:tag/` | `BlogTagList.astro` |
-| 노트 색인 | — | `/ko/notes/` | `src/pages/ko/notes/index.astro`, 본문은 `src/content/notes/index.md` |
-| 노트 | — | `/ko/notes/:slug/` | `src/pages/ko/notes/[slug].astro` |
+| 노트 색인 | `/notes/` | `/ko/notes/` | `NoteIndex.astro`, 본문은 `src/content/notes/index.{en,ko}.md` |
+| 노트 | `/notes/:slug/` | `/ko/notes/:slug/` | `Note.astro` |
 | 검색 | `/search/` | `/ko/search/` | `SearchCommand.tsx` |
 | 소개 | `/about/` | `/ko/about/` | `AboutPortfolio.astro` |
 | RSS | `/rss.xml` | `/ko/rss.xml` | `src/pages/**/rss.xml.js` |
@@ -25,7 +25,7 @@ pythonstrup은 Astro 7로 빌드하는 정적 다국어 블로그다. 서버 런
 - `src/components/BaseHead.astro`가 canonical URL, description, Open Graph, Twitter Card, RSS, sitemap, hreflang을 한곳에서 만든다. 글은 실제 번역본이 있을 때만 상대 언어 hreflang을 노출한다.
 - `src/content.config.ts`가 글 frontmatter의 단일 스키마다. 원문은 `src/content/blog/{en,ko}`에 있다.
 - `src/data/about.ts`가 두 About 페이지의 콘텐츠 소스다. 레이아웃과 섹션 컴포넌트에는 문구를 복제하지 않는다.
-- `src/content/notes/ko`가 제텔카스텐 노트의 원본이다. frontmatter 없이 파일명이 제목이자 `[[제목]]` 링크의 식별자이며, `astro.config.mjs`의 `remarkWikilinks`가 링크를 만들고 없는 노트는 일반 텍스트로 둔다. `/ko/notes/`는 전체 목록이 아니라 손으로 쓰는 색인(`index.md`)이며 키워드마다 진입 노트 한둘만 가리킨다. 한국어 전용이라 영어 메뉴에 없고 hreflang을 내지 않는다. 사용법은 [노트 README](../src/content/notes/README.md)에 있다.
+- `src/content/notes/{en,ko}`가 제텔카스텐 노트의 원본이다. frontmatter 없이 파일명이 제목이자 `[[제목]]` 링크의 식별자이며, `astro.config.mjs`의 `remarkWikilinks`가 언어 폴더 안에서 링크를 만들고 없는 노트는 일반 텍스트로 둔다. 색인 페이지는 전체 목록이 아니라 손으로 쓰는 `index.{en,ko}.md`이며 키워드마다 진입 노트 한둘만 가리킨다. 노트는 번역쌍을 맺지 않으므로 hreflang은 색인 페이지에만 내고, 노트에서 언어를 바꾸면 상대 언어의 색인으로 간다. 사용법은 [노트 README](../src/content/notes/README.md)에 있다.
 - 기본 UI는 Astro의 정적 HTML, scoped CSS, 작은 네이티브 스크립트로 만든다. 현재 React island는 검색의 `SearchCommand.tsx` 하나이며 `client:load`로 활성화된다.
 - Tailwind와 shadcn 계열 UI 코드는 `src/styles/ui.css`, `src/components/search`, `src/components/ui` 범위에만 둔다. 정적 페이지를 일관성만을 이유로 React island로 바꾸지 않는다.
 - Pagefind는 Astro 빌드 후 `dist`를 읽어 색인을 만든다. 따라서 검색은 개발 서버만으로 완전히 검증할 수 없고 `npm run check` 후 preview가 필요하다.

@@ -24,12 +24,12 @@ const blog = defineCollection({
 		}),
 });
 
-// 제텔카스텐 노트. frontmatter가 없고 파일명이 곧 제목이다. URL slug는 태그와 같은 규칙으로 만든다.
+// 제텔카스텐 노트(en/, ko/). frontmatter가 없고 파일명이 곧 제목이다. URL slug는 태그와 같은 규칙으로 만든다.
 // 사용법은 src/content/notes/README.md에 있다.
 const notes = defineCollection({
 	loader: glob({
 		base: './src/content/notes',
-		pattern: 'ko/**/*.md',
+		pattern: ['en/**/*.md', 'ko/**/*.md'],
 		generateId: ({ entry }) => entry.replace(/\.md$/, '').split('/').map(tagSlug).join('/'),
 	}),
 });

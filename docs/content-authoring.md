@@ -70,4 +70,4 @@ import PasswordlessAuthDemo from "@/materials/24/PasswordlessAuthDemo";
 
 ## 노트 (제텔카스텐)
 
-블로그 글과 별개로 `src/content/notes/ko`에 두는 짧은 노트다. frontmatter 없이 파일명이 제목이고 `[[제목]]`으로 서로 연결한다. 규칙과 위키링크 사용법은 [노트 README](../src/content/notes/README.md)에 있다.
+블로그 글과 별개로 `src/content/notes/{en,ko}`에 두는 짧은 노트다. frontmatter 없이 파일명이 제목이고 `[[제목]]`으로 서로 연결한다. 규칙과 위키링크 사용법은 [노트 README](../src/content/notes/README.md)에 있다.

@@ -2,9 +2,18 @@ import { basename } from 'node:path';
 import { type CollectionEntry, getCollection } from 'astro:content';
 
 export type Note = CollectionEntry<'notes'>;
+export type NoteLang = 'en' | 'ko';
 
 /** `[[제목]]` 또는 `[[제목|별칭]]`. astro.config.mjs의 remarkWikilinks와 같은 패턴이다. */
 export const WIKILINK = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+
+export function noteLang(note: Note): NoteLang {
+	return note.id.startsWith('ko/') ? 'ko' : 'en';
+}
+
+export function notesBase(lang: NoteLang) {
+	return lang === 'ko' ? '/ko/notes' : '/notes';
+}
 
 /** 제텔카스텐 노트는 frontmatter가 없고 파일명이 곧 제목이다. */
 export function noteTitle(note: Note) {
@@ -12,13 +21,13 @@ export function noteTitle(note: Note) {
 }
 
 export function noteHref(note: Note) {
-	return `/ko/notes/${note.id.replace(/^ko\//, '')}/`;
+	return `${notesBase(noteLang(note))}/${note.id.replace(/^(?:en|ko)\//, '')}/`;
 }
 
-/** 제목 가나다순. 날짜가 없으니 목록은 색인처럼 읽는다. */
-export async function getNotes() {
-	return (await getCollection('notes')).sort((a, b) =>
-		noteTitle(a).localeCompare(noteTitle(b), 'ko'),
+/** 제목 순. 날짜가 없으니 목록은 색인처럼 읽는다. */
+export async function getNotes(lang: NoteLang) {
+	return (await getCollection('notes', ({ id }) => id.startsWith(`${lang}/`))).sort((a, b) =>
+		noteTitle(a).localeCompare(noteTitle(b), lang),
 	);
 }
 
@@ -31,7 +40,7 @@ export function noteDescription(note: Note) {
 		.slice(0, 160);
 }
 
-/** 이 노트를 `[[제목]]`으로 참조하는 다른 노트들. */
+/** 이 노트를 `[[제목]]`으로 참조하는 다른 노트들. 같은 언어 안에서만 찾는다. */
 export function getBacklinks(note: Note, notes: Note[]) {
 	const title = noteTitle(note);
 	return notes.filter(

@@ -1,11 +1,11 @@
 ---
 import { render } from 'astro:content';
-import Note from '../../../layouts/Note.astro';
-import { type Note as NoteEntry, getNotes } from '../../../lib/notes';
+import Note from '../../layouts/Note.astro';
+import { type Note as NoteEntry, getNotes } from '../../lib/notes';
 
 export async function getStaticPaths() {
-	return (await getNotes('ko')).map((note) => ({
-		params: { slug: note.id.replace(/^ko\//, '') },
+	return (await getNotes('en')).map((note) => ({
+		params: { slug: note.id.replace(/^en\//, '') },
 		props: note,
 	}));
 }
