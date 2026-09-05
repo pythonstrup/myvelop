@@ -1,12 +1,12 @@
 ---
 name: create-material
 description: Create a diagram or animated demo component (material) that explains a concept in a blog post. Use for requests like "draw an explanatory diagram", "make an animation demo", "turn this into a diagram component", "animate this SVG". Covers two types - static SSR SVG diagrams and Canvas animation demos.
-argument-hint: "[post number and the concept to explain]"
+argument-hint: "[post slug and the concept to explain]"
 ---
 
 # Create a blog material (explanatory component)
 
-Build a concept-explaining component under `src/materials/<post number>/` and wire it into the post's MDX.
+Build a concept-explaining component under `src/materials/<slug>/` and wire it into the post's MDX.
 
 ## User input
 
@@ -21,7 +21,7 @@ $ARGUMENTS
 
 ## File conventions
 
-- Location: `src/materials/<post number>/ComponentName.tsx`, default export.
+- Location: `src/materials/<slug>/ComponentName.tsx`, default export.
 - Naming: `~Demo` suffix for animations, `~Diagram` suffix for static diagrams.
 - Shared helpers: `@/materials/shared` — `palette(dark)`, `ease`, `lerp`, `clamp01`, `drawBadge`, `useCanvasScene`.
 - MDX wiring: if the post is `.md`, rename it to `.mdx` (the build verifier accepts `.mdx`). Put imports right below the frontmatter.
