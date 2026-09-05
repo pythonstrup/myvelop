@@ -20,6 +20,7 @@ export function isActivePath(current: string, target: string): boolean {
 const navItems = [
 	{ label: { en: "Home", ko: "홈" }, path: "" },
 	{ label: { en: "Blog", ko: "블로그" }, path: "/blog" },
+	{ label: { en: "Notes", ko: "노트" }, path: "/notes" },
 	{ label: { en: "About", ko: "소개" }, path: "/about" },
 	{ label: { en: "Search", ko: "검색" }, path: "/search" },
 ];

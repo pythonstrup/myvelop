@@ -1,4 +1,5 @@
 import { type CollectionEntry, getCollection } from 'astro:content';
+import { tagSlug } from './slug';
 
 export const BLOG_PAGE_SIZE = 5;
 
@@ -12,14 +13,7 @@ export async function getBlogPageCount(lang: 'en' | 'ko') {
 	return Math.max(1, Math.ceil((await getBlogPosts(lang)).length / BLOG_PAGE_SIZE));
 }
 
-// "pub/sub", "@Transactional", "Nexters 27기"처럼 URL에 못 쓰는 문자가 태그에 있어서
-// 글자·숫자(한글 포함)만 남기고 하이픈으로 잇는다. 대소문자만 다른 태그는 하나로 합친다.
-export function tagSlug(tag: string) {
-	return tag
-		.toLowerCase()
-		.replace(/[^\p{L}\p{N}]+/gu, '-')
-		.replace(/^-+|-+$/g, '');
-}
+export { tagSlug };
 
 export interface PostLink {
 	title: string;

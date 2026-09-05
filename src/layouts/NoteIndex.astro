@@ -1,0 +1,84 @@
+---
+import BaseHead from '../components/BaseHead.astro';
+import Footer from '../components/Footer.astro';
+import Header from '../components/Header.astro';
+import { SITE_TITLE } from '../consts';
+// 손으로 쓰는 색인 노트. 키워드마다 진입 노트 한둘만 가리킨다. 규칙은 src/content/notes/README.md에 있다.
+import * as indexEn from '../content/notes/index.en.md';
+import * as indexKo from '../content/notes/index.ko.md';
+
+interface Props {
+	lang: 'en' | 'ko';
+}
+
+const { lang } = Astro.props;
+const isKo = lang === 'ko';
+const indexNote = isKo ? indexKo : indexEn;
+const { Content } = indexNote;
+const hasEntries = indexNote.rawContent().replace(/<!--[\s\S]*?-->/g, '').trim().length > 0;
+const title = isKo ? '노트' : 'Notes';
+const lead = isKo
+	? '제텔카스텐 색인입니다. 키워드마다 시작하기 좋은 노트를 한두 편만 골라 두었습니다. 나머지는 노트 사이의 링크가 이어 줍니다.'
+	: 'A Zettelkasten index. Each keyword lists only one or two notes that make a good starting point. The links between notes take you the rest of the way.';
+const emptyLabel = isKo ? '아직 색인에 올린 노트가 없습니다.' : 'Nothing is in the index yet.';
+---
+
+<!doctype html>
+<html lang={lang}>
+	<head>
+		<BaseHead title={`${title} · ${SITE_TITLE}`} description={lead} alternatePath="/notes/" />
+		<style>
+			main {
+				width: 720px;
+				max-width: calc(100% - 2em);
+				margin: auto;
+				padding: 3em 1em;
+			}
+			.lead {
+				margin: 0 0 2.5rem;
+				color: rgb(var(--gray));
+			}
+			.index {
+				color: rgb(var(--gray-dark));
+			}
+			.system-prose {
+				font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+			}
+			.index :global(ul) {
+				margin: 0;
+				padding: 0;
+				list-style: none;
+			}
+			.index :global(li) {
+				padding: 0.7rem 0;
+				line-height: 1.6;
+				border-bottom: 1px solid rgb(var(--gray-light));
+			}
+			.index :global(a) {
+				font-weight: 600;
+			}
+			.index :global(h2) {
+				margin: 2.2rem 0 0.4rem;
+				font-size: 1.05rem;
+				color: rgb(var(--gray));
+			}
+		</style>
+	</head>
+	<body>
+		<Header />
+		<main>
+			<h1>{title}</h1>
+			<p class="lead">{lead}</p>
+			{
+				hasEntries ? (
+					<div class:list={['index', { 'system-prose': isKo }]}>
+						<Content />
+					</div>
+				) : (
+					<p>{emptyLabel}</p>
+				)
+			}
+		</main>
+		<Footer />
+	</body>
+</html>
