@@ -171,7 +171,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 						{ value: '약 15만 건', label: '알림 발송으로 이어진 신고 완료' },
 						{ value: '151억 원', label: '알림 발송으로 이어진 매출 전환' },
 					],
-					stack: ['BullMQ', 'Redis', 'Kubernetes', 'AWS', 'Pulumi', 'BigQuery', 'Elastic', 'OpenTelemetry'],
+					stack: ['BullMQ', 'Redis', 'Kubernetes', 'AWS', 'Pulumi', 'Elastic', 'OpenTelemetry'],
 					links: [{ href: '/ko/blog/bullmq-notification-part-1-what-is-bullmq/', label: '기술 글 읽기' }],
 					visual: {
 						key: 'notification',
@@ -408,7 +408,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 						{ value: '150K', label: 'Tax filings completed after notification delivery' },
 						{ value: '₩15.1B', label: 'Revenue converted after notification delivery' },
 					],
-					stack: ['BullMQ', 'Redis', 'Kubernetes', 'AWS', 'Pulumi', 'BigQuery', 'Elastic', 'OpenTelemetry'],
+					stack: ['BullMQ', 'Redis', 'Kubernetes', 'AWS', 'Pulumi', 'Elastic', 'OpenTelemetry'],
 					links: [{ href: '/blog/bullmq-notification-part-1-what-is-bullmq/', label: 'Read the technical write-up' }],
 					visual: {
 						key: 'notification',
