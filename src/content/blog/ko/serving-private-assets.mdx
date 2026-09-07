@@ -1,0 +1,239 @@
+---
+title: "비공개 에셋을 어떻게 내려줄 것인가 - 프록시, presigned URL, CloudFront, WAF"
+description: "외부에 열면 안 되는 파일을 브라우저까지 어떻게 가져올까. 서버 프록시, presigned URL, CloudFront signed URL, OAC와 WAF를 누가 접근을 확인하는가라는 하나의 축으로 비교했다. 프록시가 파일을 통째로 읽는다는 오해는 200MB 파일로 직접 재서 확인했다."
+pubDate: "2026-09-07T21:00:00+09:00"
+tags: ["s3", "cloudfront", "presigned-url", "streaming", "aws"]
+socialImage: "../../../assets/blog/serving-private-assets/og.png"
+---
+import AssetGridDiagram from "@/materials/serving-private-assets/AssetGridDiagram";
+import CdnCacheDiagram from "@/materials/serving-private-assets/CdnCacheDiagram";
+import JudgePathDiagram from "@/materials/serving-private-assets/JudgePathDiagram";
+import OacGateDemo from "@/materials/serving-private-assets/OacGateDemo";
+import PresignedFlowDiagram from "@/materials/serving-private-assets/PresignedFlowDiagram";
+import StreamingVsBufferingDemo from "@/materials/serving-private-assets/StreamingVsBufferingDemo";
+
+## 들어가며
+
+외부에 공개하면 안 되는 소재를 모아 보는 내부 도구를 만든다고 하자. 화면은 카드 그리드다. 썸네일이 스무 장쯤 깔리고, 카드를 누르면 영상이 재생된다. 영상 한 편이 30MB에서 200MB 사이다.
+
+<AssetGridDiagram />
+
+이 파일들을 아무나 보게 두면 안 된다고 하자. 공개 URL로 열어두면 곤란해지는 소재라서 사내에서만 열려야 한다는 조건이다.
+
+파일을 브라우저까지 가져오는 방법은 여러 가지다. 앱 서버가 S3에서 읽어 내려줄 수도 있고, presigned URL을 발급할 수도 있고, CloudFront를 앞에 세울 수도 있다. 이 선택지들을 하나씩 따져보자.
+
+이 방법들은 <strong>누가 접근을 확인하느냐</strong>로 나뉜다. 확인하는 곳이 앱에서 멀어질수록 앱이 짤 코드는 줄어들고, 대신 확인하는 것이 "누구냐"에서 "무엇을 아느냐"나 "어디에 있느냐"로 바뀐다.
+
+## 공개 에셋
+
+비공개 에셋을 조회하는 방법을 보기 전에 공개 에셋부터 짚고 간다. 누가 봐도 상관없는 파일은 버킷을 열고 앞에 CloudFront(CDN)를 세우면 된다. 접근 확인이 없으니 엣지는 요청이 오면 캐시된 사본을 그대로 내준다.
+
+## 서버 프록시
+
+앱 서버가 확인하는 방법이다. 브라우저는 S3를 직접 부르지 않고 앱 서버의 주소로 파일을 요청한다. 서버는 로그인 세션을 보고 판단한 뒤 S3에서 읽어 내려준다. 버킷은 완전히 닫아두고 서버의 IAM role에만 읽기를 허용한다.
+
+확인하는 것은 <strong>"누구냐"</strong>다. 이미 앱에 로그인이 있다면 새로 만들 것이 사실상 없다.
+
+### 파일을 통째로 읽는다는 오해
+
+이 방법에서 먼저 걱정되는 것은 파일이 서버를 거친다는 점이다. 200MB짜리 영상을 서버가 통째로 메모리에 올린 다음 브라우저로 보내면 메모리도 부족해지고 시간도 두 배로 걸린다. 영상 카드가 스무 장이면 4GB다.
+
+실제로 그렇게 되는 코드가 있다. AWS SDK의 `GetObjectCommand`는 응답 본문을 스트림으로 돌려주는데, 이걸 바이트 배열로 바꾸는 순간 파일 전체가 메모리에 올라온다.
+
+```ts
+const buf = await obj.Body.transformToByteArray()
+return new Response(buf)
+```
+
+스트림을 그대로 넘기면 그렇지 않다. 소켓에서 오는 만큼만 브라우저로 흘러가고, 서버에는 청크 몇 개만 머문다.
+
+```ts
+return new Response(obj.Body.transformToWebStream())
+```
+
+이 한 줄 차이로 서버 동작이 달라진다.
+
+<StreamingVsBufferingDemo client:visible />
+
+차이가 얼마나 나는지 직접 쟀다. 200MB 파일을 원본 서버에 두고 프록시를 두 벌 세운 뒤, 동시 20건을 통과시키며 프록시 프로세스의 최대 RSS(Resident Set Size)와 시간을 측정했다.
+
+| | 스트리밍 | 버퍼링 |
+| --- | --- | --- |
+| 최대 RSS | 266MB | 4,312MB |
+| 첫 바이트까지 | 23ms | 5,154ms |
+| 전체 완료 | 831ms | 7,321ms |
+
+메모리는 16배, 첫 바이트까지 걸린 시간은 224배 차이가 났다. 버퍼링 쪽이 4GB를 옮기는 데 4.3GB를 잡은 것은 복사본과 GC 지연 때문이다.
+
+눈여겨볼 것은 첫 바이트까지의 시간이다. 버퍼링은 서버가 200MB를 다 받을 때까지 브라우저에 아무것도 주지 않으므로 5초를 기다린다. 스트리밍은 첫 청크가 도착하자마자 흘려보내므로 23ms다. <strong>서버를 경유해서 느린 것이 아니라, 다 받고 나서 보내려고 해서 느린 것이다.</strong>
+
+카드마다 `<video>`를 그대로 넣으면 브라우저가 영상 스무 편을 동시에 요청한다. 동시 20건은 거기서 나온 조건이다. 그래서 그리드에는 포스터 이미지만 두고 재생은 클릭 이후로 미룬다.
+
+```html
+<video src="/assets/ads/foo.mp4" poster="/assets/posters/foo.jpg" preload="none" controls></video>
+```
+
+### Range를 그대로 넘긴다
+
+영상은 한 가지를 더 처리해야 한다. 브라우저는 영상을 처음부터 끝까지 받지 않고 `Range` 헤더로 필요한 구간만 요청한다. 프록시는 이 헤더를 S3로 그대로 넘기고, S3가 돌려준 `Content-Range`를 붙여 206으로 응답해야 한다. 여기서 200을 주면 크롬은 재생하지만 사파리는 재생하지 못한다.
+
+TanStack Start의 서버 라우트로 쓰면 이렇게 된다.
+
+```ts
+import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { createFileRoute } from '@tanstack/react-router'
+
+const BUCKET = 'my-private-assets'
+const s3 = new S3Client({})
+
+export const Route = createFileRoute('/assets/$')({
+  server: {
+    handlers: {
+      GET: async ({ request, params }) => {
+        const key = params._splat
+        if (!key || !/^(ads|posters)\/[\w./-]+$/.test(key) || key.includes('..')) {
+          return new Response('bad key', { status: 400 })
+        }
+
+        const range = request.headers.get('range') ?? undefined
+        const obj = await s3.send(
+          new GetObjectCommand({ Bucket: BUCKET, Key: key, Range: range }),
+          { abortSignal: request.signal },
+        )
+        if (!obj.Body) throw new Error(`S3 body 없음: ${key}`)
+
+        const headers = new Headers({
+          'accept-ranges': 'bytes',
+          'cache-control': 'private, max-age=86400',
+        })
+        if (obj.ContentType) headers.set('content-type', obj.ContentType)
+        if (obj.ContentLength !== undefined) {
+          headers.set('content-length', String(obj.ContentLength))
+        }
+        if (obj.ContentRange) headers.set('content-range', obj.ContentRange)
+
+        return new Response(obj.Body.transformToWebStream(), {
+          status: obj.ContentRange ? 206 : 200,
+          headers,
+        })
+      },
+    },
+  },
+})
+```
+
+키를 정규식으로 거르는 이유는 이 값이 URL에서 온 것이기 때문이다. 거르지 않으면 버킷 안의 다른 객체까지 꺼내갈 수 있다. `abortSignal`은 사용자가 영상을 3초 보고 닫았을 때 서버가 S3에서 나머지를 계속 당겨오지 않게 한다.
+
+### 장단점
+
+장점은 단순하다는 것이다. 새로 만들 인프라는 닫힌 버킷 하나뿐이고, 접근 확인은 앱이 이미 가진 로그인으로 처리한다. URL이 유출돼도 세션이 없으면 볼 수 없다.
+
+단점은 대역폭이다. 모든 바이트가 서버를 지나므로 서버를 늘리면 회선도 같이 늘려야 한다. 그리고 <strong>서버 캐시가 사실상 불가능하다.</strong> 같은 파일을 열 때마다 S3를 다시 읽는다. 브라우저 캐시가 두 번째 방문부터는 도움이 되지만, 사용자가 늘면 그만큼 S3 요청도 늘어난다.
+
+## presigned URL
+
+확인을 S3에 맡기는 방법이다. 앱은 이 사람이 이 파일을 봐도 되는지까지만 판단하고 서명된 URL을 만들어 준다. 브라우저는 그 URL로 S3를 직접 부르고, 서명과 만료를 검증하는 일은 S3가 한다.
+
+```ts
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+
+const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: key }), {
+  expiresIn: 900,
+})
+```
+
+여기서 확인하는 것이 바뀐다. 서버 프록시는 "누구냐"를 확인했지만 presigned URL은 <strong>"무엇을 아느냐"</strong>를 확인한다. 서명된 URL을 아는 사람이면 누구든 파일을 받는다. 링크를 메신저에 붙여넣으면 그 대화방의 모두가 만료 전까지 볼 수 있다.
+
+만료 시간을 정하는 것도 문제다. 짧게 잡으면 안전한 대신 영상이 재생 도중 끊긴다. 브라우저가 Range로 조금씩 받는 동안 URL이 만료되면 다음 구간 요청이 거절당하기 때문이다. 길게 잡으면 유출된 링크의 수명도 같이 길어진다. 200MB짜리를 느린 회선에서 보는 사람을 감안해 넉넉히 잡으면 그 위험도 그만큼 커진다.
+
+발급에서 만료까지 순서를 그리면 앱 서버가 어디까지 관여하는지 보인다.
+
+<PresignedFlowDiagram />
+
+장점은 파일이 서버를 지나지 않아 서버 대역폭을 쓰지 않고, 프록시에서 직접 처리하던 스트림과 Range를 S3가 처리한다는 것이다. 단점은 캐시가 여전히 없다는 것이다. 서명 파라미터가 발급할 때마다 달라져서 브라우저도 CDN도 같은 URL로 인식하지 않는다.
+
+## CloudFront signed URL
+
+확인을 CloudFront에 맡기는 방법이다. CloudFront가 엣지에서 서명을 검증하고, 통과하면 캐시된 사본을 내준다. <strong>비공개 에셋인데도 캐시를 쓸 수 있다</strong>는 점이 앞의 두 방법과 다르다. 같은 영상을 팀원 열 명이 보더라도 원본 요청은 한 번이면 된다.
+
+```ts
+import { getSignedUrl } from '@aws-sdk/cloudfront-signer'
+
+const url = getSignedUrl({
+  url: `https://assets.example.com/${key}`,
+  keyPairId: process.env.CF_KEY_PAIR_ID,
+  privateKey: process.env.CF_PRIVATE_KEY,
+  dateLessThan: new Date(Date.now() + 900_000).toISOString(),
+})
+```
+
+단점은 키 관리다. presigned URL은 앱이 이미 들고 있는 IAM 자격증명으로 서명하지만, CloudFront는 그렇지 않다. 공개키와 개인키 쌍을 따로 만들어 공개키를 CloudFront에 업로드하고, 키 그룹에 넣고, 배포의 캐시 동작에 그 키 그룹을 서명자로 지정해야 한다. 개인키는 앱이 보관한다. 개인키가 유출되면 누구든 유효한 서명을 만들 수 있다.
+
+회전도 자동으로 되지 않는다. 새 키 쌍을 만들어 키 그룹에 더하고, 앱이 새 개인키로 서명하도록 바꾸고, 아직 만료되지 않은 옛 서명이 모두 만료될 때까지 기다린 다음에야 옛 공개키를 뺄 수 있다. 절차를 직접 만들어 두어야 한다.
+
+캐시가 동작하는 지점과 키가 있는 위치는 이렇다.
+
+<CdnCacheDiagram />
+
+파일이 수십 개인 화면이라면 signed cookie가 낫다. URL마다 서명하는 대신 경로 전체에 한 번 서명해 쿠키로 심는 방식이라, 그리드의 카드 스무 장에 URL을 스무 번 발급하지 않아도 된다.
+
+## OAC와 WAF
+
+확인을 네트워크 경계에서 하는 방법이다. 앱은 관여하지 않는다. 버킷은 닫아두고 OAC로 CloudFront만 읽게 한 뒤, 그 앞에 WAF를 붙여 사무실과 VPN 대역만 통과시킨다.
+
+확인하는 것이 또 바뀐다. 이번에는 <strong>"어디에 있느냐"</strong>다.
+
+### OAC
+
+WAF만으로는 부족하다. WAF는 CloudFront로 들어오는 요청만 거르기 때문에, 버킷 주소를 아는 사람이 CloudFront를 거치지 않고 S3를 직접 부르면 WAF는 그 요청을 보지 못한다. 그래서 버킷 쪽에서도 CloudFront가 아닌 요청을 거부해야 한다. 이 일을 OAC(Origin Access Control)가 맡는다.
+
+OAC를 켜면 CloudFront는 S3 원본에 요청을 보낼 때 CloudFront 서비스 principal로 SigV4 서명을 붙인다. 버킷 정책에는 그 principal이 특정 배포에서 보낸 요청만 허용하도록 적는다.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": { "Service": "cloudfront.amazonaws.com" },
+    "Action": "s3:GetObject",
+    "Resource": "arn:aws:s3:::my-private-assets/*",
+    "Condition": {
+      "StringEquals": {
+        "AWS:SourceArn": "arn:aws:cloudfront::123456789012:distribution/E1ABC2DEF3GHI"
+      }
+    }
+  }]
+}
+```
+
+버킷의 퍼블릭 액세스 차단은 그대로 둔다. 이 정책은 CloudFront 서비스에만 열어주는 것이라 퍼블릭 정책이 아니다. 이제 S3 주소를 직접 부르면 서명이 없으니 403이고, CloudFront를 거쳐 오면 WAF가 먼저 IP를 확인한다. WAF가 CloudFront 앞을 막고 버킷 정책이 S3를 막아서, 파일로 가는 길은 허용 대역 → WAF → CloudFront → OAC 서명 → S3 하나만 남는다.
+
+요청 세 건이 각각 어디서 통과하고 어디서 막히는지 보자.
+
+<OacGateDemo client:visible />
+
+장점은 앱 코드가 없다는 것이다. `<img>`의 `src`에 CDN 주소를 그대로 쓰면 된다. 캐시도 동작한다. 서명도 만료도 없으니 재생 도중 끊기지 않는다.
+
+단점은 둘이다. 첫째, <strong>누가 봤는지 모른다.</strong> 로그에 IP는 남지만 사람은 남지 않는다. 감사 기록이 필요한 자료에는 쓸 수 없다. 둘째, 사무실 네트워크 안에 있으면 누구든 볼 수 있다. 인턴도 방문객도 같은 회선이면 통과한다.
+
+## 정리
+
+네 방법을 놓고 보면 규칙이 하나 있다. 확인하는 곳이 앱에서 멀어질수록 앱 코드는 줄고 캐시는 쓸 수 있게 되지만, 확인하는 것은 "누구냐"에서 "무엇을 아느냐", "어디에 있느냐"로 옮겨간다.
+
+네 방법에서 파일이 어떤 경로로 브라우저까지 오고 어디에서 확인하는지를 한 장에 그리면 이렇다.
+
+<JudgePathDiagram />
+
+| | 확인하는 곳 | 확인하는 것 | 캐시 | 앱 코드 | 열람자 추적 |
+| --- | --- | --- | --- | --- | --- |
+| 서버 프록시 | 앱 서버 | 누구냐 | 없음 | 라우트 하나 | 가능 |
+| presigned URL | S3 | 무엇을 아느냐 | 없음 | 발급 로직 | 발급까지만 |
+| CloudFront signed URL | CloudFront | 무엇을 아느냐 | 있음 | 발급 로직과 키 관리 | 발급까지만 |
+| OAC와 WAF | 방화벽 | 어디에 있느냐 | 있음 | 없음 | 불가 |
+
+각 방법이 맞는 조건은 이렇다.
+
+- <strong>서버 프록시</strong> — 보는 사람이 적고, 앱에 이미 로그인이 있고, 누가 무엇을 봤는지 남겨야 할 때다.
+- <strong>presigned URL</strong> — 서버 대역폭을 아껴야 하고, 파일이 한 번씩만 열리고, 링크 유효 시간이 짧아도 되는 때다.
+- <strong>CloudFront signed URL</strong> — 같은 파일을 여러 사람이 반복해서 열어 캐시 효과가 있고, 키 회전 절차를 감당할 수 있을 때다.
+- <strong>OAC와 WAF</strong> — 접근 경계가 사람이 아니라 네트워크이고, 누가 봤는지를 묻지 않아도 되는 때다.

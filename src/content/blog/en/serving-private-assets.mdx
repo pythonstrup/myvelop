@@ -1,0 +1,239 @@
+---
+title: "How to Serve Private Assets - Proxy, presigned URL, CloudFront, WAF"
+description: "How do you get files that must not be public into the browser? A server proxy, presigned URLs, CloudFront signed URLs, and OAC with WAF, compared along one axis: who checks access. The belief that a proxy reads the whole file was checked with a 200MB file."
+pubDate: "2026-09-07T21:00:00+09:00"
+tags: ["s3", "cloudfront", "presigned-url", "streaming", "aws"]
+socialImage: "../../../assets/blog/serving-private-assets/og.png"
+---
+import AssetGridDiagram from "@/materials/serving-private-assets/AssetGridDiagram";
+import CdnCacheDiagram from "@/materials/serving-private-assets/CdnCacheDiagram";
+import JudgePathDiagram from "@/materials/serving-private-assets/JudgePathDiagram";
+import OacGateDemo from "@/materials/serving-private-assets/OacGateDemo";
+import PresignedFlowDiagram from "@/materials/serving-private-assets/PresignedFlowDiagram";
+import StreamingVsBufferingDemo from "@/materials/serving-private-assets/StreamingVsBufferingDemo";
+
+## Introduction
+
+Suppose you are building an internal tool for browsing material that must not be made public. The screen is a card grid. Twenty or so thumbnails fill the page, and clicking a card plays a video. Each video is between 30MB and 200MB.
+
+<AssetGridDiagram lang="en" />
+
+Suppose these files must not be visible to just anyone. They are the kind of material that would cause trouble on a public URL, so the condition is that they open only inside the company.
+
+There are several ways to get a file into the browser. The app server can read it from S3 and pass it down, the app can issue a presigned URL, or CloudFront can sit in front. Let's go through the options one by one.
+
+The methods differ by <strong>who checks access</strong>. The further the check moves away from the app, the less code the app writes, and in return what is checked shifts from "who are you" to "what do you know" or "where are you".
+
+## Public assets
+
+Before the ways of serving private assets, a word on public ones. A file anyone may see is served by opening the bucket and putting CloudFront (a CDN) in front. There is no access check, so the edge hands out the cached copy as soon as a request arrives.
+
+## Server proxy
+
+The app server checks. The browser never calls S3 directly; it requests the file from the app server's address. The server looks at the login session, decides, then reads from S3 and passes the file down. The bucket stays fully closed, with read access granted only to the server's IAM role.
+
+What is checked is <strong>"who are you"</strong>. If the app already has a login, there is practically nothing new to build.
+
+### The belief that it reads the whole file
+
+The first worry with this method is that the file passes through the server. If the server loads a 200MB video into memory in full and then sends it to the browser, memory runs short and the time doubles. Twenty video cards is 4GB.
+
+There is code that really does this. The AWS SDK's `GetObjectCommand` returns the response body as a stream, and the moment it is turned into a byte array the whole file is in memory.
+
+```ts
+const buf = await obj.Body.transformToByteArray()
+return new Response(buf)
+```
+
+Pass the stream through as it is and that does not happen. Only as much as arrives on the socket flows to the browser, and only a few chunks linger on the server.
+
+```ts
+return new Response(obj.Body.transformToWebStream())
+```
+
+This one-line difference changes how the server behaves.
+
+<StreamingVsBufferingDemo client:visible lang="en" />
+
+I measured how large the difference is. With a 200MB file on an origin server and two proxies built side by side, 20 concurrent requests went through each while the proxy process's peak RSS (Resident Set Size) and time were recorded.
+
+| | Streaming | Buffering |
+| --- | --- | --- |
+| Peak RSS | 266MB | 4,312MB |
+| Time to first byte | 23ms | 5,154ms |
+| Total | 831ms | 7,321ms |
+
+Memory differed by 16×, time to first byte by 224×. Buffering holding 4.3GB to move 4GB is the cost of copies and GC lag.
+
+The number to watch is time to first byte. Buffering gives the browser nothing until the server has received all 200MB, so it waits 5 seconds. Streaming forwards the first chunk as soon as it arrives, so it is 23ms. <strong>It is not slow because it goes through the server; it is slow because it tries to send only after receiving everything.</strong>
+
+Put a `<video>` on every card as it is and the browser requests all twenty videos at once. The 20 concurrent requests come from there. So the grid holds only poster images, and playback is deferred until a click.
+
+```html
+<video src="/assets/ads/foo.mp4" poster="/assets/posters/foo.jpg" preload="none" controls></video>
+```
+
+### Pass Range through as it is
+
+Video needs one more thing handled. The browser does not fetch a video from start to end; it asks for the span it needs with a `Range` header. The proxy has to forward that header to S3 unchanged, attach the `Content-Range` S3 returns, and answer with 206. Answer 200 here and Chrome will still play, but Safari will not.
+
+Written as a TanStack Start server route, it looks like this.
+
+```ts
+import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { createFileRoute } from '@tanstack/react-router'
+
+const BUCKET = 'my-private-assets'
+const s3 = new S3Client({})
+
+export const Route = createFileRoute('/assets/$')({
+  server: {
+    handlers: {
+      GET: async ({ request, params }) => {
+        const key = params._splat
+        if (!key || !/^(ads|posters)\/[\w./-]+$/.test(key) || key.includes('..')) {
+          return new Response('bad key', { status: 400 })
+        }
+
+        const range = request.headers.get('range') ?? undefined
+        const obj = await s3.send(
+          new GetObjectCommand({ Bucket: BUCKET, Key: key, Range: range }),
+          { abortSignal: request.signal },
+        )
+        if (!obj.Body) throw new Error(`no S3 body: ${key}`)
+
+        const headers = new Headers({
+          'accept-ranges': 'bytes',
+          'cache-control': 'private, max-age=86400',
+        })
+        if (obj.ContentType) headers.set('content-type', obj.ContentType)
+        if (obj.ContentLength !== undefined) {
+          headers.set('content-length', String(obj.ContentLength))
+        }
+        if (obj.ContentRange) headers.set('content-range', obj.ContentRange)
+
+        return new Response(obj.Body.transformToWebStream(), {
+          status: obj.ContentRange ? 206 : 200,
+          headers,
+        })
+      },
+    },
+  },
+})
+```
+
+The key is filtered with a regex because the value comes from the URL. Without the filter, any other object in the bucket could be pulled out. `abortSignal` stops the server from continuing to pull the rest from S3 when the user closes the video after three seconds.
+
+### Pros and cons
+
+The advantage is simplicity. The only new infrastructure is one closed bucket, and the access check is handled by the login the app already has. Even if a URL leaks, nothing is visible without a session.
+
+The cost is bandwidth. Every byte passes through the server, so adding servers means adding lines too. And <strong>server-side caching is practically impossible.</strong> Every open of the same file reads S3 again. The browser cache helps from the second visit on, but more users means that many more S3 requests.
+
+## presigned URL
+
+The check is handed to S3. The app decides only whether this person may see this file, then produces a signed URL. The browser calls S3 directly with that URL, and verifying the signature and expiry is S3's job.
+
+```ts
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+
+const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: key }), {
+  expiresIn: 900,
+})
+```
+
+What is checked changes here. The server proxy checked "who are you"; the presigned URL checks <strong>"what do you know"</strong>. Anyone who knows the signed URL gets the file. Paste the link into a chat and everyone in that room can watch until it expires.
+
+Choosing an expiry is a problem too. Set it short and it is safe, but the video cuts out mid-playback, because while the browser fetches piece by piece with Range, the URL expires and the next span is refused. Set it long and a leaked link lives just as long. Set it generously to allow for someone watching 200MB on a slow line, and that risk grows by the same amount.
+
+Drawing the sequence from issue to expiry shows how far the app server is involved.
+
+<PresignedFlowDiagram lang="en" />
+
+The advantage is that the file never passes through the server, so server bandwidth is not used, and the stream and Range handling the proxy did itself is now done by S3. The disadvantage is that there is still no cache. The signature parameters differ on every issue, so neither the browser nor a CDN recognizes two URLs as the same.
+
+## CloudFront signed URL
+
+The check is handed to CloudFront. CloudFront verifies the signature at the edge, and if it passes, serves the cached copy. <strong>A private asset can still be cached</strong>, which is what sets this apart from the two before. Ten teammates watching the same video means one request to the origin.
+
+```ts
+import { getSignedUrl } from '@aws-sdk/cloudfront-signer'
+
+const url = getSignedUrl({
+  url: `https://assets.example.com/${key}`,
+  keyPairId: process.env.CF_KEY_PAIR_ID,
+  privateKey: process.env.CF_PRIVATE_KEY,
+  dateLessThan: new Date(Date.now() + 900_000).toISOString(),
+})
+```
+
+The disadvantage is key management. A presigned URL is signed with the IAM credentials the app already holds; CloudFront is not. You create a separate public/private key pair, upload the public key to CloudFront, put it in a key group, and designate that key group as the signer on the distribution's cache behavior. The private key stays with the app. If it leaks, anyone can produce a valid signature.
+
+Rotation is not automatic either. Create a new key pair, add it to the key group, switch the app to sign with the new private key, wait until every signature not yet expired has expired, and only then remove the old public key. The procedure has to be built by hand.
+
+Here is where the cache works and where the keys live.
+
+<CdnCacheDiagram lang="en" />
+
+For a screen with dozens of files, a signed cookie is better. Instead of signing each URL, you sign a whole path once and plant it as a cookie, so twenty cards on the grid do not need twenty URLs issued.
+
+## OAC and WAF
+
+The check happens at the network boundary. The app is not involved. The bucket stays closed, OAC lets only CloudFront read it, and WAF in front lets through only the office and VPN ranges.
+
+What is checked changes once more. This time it is <strong>"where are you"</strong>.
+
+### OAC
+
+WAF alone is not enough. WAF filters only requests entering CloudFront, so someone who knows the bucket address and calls S3 directly, skipping CloudFront, is never seen by WAF. The bucket side has to refuse requests that are not from CloudFront as well. That job belongs to OAC (Origin Access Control).
+
+With OAC on, CloudFront attaches a SigV4 signature under the CloudFront service principal when it requests the S3 origin. The bucket policy allows that principal only for requests sent from a specific distribution.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": { "Service": "cloudfront.amazonaws.com" },
+    "Action": "s3:GetObject",
+    "Resource": "arn:aws:s3:::my-private-assets/*",
+    "Condition": {
+      "StringEquals": {
+        "AWS:SourceArn": "arn:aws:cloudfront::123456789012:distribution/E1ABC2DEF3GHI"
+      }
+    }
+  }]
+}
+```
+
+Block Public Access on the bucket stays on. This policy opens the bucket to the CloudFront service only, so it is not a public policy. Now a direct call to the S3 address has no signature and gets 403, and a request through CloudFront has its IP checked by WAF first. WAF guards the front of CloudFront and the bucket policy guards S3, leaving one path to the file: allowed range → WAF → CloudFront → OAC signature → S3.
+
+Let's see where each of three requests passes and where it is stopped.
+
+<OacGateDemo client:visible lang="en" />
+
+The advantage is zero app code. Put the CDN address straight into an `<img>`'s `src`. The cache works too. With no signature and no expiry, playback never cuts out.
+
+There are two disadvantages. First, <strong>you do not know who watched.</strong> The log keeps IPs, not people. It cannot be used for material that needs an audit trail. Second, anyone inside the office network can watch. An intern or a visitor on the same line gets through.
+
+## Summary
+
+Lined up, the four methods follow one rule. The further the check moves from the app, the less app code there is and the more the cache can be used, but what is checked moves from "who are you" to "what do you know" and "where are you".
+
+One picture of the path each method takes from S3 to the browser and where the check happens.
+
+<JudgePathDiagram lang="en" />
+
+| | Who checks | What is checked | Cache | App code | Viewer tracking |
+| --- | --- | --- | --- | --- | --- |
+| Server proxy | App server | who are you | none | one route | yes |
+| presigned URL | S3 | what do you know | none | issuing logic | up to issue |
+| CloudFront signed URL | CloudFront | what do you know | yes | issuing logic and key management | up to issue |
+| OAC and WAF | Firewall | where are you | yes | none | no |
+
+When each fits:
+
+- <strong>Server proxy</strong> — few viewers, a login already in the app, and a need to record who saw what.
+- <strong>presigned URL</strong> — server bandwidth must be saved, each file is opened once, and links may be short-lived.
+- <strong>CloudFront signed URL</strong> — the same file is opened repeatedly by many people so the cache pays off, and the key rotation procedure is affordable.
+- <strong>OAC and WAF</strong> — the access boundary is the network rather than people, and nobody needs to ask who watched.
