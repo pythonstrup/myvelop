@@ -48,6 +48,7 @@ const relatedLabel = lang === 'ko' ? '관련 글' : 'Related posts';
 			description={description}
 			image={socialImage ?? heroImage}
 			alternatePath={alternatePath}
+			article={{ publishedTime: pubDate, modifiedTime: updatedDate, tags }}
 		/>
 		<style>
 			main {
