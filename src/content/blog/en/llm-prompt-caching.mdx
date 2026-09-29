@@ -1,0 +1,305 @@
+---
+title: "When AI Caching Pays Off"
+description: "An AI API cache hit is not a response cache that hands back a stored answer. It reuses the KV computed for the start of the input. This post works out which requests hit and how high the hit rate must be to break even once write costs are counted, then compares an agent and a chatbot using Claude Code measurements and a Slack chatbot's production logs. In the agent's sessions, 97.6% of input tokens were cache reads."
+pubDate: "2026-09-29T22:00:00+09:00"
+tags: ["llm", "prompt-caching", "claude", "agent", "litellm", "bedrock"]
+socialImage: "../../../assets/blog/llm-prompt-caching/og.png"
+---
+import BreakEvenDiagram from "@/materials/llm-prompt-caching/BreakEvenDiagram";
+import ChatbotReuseDemo from "@/materials/llm-prompt-caching/ChatbotReuseDemo";
+import MinLengthDemo from "@/materials/llm-prompt-caching/MinLengthDemo";
+import PrefixMatchDemo from "@/materials/llm-prompt-caching/PrefixMatchDemo";
+import PrefixReuseDemo from "@/materials/llm-prompt-caching/PrefixReuseDemo";
+import RoutingDemo from "@/materials/llm-prompt-caching/RoutingDemo";
+import TtlDemo from "@/materials/llm-prompt-caching/TtlDemo";
+
+## Introduction
+
+I did not really understand what a cache hit means in an AI API. The word cache made me think of a response cache. That is the kind of cache that returns a stored answer as is when the same question comes in again. With that picture in mind, I could not tell what was being cached when the questions were not even the same.
+
+When I set out to build an AI agent, the cost was high enough that I had no choice but to pay attention to it. An agent calls the model many times before it finishes one task, and every call sends the whole conversation so far again. To build an agent, I had to understand cache hits.
+
+There were three things to understand.
+
+1. What is stored in the cache.
+2. Which requests hit the cache.
+3. When caching pays off.
+
+## What gets cached
+
+AI API docs call this cache prompt caching. What it stores is not the answer but the intermediate state the model computes while reading the input.
+
+### Prefill and decode
+
+An LLM call has two phases.
+
+1. <strong>prefill</strong> — the model reads every input token. For each token, at each layer, it computes Key and Value vectors. Later tokens refer to the K and V of earlier tokens (attention) to settle their own meaning.
+2. <strong>decode</strong> — referring to those K and V, the model generates output tokens one at a time.
+
+What you pay for in input tokens is really the computation in step 1. Prompt caching keeps the result of that computation, the KV, between requests and uses it again in the next request with the same prefix. The [OpenAI docs](https://developers.openai.com/api/docs/guides/prompt-caching) also state that the cache stores KV tensors, not tokens, and that these tensors can be kept in GPU-local storage.
+
+When two requests with the same system prompt arrive, the second one reads the prefix's KV from the cache and computes only the question.
+
+<PrefixReuseDemo client:visible lang="en" />
+
+The answer is generated fresh every time. What gets skipped is the prefill of the stored prefix, and cost and time to first token (TTFT) drop by that much.
+
+### How it differs from a response cache
+
+| | Prompt caching | Response caching |
+| --- | --- | --- |
+| What is stored | KV state of the input prefix | Request and answer pairs |
+| Where it is stored | The model provider's GPU side | The API caller's side (gateway, Redis, etc.) |
+| Cache hit condition | The prefix matches | The whole request matches |
+| Answer | Generated fresh every time | Stored answer returned as is |
+| Good fit | Long shared instructions, documents, conversation history | Exactly the same question asked repeatedly |
+
+Response caching is something the API caller adds itself, not the model provider. For example, turn on the [`cache` setting](https://docs.litellm.ai/docs/proxy/caching) in a LiteLLM proxy and, when the same request comes in again, it returns the answer stored in Redis without calling the model. The shared name makes it easy to confuse with prompt caching.
+
+Thinking of it as a response cache leaves no way to explain why requests hit when the question differs every time. What hits is not the question but the shared part in front of it.
+
+## Cache hit conditions
+
+Three things must hold for a cache hit. The prefix must match down to a single character, that prefix must exceed a minimum length, and the next request must arrive within the TTL.
+
+### Prefix match
+
+Each token's K and V depend on every token before it. Change a single character near the start and every K and V after it changes. So the cache only covers a span that runs unbroken from the very beginning. The [Anthropic docs](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) also state that text and images must be 100% identical up to the block with the cache marker for a hit.
+
+In the Claude API the prefix builds up in the order `tools` → `system` → `messages`. When one level changes, the cache for that level and every level after it is invalidated. Edit one tool definition and the system and messages caches break too. Changing `tool_choice` or adding or removing images breaks the messages cache, and changing the thinking settings always breaks the messages cache and, depending on the model, the tools and system caches.
+
+So fixed content goes first and changing content goes last. Put a value like the current time at the top of the system prompt and the cache breaks every time.
+
+A request with the same prefix and a request with the current time at the top of its system prompt read very different amounts from the cache.
+
+<PrefixMatchDemo client:visible lang="en" />
+
+I checked this with Claude Code. In Claude Code 2.1.283 I called Sonnet 5 with `claude -p` and turned off tools and MCP servers with `--tools "" --strict-mcp-config`. I took `cache_creation_input_tokens` in the response as writes and `cache_read_input_tokens` as reads.
+
+Continuing the same conversation, I changed only one line appended to the end of the system prompt. With default settings Claude Code fixes the system prompt at the first request of a conversation, so for this experiment I used `--system-prompt-snapshot off` to have it built anew for every request.
+
+| Call | Condition | Write | Read |
+| --- | --- | --- | --- |
+| 1 | New conversation, appended line A | 21,731 | 3,406 |
+| 2 | Continued, A unchanged | 79 | 25,137 |
+| 3 | Continued, A changed to B | 21,889 | 3,406 |
+
+The second call wrote only the 79 tokens of newly added conversation and read all the rest. In the third call, the one line at the end of the system prompt changed, so it wrote the 21,889 tokens after it again. All it read were the 3,406 tokens before the point of change.
+
+The cache is tied to the content of the prefix, not to the conversation. When I sent exactly the same input as the first call from another conversation, it read all 25,137 tokens with no writes. The same reason seems to explain why the first call of a new conversation read 3,406 tokens.
+
+This also seems to be why Claude Code fixes the system prompt by default. The default, `--system-prompt-snapshot on`, records the system prompt of a conversation's first request and sends it again unchanged in later requests and when the conversation is continued. With this setting, I started a new conversation with A and then continued it passing B, and it read the entire 25,216-token prefix. The recorded A went out as is, so the prefix did not change.
+
+### Minimum length
+
+The prefix to be cached must exceed a minimum length set for each model. On the Claude API it is 512 tokens for Opus 5.5 and Opus 5, 1,024 tokens for Sonnet 5 and 4,096 tokens for Haiku 4.5. Anything shorter is processed without the cache, and no error is raised. If you added `cache_control` and the response shows 0 for both cache writes and reads, suspect this first.
+
+On Sonnet 5, putting the same cache marker on an 800-token prefix and a 1,600-token prefix gives different results.
+
+<MinLengthDemo client:visible lang="en" />
+
+### Time to live
+
+The cache lasts 5 minutes by default, and paying a higher write price extends it to 1 hour. The TTL is refreshed at no extra cost every time the cache is used. It runs for 5 minutes after the last use, not 5 minutes after creation. As long as requests keep arriving less than 5 minutes apart, the cache stays alive.
+
+With a 5-minute TTL and requests at 0, 3, 7 and 15 minutes, the lifetime extends like this and then runs out.
+
+<TtlDemo client:visible lang="en" />
+
+The clock starts when the request starts, not when the response ends. If streaming a response took 4 minutes, then with a 5-minute TTL the next request has to start within 1 minute of the response ending to hit.
+
+In this experiment Claude Code wrote all of its cache with the 1-hour TTL. In the response's `cache_creation`, every write was recorded as `ephemeral_1h_input_tokens`. I continued the same conversation at intervals.
+
+| Call | Gap from previous call | Write | Read |
+| --- | --- | --- | --- |
+| 1 | | 21,716 | 3,397 |
+| 2 | 20 min 37 s | 73 | 25,113 |
+| 3 | 61 min 34 s | 21,862 | 3,397 |
+
+The second call came well past 5 minutes but within the hour, so it read everything. That call extended the lifetime by another hour. The third call came after that hour had passed, so it wrote the 21,862 tokens of conversation again. It still read 3,397 tokens, which seem to have stayed alive because they are a shared prefix that other calls keep using.
+
+## When the cache pays off
+
+### Write and read prices
+
+With caching, the input price splits in two. Tokens written to the cache cost more than the base input price, and tokens read from the cache cost much less.
+
+| Relative to base input price | Claude 5-minute TTL | Claude 1-hour TTL | OpenAI GPT-5.6 and later | Earlier OpenAI models |
+| --- | --- | --- | --- | --- |
+| Write | 1.25× | 2× | 1.25× | No extra charge |
+| Read | 0.1× | 0.1× | 0.1× | Varies by model |
+
+[Claude's read multiplier](https://platform.claude.com/docs/en/about-claude/pricing) has exceptions. It is 0.05× for Opus 5.5, and 0.025× for Fable 5.1 and Mythos 5.1. Claude on Bedrock has the same structure of expensive writes and cheap reads, but for exact amounts you have to check the [Bedrock pricing page](https://aws.amazon.com/bedrock/pricing/). On the Claude API, Sonnet 5 costs $2 per million input tokens, $2.50 for a 5-minute write, $4 for a 1-hour write and $0.20 for a read.
+
+Put the prefix change experiment from the cache hit conditions section into dollars and the difference is large. Claude Code runs on a subscription, so nothing is actually billed, but the `claude -p` result records in `total_cost_usd` the amount converted at API prices. That value is a running total for the session, so the table shows how much it grew with each call. This experiment wrote with the 1-hour TTL, so writes were charged at 2×.
+
+| Call | Write | Read | Converted cost |
+| --- | --- | --- | --- |
+| Call that wrote to the cache | 21,731 | 3,406 | $0.0876 |
+| Call that read from the cache | 79 | 25,137 | $0.0054 |
+| If sent without the cache | 0 | 0 | $0.0503 |
+
+The last row prices the same 25,139 tokens, including the 2 tokens that bypassed the cache, at the base input price with no cache. The call that wrote to the cache cost 1.7× as much as sending without the cache, and the call that read from the cache came to about a tenth of the no-cache amount.
+
+Price is not the only thing that changes. The Claude API and Bedrock do not count tokens read from the cache against the input tokens per minute limit. The OpenAI API counts tokens read from the cache against the limit as well.
+
+The official docs do not directly explain why writes are expensive and reads are cheap. Here is my interpretation. KV is stored for every token once per layer, so it is far larger than the original text, and it has to be kept in expensive storage on the GPU side. The write price pays for that storage, and the read price is a discount for the prefill that gets skipped. The short TTL, measured in minutes, seems to follow from the same reason.
+
+### Break-even
+
+Set the base input price to 1 and suppose several requests are sent with the same prefix. Without the cache, each request pays 1. With a 5-minute TTL cache, the first request pays 1.25 and each later request pays 0.1. Each reuse saves 0.9, so to win back the extra 0.25 paid for the write, each write must be reused at least 0.28 times on average.
+
+| TTL | Extra paid for the write | Saved per reuse | Break-even condition |
+| --- | --- | --- | --- |
+| 5 minutes | 0.25 | 0.9 | At least 0.28 reuses per write |
+| 1 hour | 1.0 | 0.9 | At least 1.11 reuses per write |
+
+For a single cache entry, the 5-minute TTL is cheaper than no cache after just one reuse, while the 1-hour TTL needs two.
+
+As hit rates, that is 22% for the 5-minute TTL and 53% for the 1-hour TTL. That share of the requests arriving with the same prefix has to read from the cache to break even. On Opus 5.5, where reads are 0.05×, the break-even conditions drop slightly to 0.26 and 1.05 reuses.
+
+Plot the cost of one request with the hit rate on the horizontal axis, and the two TTL lines fall below the no-cache line at 22% and 53%.
+
+<BreakEvenDiagram lang="en" />
+
+A cache that is never reused is a pure loss. At a 0% hit rate, the 5-minute TTL pays 25% more and the 1-hour TTL 100% more.
+
+If requests come more often than every 5 minutes, the 5-minute TTL keeps being refreshed, so there is no reason to use the 1-hour TTL. The [Anthropic docs](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) recommend the 1-hour TTL for prompts reused less often than every 5 minutes but within an hour. Examples are side agents that take longer than 5 minutes, or long conversations where the user may not reply within 5 minutes.
+
+## Agent and chatbot
+
+The same caching gains very different amounts depending on how requests arrive. I put two cases side by side. One is Claude Code, an agent, and the other is a chatbot that takes questions in Slack.
+
+### Agent
+
+An agent calls the model back to back until it finishes a task. I had Claude Code read the 5 posts of the BullMQ series one file at a time and summarize each in one line, and it called the API 7 times in 21 seconds. The conditions were the same as in the cache hit conditions section, with only the `Read` and `Glob` tools enabled.
+
+| Call | Write | Read |
+| --- | --- | --- |
+| 1 | 26,763 | 0 |
+| 2 | 252 | 26,763 |
+| 3 | 7,726 | 27,015 |
+| 4 | 8,495 | 34,741 |
+| 5 | 19,325 | 43,236 |
+| 6 | 17,398 | 62,561 |
+| 7 | 12,942 | 79,959 |
+
+Every call resends the whole conversation so far, so reads grow from 0 to 80,000 tokens. The only new writes are the file contents just read and the model's answers. Calls were 2–9 seconds apart, leaving the cache no time to expire.
+
+The input cost fell 42%, from $0.73 without the cache to $0.43. The task was short, so a large amount was newly written, and with the 1-hour TTL, writes were charged at 2×. With the 5-minute TTL it would have fallen 61%.
+
+As the work gets longer, reads take a larger share. I collected the session logs of my Claude Code work in this blog's repository. They contain 1,110 responses from August 29 to September 28, 2026.
+
+- Of the input tokens, 97.6% were cache reads and 2.4% were cache writes. Input that bypassed the cache was less than 0.01%.
+- Counting writes at 2× and reads at 0.1×, that is 0.15× the no-cache cost. Fable 5.1, the model these sessions mostly used, reads at 0.025×, so the actual cost is lower than that.
+- The median gap between calls within a session was 20 seconds; 94.5% were within 5 minutes and 99.4% within an hour. In these sessions Claude Code wrote all of its cache with the 1-hour TTL, so nearly every call hits.
+
+### Chatbot
+
+The chatbot calls Claude Sonnet 5 on Bedrock through a LiteLLM gateway. A request is the system prompt followed by the question, 8 cases retrieved from the knowledge base and the thread context. When a long answer gets cut off, the answer written so far is attached and the model continues from there.
+
+Line up two questions that came 3 minutes apart and a continuation request, and you can see which part matches the previous request.
+
+<ChatbotReuseDemo client:visible lang="en" />
+
+The shared prefix is the system prompt alone. Estimated from the file size it is about 1,500 tokens, so it likely exceeds Sonnet 5's minimum length of 1,024 tokens, but I have not measured it. There are two chances for reuse. A question follows within 5 minutes, or a long answer needs a continuation.
+
+I looked at 63 answers in the production logs from August 18 to September 23, 2026. Of the 62 gaps between questions, 36 (58%) were within 5 minutes. I expected questions to come sparsely, but they came in bunches, as follow-up questions in the same thread. If every question that followed within 5 minutes were a hit, the hit rate would be 58%, above the 22% break-even of the 5-minute TTL. Continuations were 3 of the 63.
+
+The absolute volume is small, though. It is 63 answers in 5 weeks, and even a hit saves 90% of 1,500 tokens per request.
+
+Even without explicit caching, Bedrock's implicit caching may already apply in part. The chatbot does not log the cache fields of its responses, so there is no way to tell for now. That is why, before adding `cache_control`, the first step is to log the cache fields in the response usage. The decision comes after seeing the real hit rate.
+
+### Comparison
+
+| | Agent (Claude Code) | Slack chatbot |
+| --- | --- | --- |
+| Request gap | Median 20 seconds, 94.5% within 5 minutes | 58% within 5 minutes |
+| TTL | 1 hour | 5 minutes |
+| Cacheable prefix | Nearly the whole input | System prompt, about 1,500 tokens |
+| Hit rate | 97.6% (by tokens, measured) | 58% (by questions, estimated) |
+| Prefix cost (no cache = 1) | 0.15 | 0.58 (estimated) |
+| Volume | 1,110 responses in a month | 63 answers in 5 weeks |
+
+Both clear break-even. But in the agent nearly all input goes through the cache, while in the chatbot the cache covers only a little over 1,500 tokens per request.
+
+## Gateway routing
+
+The cache builds up where the request was processed. If a gateway spreads the same model across several deployments or regions, requests with the same prefix go elsewhere and cannot read the cache. Load balancing buys throughput and availability at the cost of hit rate.
+
+Splitting 4 requests with the same prefix across three deployments and sending them all to one produce different numbers of cache writes.
+
+<RoutingDemo client:visible lang="en" />
+
+The same applies inside the model provider. The [OpenAI docs](https://developers.openai.com/api/docs/guides/prompt-caching) state that cached state exists separately on each machine, so it is reused only when the request reaches a machine holding the matching cache. The [Bedrock docs](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html) also state that with cross-region inference, which routes across regions, cache writes can increase when demand is high.
+
+This is also why, in the gateway config, only the model alias used by the code review bot is pinned to a single deployment. Other aliases are spread across several deployments. According to the comment in the config, the bot resends more than 80,000 tokens every turn, so the cache hit rate, more than latency, decides the cost. With the multipliers from the section on when the cache pays off, a turn that hits pays a tenth of the input cost, and a turn that goes to another deployment and misses pays 1.25× on a 5-minute TTL. But with a single pinned deployment, when that deployment hits its limit or goes down, there is nowhere else to go within the same alias.
+
+The cache can be protected without tying everything to one deployment. Put `prompt_caching` in `router_settings.optional_pre_call_checks` and LiteLLM remembers the calls that wrote to the cache, then sends the next call that reads the same cache to the deployment that wrote it.
+
+```yaml
+router_settings:
+  optional_pre_call_checks: ["prompt_caching"]
+```
+
+The [LiteLLM docs](https://docs.litellm.ai/docs/tutorials/claude_code_prompt_cache_routing) say to check in the request logs whether the second call read from the cache and whether its Model ID matches the first call's.
+
+## Provider settings
+
+How to turn caching on and which response fields to check differ by provider. Here is a short comparison first.
+
+| | Claude API | Claude on Bedrock | OpenAI API |
+| --- | --- | --- | --- |
+| Default behavior | Caches only with a marker | Tries even without a marker | Caches automatically |
+| Markers | 4 per request | 4 per request | 4 per request (GPT-5.6 and later) |
+| Minimum length | 512–4,096 tokens by model | Same as the Claude API | 1,024 tokens (GPT-5.6 and later) |
+| TTL | 5 minutes, 1 hour | 5 minutes, 1 hour | 30 minutes or more (GPT-5.6 and later) |
+| Sharing scope | Workspace | Organization | Organization |
+
+### Claude API
+
+Add `cache_control` to a block. Put a single one at the top level of the request and it applies to the last block automatically. The lookup goes back at most 20 blocks from a marker, so with a long prefix, place several markers. The minimum length is 512 tokens for Opus 5.5, Opus 5 and Fable 5.1; 1,024 tokens for Sonnet 5; and 4,096 tokens for Haiku 4.5. In the response, `cache_creation_input_tokens` is the write and `cache_read_input_tokens` is the read.
+
+### Claude on Bedrock
+
+It attempts implicit caching even without a marker, but hits are not guaranteed. To be explicit, add `cachePoint` with the Converse API or `cache_control` with InvokeModel. The minimum length is the same as on the Claude API, except for Opus 4.7, which needs 4,096 tokens.
+
+A Converse response reports writes and reads in `cacheWriteInputTokens` and `cacheReadInputTokens`. `inputTokens` counts only the tokens that did not go through the cache, so the full input sent is the sum of the three. When you log the cache fields, as for the chatbot earlier, log all three together or the hit rate cannot be computed.
+
+### OpenAI API
+
+It is on by default. GPT-5.6 and later let you choose where to cache by adding `prompt_cache_breakpoint` to a content block. The minimum length is 1,024 tokens on GPT-5.6 and later, and on earlier models it depends on request settings. Retention on GPT-5.6 and later is at least 30 minutes after the last write or reuse; earlier models usually keep it for 5–10 minutes, with a 24-hour option.
+
+In the response, `input_tokens_details.cached_tokens` is the read and `input_tokens_details.cache_write_tokens` is the write. The cache is not shared between organizations and is not reused across regional processing boundaries.
+
+### Gateway
+
+Caching can also be turned on at the gateway. LiteLLM adds `cache_control` on your behalf to the last block of the message specified with `cache_control_injection_points`. That puts a cache marker after the system prompt without touching client code. It can go on each model, or into `router_settings.default_litellm_params` to apply to every model.
+
+```yaml
+model_list:
+  - model_name: claude-sonnet-5
+    litellm_params:
+      model: bedrock/us.anthropic.claude-sonnet-5
+      cache_control_injection_points:
+        - location: message
+          role: system
+```
+
+## Summary
+
+Back to the three questions from the introduction.
+
+- <strong>What is stored in the cache</strong> — not the answer, but the KV computed while prefilling the input prefix. The answer is generated fresh every time.
+- <strong>Which requests hit</strong> — a request hits when its prefix matches down to a single character, the prefix exceeds the minimum length and the request arrives within the TTL. Even with a different question, a request hits if the prefix is the same.
+- <strong>When it pays off</strong> — when each write is reused more than 0.28 times for the 5-minute TTL, or more than 1.11 times for the 1-hour TTL. As hit rates, that is 22% and 53%.
+
+Whether to turn on caching can be worked out in this order.
+
+1. Check whether the prefix shared by every request exceeds the minimum length. Put fixed content such as tool definitions and the system prompt first, and changing values such as the time or the question last.
+2. Measure the gaps between requests with the same prefix. If more than 22% arrive within 5 minutes, the 5-minute TTL breaks even. If many requests come less often than every 5 minutes but return within an hour, weigh the 1-hour TTL.
+3. Look at the absolute volume. Even with a high hit rate, few requests or a short prefix means a small saving.
+4. If the gateway spreads requests across several deployments, pin them to one or have them sent to the deployment that wrote the cache.
+5. Log the cache write and read fields of responses before and after turning caching on, and check the real hit rate.
+
+For an agent, calls follow each other seconds apart and each one resends the whole conversation, so steps 1 and 2 almost always hold. What remains is keeping the prefix unchanged and not scattering the requests.
