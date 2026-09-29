@@ -140,5 +140,8 @@ export default defineConfig({
       },
     },
     plugins: [tailwindcss()],
+    // BlogPost의 동적 import('mermaid')가 첫 로드 때 뒤늦게 발견되면 의존성을 다시 묶으면서
+    // 청크 이름이 바뀌고, 브라우저에 캐시된 옛 모듈이 사라진 청크를 불러 React 섬이 hydrate되지 않는다.
+    optimizeDeps: { include: ["mermaid"] },
   },
 });
