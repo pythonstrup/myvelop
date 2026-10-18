@@ -208,7 +208,12 @@ function makeScene(L: Labels, lock: boolean) {
 			ctx.fillRect(colX + 1, yAt(10.5), colW - 2, yAt(11) - yAt(10.5));
 			ctx.restore();
 			// 붉은 띠 위에서도 읽히게 배지 바탕은 페이지 배경색으로 칠한다.
-			drawBadge(ctx, colX + colW / 2, (yAt(10.5) + yAt(11)) / 2, L.overlap, dark ? "#0d1117" : "#ffffff", c.red, ov);
+			// 배지가 넓으면 요청 2의 번호(오른쪽 반 가운데)를 가리지 않게 왼쪽으로 민다.
+			ctx.font = `600 10.5px ${FONT}`;
+			const badgeW = ctx.measureText(L.overlap).width + 14;
+			const numLeft = colX + colW * 0.75 - 6;
+			const badgeX = Math.max(colX + 2 + badgeW / 2, Math.min(colX + colW / 2, numLeft - 3 - badgeW / 2));
+			drawBadge(ctx, badgeX, (yAt(10.5) + yAt(11)) / 2, L.overlap, dark ? "#0d1117" : "#ffffff", c.red, ov);
 		}
 
 		// 조회: 해당 시간 범위를 점선으로 훑고, 결과 배지를 띄웠다가 다음 단계에서 사라진다.

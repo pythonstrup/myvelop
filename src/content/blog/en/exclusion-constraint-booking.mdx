@@ -1,0 +1,629 @@
+---
+title: "Stopping Concurrent Double Bookings - PostgreSQL EXCLUDE Constraints"
+description: "When bookings for the same meeting room and overlapping times arrive at the same moment, a PostgreSQL EXCLUDE constraint lets only one of them in. This post covers how to set it up and how it works underneath."
+pubDate: "2026-10-01T21:00:00+09:00"
+tags: ["postgresql", "concurrency", "transaction", "exclusion-constraint"]
+socialImage: "../../../assets/blog/exclusion-constraint-booking/og.png"
+---
+import BookingRulesDiagram from "@/materials/exclusion-constraint-booking/BookingRulesDiagram";
+import BurstCompareDemo from "@/materials/exclusion-constraint-booking/BurstCompareDemo";
+import CheckThenInsertDemo from "@/materials/exclusion-constraint-booking/CheckThenInsertDemo";
+import DeadlockChainDemo from "@/materials/exclusion-constraint-booking/DeadlockChainDemo";
+import DeadlockDemo from "@/materials/exclusion-constraint-booking/DeadlockDemo";
+import DirtyCheckDemo from "@/materials/exclusion-constraint-booking/DirtyCheckDemo";
+import GistSearchDemo from "@/materials/exclusion-constraint-booking/GistSearchDemo";
+import InsertThenCheckDemo from "@/materials/exclusion-constraint-booking/InsertThenCheckDemo";
+import LinkedRollbackDemo from "@/materials/exclusion-constraint-booking/LinkedRollbackDemo";
+import LinkedTablesDiagram from "@/materials/exclusion-constraint-booking/LinkedTablesDiagram";
+import RangeBoundsDiagram from "@/materials/exclusion-constraint-booking/RangeBoundsDiagram";
+import RowVersionDemo from "@/materials/exclusion-constraint-booking/RowVersionDemo";
+import SlotContentionDemo from "@/materials/exclusion-constraint-booking/SlotContentionDemo";
+import SnapshotDemo from "@/materials/exclusion-constraint-booking/SnapshotDemo";
+import TxIdDemo from "@/materials/exclusion-constraint-booking/TxIdDemo";
+import UniqueVsExcludeDiagram from "@/materials/exclusion-constraint-booking/UniqueVsExcludeDiagram";
+import WaitForTxDemo from "@/materials/exclusion-constraint-booking/WaitForTxDemo";
+import WaitScopeDemo from "@/materials/exclusion-constraint-booking/WaitScopeDemo";
+import WriteOrderDemo from "@/materials/exclusion-constraint-booking/WriteOrderDemo";
+
+## Introduction
+
+We booked meeting rooms in Notion. Notion has nothing that stops double bookings. When two people booked the same room for the same time, they had to talk it out and one of them had to give way. It was inconvenient.
+
+So I decided to build a booking system. Building it myself still leaves the concurrency problem. When two people book the same time range at almost the same moment, two requests reach the server together. If both requests decide the time is free and save, two bookings are created. The conflict that used to happen between two people in Notion now happens between two transactions.
+
+How do you control bookings that arrive at the same time?
+
+## Requirements
+
+The booking system has to meet eight requirements.
+
+1. The same room must never have two bookings with overlapping times.
+2. Adjacent bookings are allowed. Right after a 10:00–11:00 booking, it must be possible to book 11:00–12:00.
+3. When a booking is cancelled or deleted, its time must be bookable again immediately.
+4. Changing a booking's time must not create an overlap either.
+5. Requests for different rooms or non-overlapping times do not wait for each other. If unrelated requests also line up when bookings pile up, responses slow down accordingly.
+6. Rooms A, B, and C can be booked together. A+B, B+C, and A+B+C are allowed, but A+C, which skips B in the middle, is not. When A+B is booked, neither A nor B can take another booking at that time.
+7. A linked booking must either get all of its rooms or fail entirely. A booking that got A but failed on B must not be left behind.
+8. Booking times can be chosen freely, down to the minute.
+
+Drawing requirements 1, 2, 5, and 6 with rooms as columns and time running down gives the following.
+
+<BookingRulesDiagram lang="en" />
+
+The database is PostgreSQL.
+
+## Ways to prevent overlaps
+
+### Check, then insert
+
+The first approach that comes to mind is to check before inserting. Query whether the same room has an overlapping booking, and insert if there is none.
+
+```sql
+-- 1. Look for an overlapping booking in the same room
+select id from booking
+ where room = :room
+   and starts_at < :ends_at
+   and ends_at > :starts_at;
+
+-- 2. Insert if there is none
+insert into booking (room, starts_at, ends_at)
+values (:room, :starts_at, :ends_at);
+```
+
+Two bookings overlap when each starts before the other ends. The adjacent 10:00–11:00 and 11:00–12:00 do not overlap because `11:00 < 11:00` is false.
+
+If requests come in one at a time, this is enough. But if two requests come in at the same time, both can finish step 1 before either runs step 2. Then both see no overlapping booking and insert.
+
+Here is how the two requests interleave between checking and saving.
+
+<CheckThenInsertDemo client:visible lang="en" />
+
+I reproduced it with two sessions on PostgreSQL 17. I had session 1 pause for one second between checking and inserting to widen the gap.
+
+| Elapsed | Session 1 (A 10:00–11:00) | Session 2 (A 10:30–11:30) |
+| --- | --- | --- |
+| 0 ms | Query → 0 rows | |
+| 221 ms | | Query → 0 rows |
+| 223 ms | | Insert and commit |
+| 1,004 ms | Insert and commit | |
+
+Both sessions succeeded. Room A ended up with both 10:00–11:00 and 10:30–11:30.
+
+### Lock, then check
+
+Another approach is to lock so that no other request can cut in while checking. `select ... for update` locks the rows it returns. Another transaction that tries to lock the same rows waits until the first one ends.
+
+```sql
+select id from booking
+ where room = :room
+   and starts_at < :ends_at
+   and ends_at > :starts_at
+   for update;
+```
+
+But the moment that needs protecting is when no overlapping booking exists yet. If the query returns 0 rows, there is nothing to lock. PostgreSQL has nothing like MySQL InnoDB's [next-key lock](/blog/pessimistic-lock-like-feature/), which locks the gap between rows. When I ran the same experiment with `for update`, both sessions still saw 0 rows and inserted.
+
+With no row to lock, request 2 goes straight through without waiting.
+
+<CheckThenInsertDemo lock client:visible lang="en" />
+
+Raising the isolation level to SERIALIZABLE does block the overlap. In the same experiment, session 1's INSERT failed with a serialization error (`40001`). The catch is that the app has to rerun a failed transaction from the start. Under a load where bookings piled up, nearly half of the transactions were rerun, and responses slowed down accordingly.
+
+Trying to block at the checking step leaves a gap between checking and saving. So I wondered whether there was a way to store values so that times could never overlap in the first place.
+
+### A UNIQUE that compares overlaps
+
+A constraint is what makes the database reject a row at the moment it is saved. A UNIQUE constraint rejects a value that already exists. Even if two transactions insert the same value at the same time, only one gets in.
+
+But UNIQUE only checks for equality (`=`). Even with UNIQUE on `(room, starts_at)`, 10:00–11:00 and 10:30–11:30 pass because their start times differ. The condition bookings need is "reject if the room is the same (`=`) and the time overlaps (`&&`)".
+
+PostgreSQL's EXCLUDE constraint can express this condition directly. EXCLUDE is a UNIQUE that lets you pick a comparison operator for each column. With every operator set to `=`, it is the same as UNIQUE.
+
+Here are the two constraints side by side, showing how each compares a new row against existing rows.
+
+<UniqueVsExcludeDiagram lang="en" />
+
+Splitting time into slots with one row per slot would also prevent overlaps. But when times are picked to the minute as in requirement 8, the slots do not line up. I compare this approach with EXCLUDE at the end.
+
+So I went with the EXCLUDE constraint.
+
+## The EXCLUDE constraint
+
+Here is the booking table with an EXCLUDE constraint.
+
+```sql
+create extension if not exists btree_gist;
+
+create table booking (
+  id           bigint generated always as identity primary key,
+  room         text not null,
+  starts_at    timestamptz not null,
+  ends_at      timestamptz not null check (ends_at > starts_at),
+  cancelled_at timestamptz,
+  constraint booking_no_overlap exclude using gist (
+    room with =,
+    tstzrange(starts_at, ends_at, '[)') with &&
+  ) where (cancelled_at is null)
+);
+```
+
+The [range types](https://www.postgresql.org/docs/17/rangetypes.html#RANGETYPES-CONSTRAINT) chapter of the PostgreSQL documentation has a meeting room booking example of the same shape.
+
+When a new row comes in, PostgreSQL compares it with existing rows using the two conditions in the parentheses. If even one row makes both comparisons true, the new row is rejected.
+
+- `room with =` — the room is the same.
+- `tstzrange(starts_at, ends_at, '[)') with &&` — the time ranges overlap. `tstzrange` builds a range value from a start and an end, and `&&` checks whether two ranges overlap.
+- `'[)'` — a half-open interval that includes the start and excludes the end. 10:00–11:00 does not contain 11:00, so it does not overlap 11:00–12:00.
+- `where (cancelled_at is null)` — cancelled bookings drop out of the comparison. The moment a booking is cancelled, its time can be booked again. Deleting a row removes the row to compare against altogether.
+
+I compared how two adjacent bookings share the boundary at 11:00 under `'[)'` and `'[]'`.
+
+<RangeBoundsDiagram lang="en" />
+
+With `'[]'`, the end of the earlier booking and the start of the later one both contain the single point 11:00, so every adjacent booking is rejected.
+
+The `btree_gist` at the top is an extension for using `=` on `text` in a GiST index. GiST supports `&&` on ranges but not `=` on plain values. Creating the constraint without this extension fails with `data type text has no default operator class for access method "gist"`. Since PostgreSQL 13 it is a trusted extension, so anyone with CREATE privilege on the database can install it without being a superuser.
+
+An UPDATE that moves the time goes through the same check. Moving a booking so that it overlaps another booking is rejected, but overlapping its own old time is not a problem.
+
+Here is how this maps to the requirements.
+
+| Requirement | Where it is handled |
+| --- | --- |
+| 1. No overlapping bookings in the same room | `room with =` and `tstzrange(...) with &&` |
+| 2. Allow adjacent bookings | `'[)'` |
+| 3. Free the time right after cancel or delete | `where (cancelled_at is null)`; deleted rows leave the comparison |
+| 4. No overlap when changing the time either | UPDATE goes through the same check |
+| 5. Unrelated requests do not wait for each other | The internals section |
+| 6·7. Linked bookings | The linked bookings section |
+| 8. Freely to the minute | The exact times, stored as a range |
+
+Inserting an overlapping booking produces this error.
+
+```text
+ERROR:  conflicting key value violates exclusion constraint "booking_no_overlap"
+DETAIL:  Key (room, tstzrange(starts_at, ends_at, '[)'::text))=(A, ["2026-10-05 01:30:00+00","2026-10-05 02:30:00+00")) conflicts with existing key (room, tstzrange(starts_at, ends_at, '[)'::text))=(A, ["2026-10-05 01:00:00+00","2026-10-05 02:00:00+00")).
+```
+
+The SQLSTATE is `23P01` (exclusion_violation). The server picks out only this code and turns it into a message for the user.
+
+```ts
+try {
+  await insertBooking(input)
+} catch (error) {
+  if ((error as { code?: string }).code === '23P01') {
+    throw new Error('This time is already booked.')
+  }
+  throw error
+}
+```
+
+Overlap checks in the UI stay, but only as guidance for the user. The constraint is what blocks overlaps.
+
+I tried inserting 20 bookings at once for the same room and time. I lined up 20 sessions to run INSERT at the same instant and repeated it 10 times. All 10 times, only one row got in.
+
+## Linked bookings
+
+In the `booking` table above, one row books one room. To book A+B as one booking as in requirement 6, one booking has to hold several rooms. But EXCLUDE only compares rows within a single table.
+
+### Splitting the table
+
+So I split bookings into two tables.
+
+```sql
+create table reservation (
+  id           bigint generated always as identity primary key,
+  title        text not null,
+  starts_at    timestamptz not null,
+  ends_at      timestamptz not null check (ends_at > starts_at),
+  cancelled_at timestamptz
+);
+
+create table reservation_room (
+  reservation_id bigint not null references reservation (id) on delete cascade,
+  room           text not null,
+  starts_at      timestamptz not null, -- copy of reservation.starts_at
+  ends_at        timestamptz not null, -- copy of reservation.ends_at
+  active         boolean not null,     -- copy of reservation.cancelled_at is null
+  primary key (reservation_id, room),
+  constraint reservation_room_no_overlap exclude using gist (
+    room with =,
+    tstzrange(starts_at, ends_at, '[)') with &&
+  ) where (active)
+);
+```
+
+`reservation` is the source of truth for the title, the time, and whether the booking was cancelled. `reservation_room` has one row per room the booking holds, and carries copies of the time and the cancelled state that the overlap check needs. The EXCLUDE constraint goes on this table of copies. An A+B booking becomes one `reservation` row and two `reservation_room` rows, and a single-room booking becomes one `reservation_room` row.
+
+Here is how one A+B booking is stored across the two tables.
+
+<LinkedTablesDiagram lang="en" />
+
+A booking is inserted in one transaction.
+
+```sql
+begin;
+insert into reservation (title, starts_at, ends_at)
+values ('Weekly sync', '2026-10-05 10:00+09', '2026-10-05 11:00+09')
+returning id;
+
+insert into reservation_room (reservation_id, room, starts_at, ends_at, active)
+values (:id, 'A', '2026-10-05 10:00+09', '2026-10-05 11:00+09', true),
+       (:id, 'B', '2026-10-05 10:00+09', '2026-10-05 11:00+09', true);
+commit;
+```
+
+If even one room overlaps, `23P01` is raised and the whole transaction rolls back. The `reservation` row disappears with it, so no booking is left that got A but failed on B.
+
+When A+B and B+C come in for the same time, they collide on room B.
+
+<LinkedRollbackDemo client:visible lang="en" />
+
+I ran 10 rounds of inserting A+B and B+C for the same time simultaneously. All 10 times only one booking remained, and not once was a `reservation` row left without rooms.
+
+### Allowed combinations
+
+Combinations that are not allowed, such as A+C, are checked with a constant in the app code, not in the database.
+
+```ts
+// A single room is always allowed. Multiple rooms are allowed only when adjacent.
+const LINKED = ['A,B', 'B,C', 'A,B,C']
+
+function canBook(rooms: string[]) {
+  return rooms.length === 1 || LINKED.includes([...rooms].sort().join(','))
+}
+```
+
+### The copies
+
+Since the time and the cancelled state are copied into the child rows, they can drift from the source. The server updates the children in the same transaction that changes the parent. Because both change in one transaction, other requests can never see a state where only one side has changed.
+
+Changing only the parent with direct SQL makes them drift. When I set only `cancelled_at` on a B+C booking, the two child rows were still `active`, and trying to book B again for the same time raised `23P01`. The booking was cancelled, yet its time was not freed.
+
+So the operations docs keep a check query. Its result must always be 0.
+
+```sql
+select count(*) from reservation r
+join reservation_room s on s.reservation_id = r.id
+where s.starts_at <> r.starts_at
+   or s.ends_at <> r.ends_at
+   or s.active <> (r.cancelled_at is null);
+```
+
+### Other designs
+
+These are the designs I considered and did not use.
+
+| Design | Verdict |
+| --- | --- |
+| One booking row per room, tied together by a group id | The schema is the simplest. But one linked booking scatters into several bookings, so information such as the title repeats on every row, and edits and cancellations have to be applied to the whole group. |
+| An array of rooms in one row (`&&` from `intarray`) | No copies. Instead it depends on an extension and needs a mapping from rooms to integers. I could not find real-world examples either. |
+| Linked rooms as separate resources ("room AB") | "AB overlaps A" cannot be expressed as an `=` comparison. To block it in the database, you end up expanding it into per-room rows anyway. |
+| Keeping the copies in sync with triggers | Changing only the parent with direct SQL does not cause drift. Instead the write path splits into two places, the server code and the trigger. |
+
+## Internals
+
+### Transaction IDs
+
+A transaction gets an ID (xid) when it first writes. Each row carries `xmin`, the ID of the transaction that created it, and `xmax`, the ID of the transaction that deleted it. Both are system columns, so `select xmin, xmax` shows them directly.
+
+A row inserted by transaction 3082798 had `xmin` 3082798 and `xmax` 0. An `xmax` of 0 means no one has deleted the row yet. When transaction 3082799 updated this row, 3082799 was written to its `xmax`.
+
+I drew the order in which the two IDs are written on a row.
+
+<TxIdDemo client:visible lang="en" />
+
+PostgreSQL uses these two IDs to decide who gets to see a row.
+
+### Snapshots
+
+SELECT sees rows through a snapshot. A snapshot is a record of which transactions had finished at that moment. It looks like `3082769:3082769:`. IDs from the middle value up are treated as not yet finished, and the list at the end holds the IDs below that value that are still in progress. Rows inserted by unfinished transactions are not visible. The default isolation level, READ COMMITTED, takes a new snapshot for every statement.
+
+While session 1 had inserted a row and not yet committed, session 2's snapshot was `3082769:3082769:`. Session 1's ID 3082769 was on the not-yet-finished side, so session 2 could not see that row and got 0 rows. After session 1 committed, the snapshot was `3082770:3082770:`, and this time the row was visible and 1 row came back.
+
+This is how a row becomes visible as the snapshot boundary moves.
+
+<SnapshotDemo client:visible lang="en" />
+
+Check-then-insert fails not only when the other side has not inserted yet. Even if the other side has inserted, the query cannot see that row until it is committed.
+
+### A check that sees uncommitted rows
+
+The EXCLUDE check looks at rows differently from SELECT. In the PostgreSQL source, `src/backend/executor/execIndexing.c` shows that the check scans the index with a dirty snapshot. A dirty snapshot counts rows inserted by in-progress transactions as present, and also returns the ID of the transaction that inserted them.
+
+While session 1 had inserted A 10:00–11:00 and not yet committed, session 2's SELECT found no booking overlapping A 10:30–11:30. But when session 2 inserted A 10:30–11:30, the INSERT stopped. The check had seen session 1's uncommitted row.
+
+Here is how SELECT and the check each see the same table, side by side.
+
+<DirtyCheckDemo client:visible lang="en" />
+
+### Waiting for the other transaction
+
+When the check finds an in-progress row, it waits until that transaction ends. Waiting uses a lock taken on the transaction ID. A transaction takes an exclusive lock (ExclusiveLock) on its ID when it gets one, and releases it when it ends. The check requests a share lock (ShareLock) on the other side's ID. The share lock can only be granted once the exclusive lock is released, so the check waits until the other side ends.
+
+While session 2 was waiting, `pg_locks` looked like this.
+
+| Session | Lock target | Mode | Granted |
+| --- | --- | --- | --- |
+| Session 1 | Transaction 3082775 | ExclusiveLock | t |
+| Session 2 | Transaction 3082776 | ExclusiveLock | t |
+| Session 2 | Transaction 3082775 | ShareLock | f |
+
+In `pg_stat_activity`, session 2's wait event was `Lock / transactionid`. Session 2 had already received its own ID 3082776 as well. That is because it inserts the new row first and checks afterward.
+
+When the other side ends, the check starts over. In the source, it waits with `XactLockTableWait` and goes back with `goto retry`. If session 1 committed, that row is live, so the INSERT is rejected with `23P01`; if session 1 rolled back, the row does not exist, so the INSERT passes.
+
+| Session 1 | Session 2's INSERT |
+| --- | --- |
+| Commit | `23P01` after waiting 2,487 ms |
+| Rollback | Succeeds after waiting 2,512 ms |
+
+Session 1 held off committing for 3 seconds after inserting. The wait time is what was left of those 3 seconds.
+
+I drew the two cases where the outcome splits after waiting, one after the other.
+
+<WaitForTxDemo client:visible lang="en" />
+
+### The GiST index
+
+When you create an EXCLUDE constraint, PostgreSQL also creates a GiST index with the same name as the constraint. The check does not scan the whole table; it looks up only the overlapping rows in this index.
+
+GiST is a balanced tree like a B-tree. What differs is the value written in the entries of upper pages. An entry on an upper page holds a value that covers every entry on the page below it. For time ranges, that is a range enclosing all the ranges below.
+
+I inserted 100,000 rows, 4 a day in each of 10 rooms for 2,500 days, and opened up the GiST pages. pageinspect cannot read keys that mix in the room column, so I looked at the structure through a GiST built on the time range alone.
+
+- Root — 9 entries, each covering about 8 months. The third entry runs from May 26, 2027 to February 4, 2028.
+- Middle — the page a root entry points to has 102 entries, each covering 2–3 days.
+- Leaf — points to actual rows. There are 10 entries for June 15, 11:00–12:00, one per room.
+
+To find rows overlapping June 15, 2027, 10:30–11:30, the search goes down only through the third entry at the root, and in the middle page only through the entry that covers June 15. It never opens the other branches.
+
+I drew the check following only the overlapping branches down.
+
+<GistSearchDemo client:visible lang="en" />
+
+btree_gist handles the room column the same way. Upper page entries record the range of room values below, and when looking for room C, the search skips branches where C cannot be. The constraint's index is 1,077 pages, and the same lookup for room C read only 4 index pages and 1 table page.
+
+### Who waits
+
+The only transactions the check waits for are the ones that inserted the rows it found in the index. Rows for other rooms or non-overlapping times are not what it is looking for, so there is no reason to wait for them. This is how requirement 5 is met.
+
+While session 1 inserted A 10:00–11:00 and held off committing for 3 seconds, I inserted a booking from another session 0.5 seconds later. I ran each of the three cases separately and rolled back every time.
+
+| Booking inserted | Time taken |
+| --- | --- |
+| Different room B, 10:00–11:00 | 0.70 ms |
+| Same room A, adjacent 11:00–12:00 | 0.64 ms |
+| Same room A, overlapping 10:30–11:30 | 2,442 ms |
+
+Only the overlapping case waited until session 1 ended. The 2,442 ms is not time spent on a slow write; it is what was left of the 3 seconds that session 1 held off committing.
+
+Of the three requests, only the overlapping one waits.
+
+<WaitScopeDemo client:visible lang="en" />
+
+### Cancelling and updating
+
+UPDATE does not change a row in place. It writes its own ID into the original row's `xmax` and writes a new version elsewhere. A row's location is written as `(page, item)`. In my measurement, the row inserted by 3082798 was at `(0,1)`. When 3082799 updated it, a new version with `xmin` 3082799 appeared at `(0,2)`, and `(0,1)` got `xmax` 3082799 and the new version's location `(0,2)`.
+
+A cancellation is an UPDATE that sets `cancelled_at`. The new version does not match `where (cancelled_at is null)`, so it does not go into the constraint's index. Only the original row's entry stays in the index, and the original row's `xmax` holds the ID of the cancelling transaction.
+
+So a request that tries to book the same time before the cancellation commits runs into the original row and waits for the cancelling transaction. If the cancellation commits, the original row becomes a deleted row and the request passes; if it rolls back, the original row is still live and the request is rejected with `23P01`. In my measurements they waited 2,502 ms and 2,449 ms respectively.
+
+I drew how the versions and the index change during a cancellation.
+
+<RowVersionDemo mode="cancel" client:visible lang="en" />
+
+When an update moves the time, the new version goes into the index with the new time and gets checked. Here the check also finds its own original row. But the dirty snapshot treats a row deleted by its own transaction as nonexistent. `HeapTupleSatisfiesDirty` in the source's `heapam_visibility.c` makes this call. So, as we saw in the EXCLUDE constraint section, moving 10:00–11:00 to 10:30–11:30 does not collide with itself.
+
+This is the order in which the check passes over the original row during an update.
+
+<RowVersionDemo mode="move" client:visible lang="en" />
+
+### Insert first, check after
+
+UNIQUE and EXCLUDE check for conflicts in a different order. The header comment of `execIndexing.c` explains this difference.
+
+UNIQUE checks whether the same key already exists while inserting the entry into the index. Checking and inserting happen at once, so even if two sessions insert the same key at the same time, only one succeeds. If the transaction that inserted the same key is still in progress, it waits for that transaction without inserting its own entry.
+
+EXCLUDE inserts the entry first, then scans the index separately to find overlapping rows. The check that sees uncommitted rows and the wait for the other transaction, both covered above, happen in this second step.
+
+So when two sessions insert at almost the same moment, both insert their entries before starting the check. Each finds the other's uncommitted entry and waits for the other to finish, but the other is waiting on this side too, so neither ever finishes. The source comment describes this case as well.
+
+> There is a chance of deadlock, if two backends insert a tuple at the same time, and then perform the scan to check for conflicts. They will find each other's tuple, and both try to wait for each other. The deadlock detector will detect that, and abort one of the transactions. That's fairly harmless, as one of them was bound to abort with a "duplicate key error" anyway, although you get a different error message.
+
+The comment adds that one of the requests was going to fail anyway, so only the error message is different.
+
+I put two requests arriving at the same moment one above the other to show how they split under UNIQUE and EXCLUDE.
+
+<InsertThenCheckDemo client:visible lang="en" />
+
+I also ran the 20-request concurrency test from the EXCLUDE constraint section with UNIQUE. To compare only the check order, I put UNIQUE on `(room, starts_at)` and inserted 20 rows with the same start time at the same moment. Over 10 repetitions, 1 row got in every time and 19 were rejected with `23505`. There was not a single deadlock, and even the slowest request finished within 32 ms. EXCLUDE deadlocked in 4 out of 10 runs of the same test.
+
+### Deadlocks
+
+PostgreSQL resolves deadlocks on its own. A session that starts waiting on a lock waits for `deadlock_timeout` and then runs a deadlock check. The default is 1 second. The check follows who waits for whom to find a cycle, and if there is one, it ends the session that ran the check with `40P01 deadlock detected`. When the ended session rolls back, the entry it inserted disappears too, and the remaining session checks again and passes.
+
+This is how one of two sessions waiting on each other backs off.
+
+<DeadlockDemo client:visible lang="en" />
+
+The data is safe. Only one of the two overlapping bookings remains. But the loser gets `40P01` instead of `23P01`, and gets it 1 second later, the time spent waiting for the deadlock check.
+
+In the 20-request test, all 19 losers got `40P01` in the 4 runs that deadlocked. When I ran the same test 10 more times while timing it, 6 runs ended that way. In those runs `40P01` arrived at about one per second, and even the single winner got in only after 18–19 seconds. The other 4 runs all ended with `23P01` within 41 ms.
+
+When one session backs off, the rest that were waiting on it wake up and check again. The remaining sessions have also already inserted their entries, so they wait on each other again, and the deadlock check runs again 1 second later.
+
+The bars show when each session finished in one round of chained deadlocks.
+
+<DeadlockChainDemo client:visible lang="en" />
+
+Linked bookings produce a different kind of deadlock too. Suppose A+B bookings X and Y are moved to the same new time at the same moment. If X updates A first and Y updates B first, X runs into the row Y updated on B and waits for Y, and Y runs into the row X updated on A and waits for X. With a 1-second gap between updating the two rows, X ended with `40P01` after 2.09 seconds. If both update A first, Y only waits for X on A. When X updated B as well and committed, Y got `23P01` at 1.09 seconds. The 1-second difference between the two times is the time spent waiting for the deadlock check.
+
+The two cases that differ only in update order play one after the other.
+
+<WriteOrderDemo client:visible lang="en" />
+
+This deadlock is prevented by fixing the write order. If room rows are always written in room order, two transactions meet at the first room they share, and the one that arrives later waits there. The waiting side has not yet written any later room, so no cycle forms. When inserting, list the `values` in room order as in the linked bookings section. A single UPDATE statement cannot control the order in which rows are updated, so when updating, run one UPDATE per row in room order.
+
+```ts
+// Update one row at a time in room order.
+for (const room of [...rooms].sort()) {
+  await trx.query(
+    'update reservation_room set starts_at = $1, ends_at = $2 where reservation_id = $3 and room = $4',
+    [startsAt, endsAt, reservationId, room],
+  )
+}
+```
+
+Even with a fixed order, the deadlock from writing the same room at the same moment remains. A+B and B+C from the linked bookings section were both written in room order, yet in 2 out of 10 runs the loser got `40P01`. Those were the runs where both wrote B at almost the same moment. Order cannot separate two sessions that are already on the same room.
+
+This deadlock is handled by retrying. On `40P01`, rerun the transaction from the start. By the time it reruns, the winner has committed, so it usually ends with `23P01`, and the user sees "This time is already booked."
+
+```ts
+async function withDeadlockRetry<T>(work: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await work() // Run one transaction from start to finish.
+    } catch (error) {
+      if ((error as { code?: string }).code !== '40P01' || attempt >= 3) throw error
+    }
+  }
+}
+```
+
+I ran an experiment that sends two requests to the booking server at the same moment. Without retries, in 6 out of 80 runs the losing user got the raw `deadlock detected` error. With retries, over 200 runs one side was booked and the other got "This time is already booked." every single time. Meanwhile the database log recorded 34 deadlocks. The loser's response time had a median of 18 ms and a maximum of 1.2 seconds.
+
+For a single-row INSERT, `on conflict do nothing` can also avoid the deadlock. On a conflict this statement must withdraw only the row it was inserting, not the whole transaction, so it cannot afford a deadlock. So instead of the two waiting on each other, the transaction with the higher ID first withdraws the row it was inserting and then waits. When I ran the 20-request test 10 times with this statement, 1 row got in every time and the other 19 got 0 rows. There were no errors and no deadlocks, and even the slowest request finished within 59 ms. However, since a rejection comes back as 0 rows rather than an error, inserting several rows, as a linked booking does, means checking the result for each row. UPDATE has no such path. An update that moves a booking can still deadlock, so the retry stays.
+
+Retrying is the right fit when a few requests for the same room and time collide only rarely. If dozens pile up at once, the deadlocks chained one second apart become the response time.
+
+## Creating slots in advance
+
+EXCLUDE deadlocks because it cannot lock the overlapping range in advance. With no row to lock yet, EXCLUDE inserts the entry first and checks afterward. The approach I set aside earlier does the opposite and creates the rows to lock in advance. It splits time into fixed cells and inserts one row per room and cell ahead of time. I call these pre-made cell rows slots.
+
+### Claiming slots
+
+Insert 15-minute slots for each room in advance. A slot whose `reservation_id` is null is free.
+
+```sql
+create table room_slot (
+  room           text        not null,
+  slot_start     timestamptz not null,
+  reservation_id bigint references reservation (id), -- null means a free slot
+  primary key (room, slot_start)
+);
+```
+
+Booking means turning free slots into your own. A 10:00–11:00 booking for A claims 4 slots. `:id` is the ID of the `reservation` row inserted earlier in the same transaction.
+
+```sql
+begin;
+-- Lock the free slots in room and time order.
+select slot_start from room_slot
+where room = 'A'
+  and slot_start >= '2026-10-05 10:00+09' and slot_start < '2026-10-05 11:00+09'
+  and reservation_id is null
+order by room, slot_start
+for update;
+
+-- Update the slots only if 4 rows were locked. Otherwise roll back.
+update room_slot set reservation_id = :id
+where room = 'A'
+  and slot_start >= '2026-10-05 10:00+09' and slot_start < '2026-10-05 11:00+09';
+commit;
+```
+
+If fewer than 4 slots were locked, someone claimed a slot first in the meantime. In that case, roll back and return "This time is already booked." A slot can hold only one booking, so overlapping bookings cannot happen. A linked booking A+B locks the 8 slots of both rooms at once with `room in ('A', 'B')`.
+
+There is a reason the locking order is set with `order by`. As the deadlocks section showed, a single UPDATE statement cannot control the order in which rows are updated. In fact, the plan for the UPDATE above was a Bitmap Heap Scan, which reads rows in the order they sit in the table. The locking SELECT sorts by `room, slot_start` and then locks.
+
+### When two requests claim the same slot
+
+When two requests try to claim the same slot, this time they fight over the same row. The one that locks first holds the row lock, and the later one waits for that lock to be released. When the first one commits, the later one follows the READ COMMITTED rule, rereads the latest version of that row, and evaluates the `where` condition again. `reservation_id is null` is now false, so that slot drops out of the result, too few slots are locked, and the transaction rolls back.
+
+I drew the case where 10:00–11:00 and 10:30–11:30 arrive at the same moment, slot by slot.
+
+<SlotContentionDemo client:visible lang="en" />
+
+The later request is rejected as soon as the earlier transaction commits. Every request locks in room and time order, so no cycle of waiting forms, and there is no 1-second wait for the deadlock check.
+
+I ran the same 20-request test with slots too. Over 10 repetitions, 1 request claimed the 4 slots every time, and the other 19 could not lock a single slot and rolled back. There were no deadlocks, and even the slowest request finished within 178 ms. For two partially overlapping requests such as 10:00–11:00 and 10:30–11:30, the later one locked only 2 slots, rolled back, and finished within 32 ms. With the linked bookings A+B and B+C, too, only one side remained in all 10 runs, with no deadlocks.
+
+The locking order matters here too. When I deliberately had X lock one room at a time starting from A and Y starting from B, with 1 second in between, one side got `40P01` after 2.01 seconds. Row locks taken in opposite order also wait on each other.
+
+### Trade-offs
+
+I picked one measured round from each side in which 20 requests hit the same slot at the same moment, and put them side by side. The EXCLUDE round is one with chained deadlocks.
+
+<BurstCompareDemo client:visible lang="en" />
+
+I measured the everyday cost by filling all of 2029 with 4,380 one-hour A+B+C bookings. The bookings did not overlap each other, and 4 clients inserted them. The slots in the tables below are 15-minute slots.
+
+Slots buy you three things.
+
+| Item | Slots vs. EXCLUDE |
+| --- | --- |
+| 20 at the same moment | Done within 178 ms vs. 18–19 s when deadlocks chain |
+| `40P01` retries | Not needed vs. needed |
+| List of free times | Read the free slots directly vs. compute with `range_agg` |
+
+With slots, the later request waits on the row lock and is rejected the instant the earlier transaction commits. As long as the locking order is followed, there are no deadlocks, so no retry code for same-moment deadlocks is needed either. Showing free times is just reading the slots where `reservation_id is null`. With EXCLUDE, free intervals come from a query that subtracts the booking ranges gathered with `range_agg` from the day's range.
+
+Here is what they cost in return.
+
+| Item | Slots vs. EXCLUDE |
+| --- | --- |
+| Time granularity | 15-minute boundaries only vs. free to the minute |
+| Rows written per booking | 13 vs. 4 |
+| Average response | 1.48 ms vs. 1.14 ms |
+| WAL per booking | 3,672 B vs. 1,579 B |
+| Size for one year | 3,968 kB empty, 5,128 kB full vs. 2,480 kB even when full |
+| Pre-creation job | Needed vs. none |
+| Cancel | 0.44 ms only when looked up by time range vs. looked up by PK |
+| Time change | Free the old slots, then claim new ones vs. UPDATE the room rows |
+
+Slots store only times that land on slot boundaries. With 15-minute slots, a meeting cannot start at 10:05, and a 50-minute meeting still takes up an hour. Changing the slot size means recreating all future slots and refitting the bookings already made to the new slots.
+
+One booking locks and updates 12 slots, so the write volume grows. The row count also scales with the calendar rather than with bookings, so a year's worth of slots, 52,560 rows, must exist even with no bookings at all.
+
+Slots are created in advance for as far ahead as bookings are accepted. A year's worth takes 136 ms to create, but if the job stops, dates after that cannot be booked. The code above locks 0 slots in that case too and answers "This time is already booked.", so missing slots have to be detected separately. Adding rooms or changing operating hours also means creating or deleting slots.
+
+When cancelling, slots must be looked up by the booking's time range to use the PK index. Looking them up by `reservation_id` alone becomes a Seq Scan that reads the whole year of slots, which took 5.4 ms. When changing the time, the old slots must be freed first. If you lock the new slots as free slots first, your own slots drop out, so pushing a 1-hour booking back by 30 minutes claims only 2 slots and gets rejected. Since a booking's time is spread over several slot rows, cancellations and changes do not free the time unless the slots are updated along with them.
+
+To let people pick to the minute as in requirement 8, slots would have to be 1 minute. Then a year of slots is 788,400 rows, 57 MB, and filling the year makes it 117 MB. One booking updated 180 slots, averaging 3.73 ms and 66,963 B of WAL per booking, and a cancellation looked up by `reservation_id` alone took 84.8 ms.
+
+### Where slots fit
+
+Slots feel natural in domains where inventory already comes in fixed units. Concert seats, hotel rooms by date, and clinic appointments chosen from fixed time slots are examples. The slot is the unit being sold, so slot size is not an issue, and requests piling onto the same slot at once, as with a popular concert, are common. When a slot has several units of inventory, as with hotel rooms, keep the remaining count in the slot row and decrement it with `available = available - 1 where available > 0`.
+
+For meeting room bookings where the start and end are chosen freely, a range constraint fits. The EXCLUDE example from the PostgreSQL documentation mentioned earlier is a meeting room booking too.
+
+### Which one I chose
+
+For these meeting room bookings, I decided to keep EXCLUDE with retries. With a fixed write order, deadlocks only happen when the same room and time are booked at almost the same moment, and even then the data is safe. The loser just gets "This time is already booked." about a second late. Paying the price in the table above to remove that second was not worth it. Times get tied to 15-minute units, a slot-creation job comes along with the slot rows as yet another copy, and the rows written per booking grow from 4 to 13. Meeting requirement 8, picking to the minute, would take 1-minute slots, and one booking would update 180 slots.
+
+For a service where requests pile onto the same slot, the call changes. When 20 requests hit at the same moment, EXCLUDE made even the winning request wait 18–19 seconds in the rounds with chained deadlocks, while slots finished within 178 ms in all 10 runs. Where bursts are common, as in seat ticketing, slots are better.
+
+## Summary
+
+Here is where each of the eight requirements from the start is handled.
+
+| Requirement | Where it is handled |
+| --- | --- |
+| 1. No overlapping bookings in the same room | `=` and `&&` in the EXCLUDE constraint |
+| 2. Allow adjacent bookings | The half-open interval `'[)'` |
+| 3. Free the time right after cancel or delete | The partial constraint `where (active)` |
+| 4. No overlap when changing the time either | UPDATE goes through the same check |
+| 5. Unrelated requests do not wait for each other | The GiST index checks only overlapping rows |
+| 6. Linked bookings | Split into parent and room rows, with EXCLUDE on the room rows |
+| 7. All rooms or none | One transaction |
+| 8. Freely to the minute | The exact times, stored as a range |
+
+What the database cannot block, the app takes on.
+
+- Show `23P01` as "This time is already booked."
+- On a `40P01` from a same-moment deadlock, rerun the transaction from the start.
+- Always write a linked booking's room rows in room order.
+- Filter out disallowed combinations such as A+C with an app constant.
+- Use the check query to confirm the room rows' copies have not drifted from the parent.

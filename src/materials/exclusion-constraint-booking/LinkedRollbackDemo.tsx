@@ -51,8 +51,8 @@ const LABELS: Record<Lang, Labels> = {
 	},
 	en: {
 		cards: ["A+B booking", "B+C booking"],
-		ab: ["Parent, A inserted", "B → waiting", "B → rejected (23P01)", "Rollback → nothing left"],
-		bc: ["Parent, B, C inserted", "Committed"],
+		ab: ["Parent·A added", "B → waiting", "B → 23P01", "All rolled back"],
+		bc: ["Parent·B·C added", "Committed"],
 		wait: "waiting",
 		reject: "23P01",
 		captions: [

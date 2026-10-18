@@ -37,10 +37,10 @@ const LABELS: Record<Lang, Labels> = {
 		aria: "세션 1이 회의실 A 10:00–11:00 예약을 넣고 커밋하지 않은 동안 세 요청을 검사하는 과정을 반복 재생하는 애니메이션. B 10:00–11:00은 겹치는 행이 없어 0.70 ms 만에, A 11:00–12:00도 맞닿기만 해서 0.64 ms 만에 검사를 마친다. A 10:30–11:30만 세션 1의 행과 겹쳐 기다리고, 세션 1이 끝난 뒤 2,442 ms 만에 검사를 마친다.",
 	},
 	en: {
-		s1: "Session 1",
-		pass: "passes at once",
+		s1: "Sess. 1",
+		pass: "passes",
 		wait: "waiting",
-		done: "check done",
+		done: "done",
 		captions: [
 			"① Session 1 inserts A 10:00–11:00 and delays commit",
 			"② B 10:00–11:00 overlaps nothing → 0.70 ms",

@@ -50,7 +50,7 @@ const LABELS: Record<Lang, Labels> = {
 		entry: ["session 1 entry", "session 2 entry"],
 		wait: ["waits for session 2", "waits for session 1"],
 		abort: "deadlock check → 40P01",
-		pass: "rechecks → passes, commits",
+		pass: "recheck passes, commits",
 		timer: "1 s",
 		cycle: "cycle found",
 		captions: [

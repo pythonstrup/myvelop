@@ -28,7 +28,7 @@ const LABELS = {
 		at: "At 11:00",
 		prev: "earlier",
 		next: "later",
-		results: ["no overlap → OK", "share a point → rejected"],
+		results: ["no overlap → OK", "overlap → rejected"],
 		aria: "Two cases of booking room A for 11:00–12:00 right after a 10:00–11:00 booking. With the half-open '[)' range, the earlier booking excludes 11:00 and the later one includes it, so they do not overlap and the booking is accepted. With the closed '[]' range, both include 11:00, so they share that single point and the booking is rejected.",
 	},
 } as const;
