@@ -1,0 +1,629 @@
+---
+title: "동시에 들어온 예약을 막는 방법 - PostgreSQL EXCLUDE 제약조건"
+description: "같은 회의실, 겹치는 시간의 예약이 동시에 들어올 때 PostgreSQL의 EXCLUDE 제약조건으로 하나만 받아들이는 방법과 그 원리를 정리했다."
+pubDate: "2026-10-01T21:00:00+09:00"
+tags: ["postgresql", "동시성", "트랜잭션", "exclusion-constraint"]
+socialImage: "../../../assets/og-default.png"
+---
+import BookingRulesDiagram from "@/materials/exclusion-constraint-booking/BookingRulesDiagram";
+import BurstCompareDemo from "@/materials/exclusion-constraint-booking/BurstCompareDemo";
+import CheckThenInsertDemo from "@/materials/exclusion-constraint-booking/CheckThenInsertDemo";
+import DeadlockChainDemo from "@/materials/exclusion-constraint-booking/DeadlockChainDemo";
+import DeadlockDemo from "@/materials/exclusion-constraint-booking/DeadlockDemo";
+import DirtyCheckDemo from "@/materials/exclusion-constraint-booking/DirtyCheckDemo";
+import GistSearchDemo from "@/materials/exclusion-constraint-booking/GistSearchDemo";
+import InsertThenCheckDemo from "@/materials/exclusion-constraint-booking/InsertThenCheckDemo";
+import LinkedRollbackDemo from "@/materials/exclusion-constraint-booking/LinkedRollbackDemo";
+import LinkedTablesDiagram from "@/materials/exclusion-constraint-booking/LinkedTablesDiagram";
+import RangeBoundsDiagram from "@/materials/exclusion-constraint-booking/RangeBoundsDiagram";
+import RowVersionDemo from "@/materials/exclusion-constraint-booking/RowVersionDemo";
+import SlotContentionDemo from "@/materials/exclusion-constraint-booking/SlotContentionDemo";
+import SnapshotDemo from "@/materials/exclusion-constraint-booking/SnapshotDemo";
+import TxIdDemo from "@/materials/exclusion-constraint-booking/TxIdDemo";
+import UniqueVsExcludeDiagram from "@/materials/exclusion-constraint-booking/UniqueVsExcludeDiagram";
+import WaitForTxDemo from "@/materials/exclusion-constraint-booking/WaitForTxDemo";
+import WaitScopeDemo from "@/materials/exclusion-constraint-booking/WaitScopeDemo";
+import WriteOrderDemo from "@/materials/exclusion-constraint-booking/WriteOrderDemo";
+
+## 들어가며
+
+회의실 예약은 노션으로 했다. 노션에는 겹치는 예약을 막는 장치가 없다. 두 사람이 같은 시간대에 같은 회의실을 잡으면, 합의해서 누군가는 양보해야 했다. 불편했다.
+
+그래서 예약 시스템을 만들기로 했다. 직접 만들어도 동시성이 문제다. 두 사람이 거의 동시에 같은 시간대를 예약하면 서버에는 요청 두 개가 함께 들어온다. 두 요청 모두 그 시간대가 비어 있다고 판단하고 저장하면 예약이 두 개 생긴다. 노션에서 두 사람 사이에 생기던 충돌이 이번에는 두 트랜잭션 사이에서 생긴다.
+
+동시에 들어온 예약은 어떻게 제어해야 할까?
+
+## 요구사항
+
+예약 시스템이 지켜야 할 것은 여덟 가지다.
+
+1. 같은 회의실에 시간이 겹치는 예약이 두 개 생기면 안 된다.
+2. 맞닿은 예약은 허용한다. 10:00–11:00 예약 바로 뒤에 11:00–12:00 예약을 잡을 수 있어야 한다.
+3. 예약을 취소하거나 삭제하면 그 시간을 바로 다시 잡을 수 있어야 한다.
+4. 예약 시간을 바꿀 때도 겹치면 안 된다.
+5. 다른 회의실이나 겹치지 않는 시간을 잡는 요청끼리는 서로를 기다리지 않는다. 예약이 몰리는 시간에 상관없는 요청까지 줄을 서면 그만큼 응답이 늦어진다.
+6. 회의실 A·B·C는 연결해서 예약할 수 있다. A+B, B+C, A+B+C는 되고, 가운데 B를 건너뛴 A+C는 안 된다. A+B를 잡으면 그 시간에는 A와 B 모두 다른 예약을 받을 수 없다.
+7. 연결해서 잡은 예약은 회의실이 전부 잡히거나 전부 실패해야 한다. A만 잡히고 B는 실패한 예약이 남으면 안 된다.
+8. 예약 시간은 분 단위로 자유롭게 정한다.
+
+회의실을 열로, 시간을 세로로 놓고 1·2·5·6번을 그리면 다음과 같다.
+
+<BookingRulesDiagram />
+
+DB는 PostgreSQL을 쓴다.
+
+## 겹침을 막는 방법
+
+### 확인하고 넣기
+
+가장 먼저 떠오르는 방법은 넣기 전에 확인하는 것이다. 같은 회의실에 겹치는 예약이 있는지 조회하고 없으면 넣는다.
+
+```sql
+-- 1. 같은 회의실에 겹치는 예약이 있는지 본다
+select id from booking
+ where room = :room
+   and starts_at < :ends_at
+   and ends_at > :starts_at;
+
+-- 2. 없으면 넣는다
+insert into booking (room, starts_at, ends_at)
+values (:room, :starts_at, :ends_at);
+```
+
+두 예약은 양쪽 모두 상대가 끝나기 전에 시작할 때 겹친다. 맞닿은 10:00–11:00과 11:00–12:00은 `11:00 < 11:00`이 거짓이라 겹치지 않는다.
+
+요청이 하나씩 들어오면 이것으로 충분하다. 두 요청이 동시에 들어오면 둘 다 1번을 마친 뒤에 2번을 실행할 수 있다. 그러면 둘 다 겹치는 예약이 없다고 보고 넣는다.
+
+두 요청이 확인과 저장 사이에서 엇갈리는 순서는 다음과 같다.
+
+<CheckThenInsertDemo client:visible />
+
+PostgreSQL 17에서 세션 두 개로 재현했다. 세션 1은 확인한 뒤 1초를 쉬고 넣게 해서 틈을 넓혔다.
+
+| 경과 | 세션 1 (A 10:00–11:00) | 세션 2 (A 10:30–11:30) |
+| --- | --- | --- |
+| 0 ms | 조회 → 0건 | |
+| 221 ms | | 조회 → 0건 |
+| 223 ms | | 넣고 커밋 |
+| 1,004 ms | 넣고 커밋 | |
+
+두 세션 모두 성공했다. 회의실 A에는 10:00–11:00과 10:30–11:30이 함께 남았다.
+
+### 잠그고 확인하기
+
+확인하는 동안 다른 요청이 끼어들지 못하게 잠그는 방법도 있다. `select ... for update`는 조회한 행에 잠금을 건다. 같은 행을 잠그려는 다른 트랜잭션은 앞 트랜잭션이 끝날 때까지 기다린다.
+
+```sql
+select id from booking
+ where room = :room
+   and starts_at < :ends_at
+   and ends_at > :starts_at
+   for update;
+```
+
+그런데 막아야 하는 순간은 겹치는 예약이 아직 없을 때다. 조회 결과가 0건이면 잠글 행도 없다. PostgreSQL에는 MySQL InnoDB의 [넥스트 키 락](/ko/blog/pessimistic-lock-like-feature/)처럼 행 사이의 빈 구간을 잠그는 장치가 없다. 같은 실험을 `for update`로 돌려도 두 세션 모두 0건을 보고 넣었다.
+
+잠글 행이 없으니 요청 2도 기다리지 않고 그대로 지나간다.
+
+<CheckThenInsertDemo lock client:visible />
+
+격리 수준을 SERIALIZABLE로 올리면 겹침은 막힌다. 같은 실험에서 세션 1의 INSERT가 직렬화 실패(`40001`)로 끊겼다. 대신 실패한 트랜잭션은 앱이 처음부터 다시 실행해야 한다. 예약이 몰리는 부하에서는 트랜잭션의 절반 가까이가 다시 실행돼 응답이 그만큼 느려졌다.
+
+확인하는 단계에서 막으려 하면 확인과 저장 사이에 틈이 남는다. 그래서 처음부터 시간이 겹치지 않게 값을 저장할 방법이 없을지 고민했다.
+
+### 겹침을 비교하는 UNIQUE
+
+저장하는 순간에 DB가 거부하게 하는 장치는 제약조건이다. UNIQUE 제약조건은 같은 값이 이미 있으면 넣지 않는다. 두 트랜잭션이 같은 값을 동시에 넣어도 하나만 들어간다.
+
+그런데 UNIQUE는 「같다(`=`)」만 비교한다. `(room, starts_at)`에 UNIQUE를 걸어도 10:00–11:00과 10:30–11:30은 시작 시각이 달라서 통과한다. 예약에 필요한 조건은 「회의실이 같고(`=`) 시간이 겹치면(`&&`) 거부」다.
+
+PostgreSQL의 EXCLUDE 제약조건으로 이 조건을 그대로 쓸 수 있다. EXCLUDE는 열마다 비교 연산자를 고를 수 있는 UNIQUE다. 연산자를 모두 `=`로 두면 UNIQUE와 같다.
+
+두 제약조건이 새 행을 기존 행과 비교하는 방식을 나란히 놓았다.
+
+<UniqueVsExcludeDiagram />
+
+시간을 칸으로 쪼개 칸마다 행을 두면 겹침을 막을 수 있다. 하지만 요구사항 8번처럼 시간을 분 단위로 고르면 칸이 맞지 않는다. 이 방법은 마지막에 EXCLUDE와 비교한다.
+
+그래서 EXCLUDE 제약조건으로 정했다.
+
+## EXCLUDE 제약조건
+
+예약 테이블에 EXCLUDE 제약조건을 걸면 다음과 같다.
+
+```sql
+create extension if not exists btree_gist;
+
+create table booking (
+  id           bigint generated always as identity primary key,
+  room         text not null,
+  starts_at    timestamptz not null,
+  ends_at      timestamptz not null check (ends_at > starts_at),
+  cancelled_at timestamptz,
+  constraint booking_no_overlap exclude using gist (
+    room with =,
+    tstzrange(starts_at, ends_at, '[)') with &&
+  ) where (cancelled_at is null)
+);
+```
+
+PostgreSQL 공식 문서의 [범위 타입](https://www.postgresql.org/docs/17/rangetypes.html#RANGETYPES-CONSTRAINT) 장에도 같은 모양의 회의실 예약 예제가 있다.
+
+새 행이 들어오면 PostgreSQL은 괄호 안의 두 조건으로 새 행을 기존 행과 비교한다. 두 비교가 모두 참인 행이 하나라도 있으면 새 행을 거부한다.
+
+- `room with =` — 회의실이 같다.
+- `tstzrange(starts_at, ends_at, '[)') with &&` — 시간 범위가 겹친다. `tstzrange`는 시작과 끝으로 범위 값을 만들고 `&&`는 두 범위가 겹치는지 본다.
+- `'[)'` — 시작은 포함하고 끝은 빼는 반열린 구간이다. 10:00–11:00은 11:00을 갖지 않아서 11:00–12:00과 겹치지 않는다.
+- `where (cancelled_at is null)` — 취소한 예약은 비교에서 빠진다. 취소하는 순간 그 시간을 다시 잡을 수 있다. 행을 삭제하면 비교할 행 자체가 사라진다.
+
+맞닿은 두 예약이 경계 11:00을 어떻게 나눠 갖는지 `'[)'`와 `'[]'`로 비교했다.
+
+<RangeBoundsDiagram />
+
+`'[]'`로 쓰면 앞 예약의 끝과 뒤 예약의 시작이 11:00 한 점을 함께 가져서 맞닿은 예약이 전부 거부된다.
+
+맨 위의 `btree_gist`는 GiST 인덱스에서 `text`의 `=`를 쓰기 위한 확장이다. GiST는 범위의 `&&`는 알지만 일반 값의 `=`는 모른다. 이 확장 없이 만들면 `data type text has no default operator class for access method "gist"` 오류가 난다. PostgreSQL 13부터는 trusted 확장이라 데이터베이스에 CREATE 권한만 있으면 슈퍼유저가 아니어도 설치할 수 있다.
+
+시간을 옮기는 UPDATE도 같은 검사를 거친다. 다른 예약과 겹치게 옮기면 거부되고 자기 옛 시간과 겹치는 것은 문제가 되지 않는다.
+
+요구사항과 짝지으면 다음과 같다.
+
+| 요구사항 | 지키는 곳 |
+| --- | --- |
+| 1. 같은 회의실에 겹치는 예약 금지 | `room with =`와 `tstzrange(...) with &&` |
+| 2. 맞닿은 예약 허용 | `'[)'` |
+| 3. 취소·삭제하면 시간을 바로 풀기 | `where (cancelled_at is null)`, 삭제한 행은 비교 대상에서 사라짐 |
+| 4. 시간을 바꿀 때도 겹침 금지 | UPDATE도 같은 검사를 거침 |
+| 5. 상관없는 요청끼리 기다리지 않기 | 원리 절 |
+| 6·7. 연결 예약 | 연결 예약 절 |
+| 8. 분 단위로 자유롭게 | 시각을 그대로 범위로 저장 |
+
+겹치는 예약을 넣으면 다음 오류가 난다.
+
+```text
+ERROR:  conflicting key value violates exclusion constraint "booking_no_overlap"
+DETAIL:  Key (room, tstzrange(starts_at, ends_at, '[)'::text))=(A, ["2026-10-05 01:30:00+00","2026-10-05 02:30:00+00")) conflicts with existing key (room, tstzrange(starts_at, ends_at, '[)'::text))=(A, ["2026-10-05 01:00:00+00","2026-10-05 02:00:00+00")).
+```
+
+SQLSTATE는 `23P01`(exclusion_violation)이다. 서버는 이 코드만 골라 사용자에게 보여 줄 문구로 바꾼다.
+
+```ts
+try {
+  await insertBooking(input)
+} catch (error) {
+  if ((error as { code?: string }).code === '23P01') {
+    throw new Error('이미 예약된 시간입니다.')
+  }
+  throw error
+}
+```
+
+화면에서 미리 겹침을 검사하는 코드는 안내용으로만 남긴다. 겹침은 제약조건이 막는다.
+
+같은 회의실, 같은 시간에 20건을 동시에 넣어 봤다. 세션 20개가 같은 시각에 INSERT를 실행하도록 맞추고 10회 반복했다. 10회 모두 1건만 들어갔다.
+
+## 연결 예약
+
+4장의 `booking`은 행 하나가 회의실 하나를 잡는다. 요구사항 6번처럼 A+B를 한 예약으로 잡으려면 예약 하나에 회의실이 여러 개 있어야 한다. 그런데 EXCLUDE는 한 테이블 안의 행끼리만 비교한다.
+
+### 테이블 나누기
+
+그래서 예약을 두 테이블로 나눴다.
+
+```sql
+create table reservation (
+  id           bigint generated always as identity primary key,
+  title        text not null,
+  starts_at    timestamptz not null,
+  ends_at      timestamptz not null check (ends_at > starts_at),
+  cancelled_at timestamptz
+);
+
+create table reservation_room (
+  reservation_id bigint not null references reservation (id) on delete cascade,
+  room           text not null,
+  starts_at      timestamptz not null, -- reservation.starts_at 의 사본
+  ends_at        timestamptz not null, -- reservation.ends_at 의 사본
+  active         boolean not null,     -- reservation.cancelled_at is null 의 사본
+  primary key (reservation_id, room),
+  constraint reservation_room_no_overlap exclude using gist (
+    room with =,
+    tstzrange(starts_at, ends_at, '[)') with &&
+  ) where (active)
+);
+```
+
+`reservation`은 제목, 시간, 취소 여부의 원본이다. `reservation_room`은 예약이 잡은 회의실마다 한 행이고 겹침 검사에 필요한 시간과 취소 여부를 사본으로 담는다. EXCLUDE는 이 사본 테이블에 건다. A+B 예약은 `reservation` 1행과 `reservation_room` 2행이 되고, 회의실 하나만 잡는 예약은 `reservation_room` 1행이 된다.
+
+A+B 예약 하나가 두 테이블에 어떻게 저장되는지 그렸다.
+
+<LinkedTablesDiagram />
+
+예약은 한 트랜잭션에서 넣는다.
+
+```sql
+begin;
+insert into reservation (title, starts_at, ends_at)
+values ('주간 회의', '2026-10-05 10:00+09', '2026-10-05 11:00+09')
+returning id;
+
+insert into reservation_room (reservation_id, room, starts_at, ends_at, active)
+values (:id, 'A', '2026-10-05 10:00+09', '2026-10-05 11:00+09', true),
+       (:id, 'B', '2026-10-05 10:00+09', '2026-10-05 11:00+09', true);
+commit;
+```
+
+회의실 하나라도 겹치면 `23P01`이 나고 트랜잭션 전체가 롤백된다. `reservation` 행도 함께 사라지므로 A만 잡히고 B는 실패한 예약이 남지 않는다.
+
+A+B와 B+C가 같은 시간에 들어오면 회의실 B에서 부딪힌다.
+
+<LinkedRollbackDemo client:visible />
+
+A+B와 B+C를 같은 시간에 동시에 넣는 실험을 10회 반복했다. 10회 모두 한 예약만 남았고 회의실 없이 남은 `reservation` 행은 한 번도 없었다.
+
+### 허용 조합
+
+A+C처럼 허용하지 않는 조합은 DB가 아니라 앱 코드의 상수로 검사한다.
+
+```ts
+// 회의실 하나는 언제나 된다. 여러 개는 이어진 조합만 된다.
+const LINKED = ['A,B', 'B,C', 'A,B,C']
+
+function canBook(rooms: string[]) {
+  return rooms.length === 1 || LINKED.includes([...rooms].sort().join(','))
+}
+```
+
+### 사본
+
+시간과 취소 여부를 자식 행에 복사했으니 원본과 어긋날 수 있다. 서버는 부모를 바꾸는 트랜잭션에서 자식도 함께 고친다. 한 트랜잭션에서 고치므로 다른 요청은 한쪽만 바뀐 상태를 볼 수 없다.
+
+직접 SQL로 부모만 고치면 어긋난다. B+C 예약의 `cancelled_at`만 채웠더니 자식 두 행은 여전히 `active`였고, 같은 시간에 B를 새로 잡으려 하자 `23P01`이 났다. 취소했는데도 시간이 풀리지 않았다.
+
+그래서 점검 쿼리를 운영 문서에 둔다. 결과는 늘 0이어야 한다.
+
+```sql
+select count(*) from reservation r
+join reservation_room s on s.reservation_id = r.id
+where s.starts_at <> r.starts_at
+   or s.ends_at <> r.ends_at
+   or s.active <> (r.cancelled_at is null);
+```
+
+### 다른 구조
+
+검토했다가 쓰지 않은 구조는 다음과 같다.
+
+| 구조 | 판단 |
+| --- | --- |
+| 회의실마다 예약 행을 두고 그룹 id로 묶기 | 스키마는 가장 단순하다. 하지만 연결 예약 하나가 예약 여러 개로 흩어져서, 제목 같은 정보가 행마다 반복되고 수정·취소도 그룹 전체에 해야 한다. |
+| 한 행에 회의실 배열(`intarray`의 `&&`) | 사본이 없다. 대신 확장에 기대야 하고 회의실을 정수로 바꾸는 매핑이 생긴다. 실무 사례도 찾지 못했다. |
+| 연결 회의실을 따로 자원으로(「회의실 AB」) | 「AB는 A와 겹친다」를 `=` 비교로 나타낼 수 없다. DB로 막으려면 결국 회의실별 행으로 펼쳐야 한다. |
+| 사본을 트리거로 맞추기 | 직접 SQL로 부모만 고쳐도 어긋나지 않는다. 대신 쓰기 경로가 서버 코드와 트리거 두 곳으로 갈린다. |
+
+## 원리
+
+### 트랜잭션 번호
+
+트랜잭션은 처음으로 쓰기를 할 때 번호(xid)를 받는다. 행에는 그 행을 만든 트랜잭션 번호 `xmin`과 지운 트랜잭션 번호 `xmax`가 붙는다. 둘 다 시스템 열이라 `select xmin, xmax`로 바로 볼 수 있다.
+
+트랜잭션 3082798이 넣은 행은 `xmin`이 3082798, `xmax`가 0이었다. `xmax`가 0이면 아직 누구도 지우지 않은 행이다. 트랜잭션 3082799가 이 행을 고치자 `xmax`에 3082799가 적혔다.
+
+행에 두 번호가 적히는 순서를 그렸다.
+
+<TxIdDemo client:visible />
+
+PostgreSQL은 이 두 번호로 행을 누구에게 보여 줄지 정한다.
+
+### 스냅샷
+
+SELECT는 스냅샷을 기준으로 행을 본다. 스냅샷은 그 순간 어떤 트랜잭션이 끝났는지를 적은 기록이다. `3082769:3082769:`처럼 적는다. 가운데 값부터는 아직 끝나지 않은 번호로 보고, 뒤에 붙는 목록에는 그보다 작은 번호 가운데 아직 진행 중인 번호가 들어간다. 끝나지 않은 트랜잭션이 넣은 행은 보이지 않는다. 기본 격리 수준인 READ COMMITTED는 문장마다 스냅샷을 새로 찍는다.
+
+세션 1이 행을 넣고 커밋하지 않은 동안 세션 2의 스냅샷은 `3082769:3082769:`였다. 세션 1의 번호 3082769가 아직 끝나지 않은 쪽에 있어서 세션 2는 그 행을 보지 못하고 0건을 받았다. 세션 1이 커밋한 뒤의 스냅샷은 `3082770:3082770:`이었고, 이번에는 행이 보여 1건이 나왔다.
+
+스냅샷의 경계가 옮겨 가면서 행이 보이게 되는 과정이다.
+
+<SnapshotDemo client:visible />
+
+3장의 「확인하고 넣기」는 상대가 아직 넣지 않았을 때만 뚫리는 것이 아니다. 상대가 넣었더라도 커밋 전이면 조회는 그 행을 보지 못한다.
+
+### 커밋 전 행까지 보는 검사
+
+EXCLUDE 검사는 SELECT와 다르게 본다. PostgreSQL 소스의 `src/backend/executor/execIndexing.c`를 보면 검사는 dirty snapshot으로 인덱스를 훑는다. dirty snapshot은 진행 중인 트랜잭션이 넣은 행도 있는 것으로 치고, 그 행을 넣은 트랜잭션 번호를 함께 돌려준다.
+
+세션 1이 A 10:00–11:00을 넣고 커밋하지 않은 동안, 세션 2의 SELECT는 A 10:30–11:30과 겹치는 예약을 찾지 못했다. 그런데 세션 2가 A 10:30–11:30을 넣자 INSERT가 멈췄다. 검사는 세션 1의 커밋 전 행을 봤다.
+
+같은 테이블을 SELECT와 검사가 각각 어떻게 보는지 나란히 놓았다.
+
+<DirtyCheckDemo client:visible />
+
+### 상대 트랜잭션 기다리기
+
+검사가 진행 중인 행을 만나면 그 트랜잭션이 끝날 때까지 기다린다. 기다리는 데는 트랜잭션 번호에 거는 잠금을 쓴다. 트랜잭션은 번호를 받으면서 그 번호에 배타 잠금(ExclusiveLock)을 걸고, 끝날 때 푼다. 검사는 상대 번호에 공유 잠금(ShareLock)을 요청한다. 배타 잠금이 풀려야 공유 잠금을 얻으므로 상대가 끝날 때까지 기다린다.
+
+세션 2가 기다리는 동안 `pg_locks`는 다음과 같았다.
+
+| 세션 | 잠금 대상 | 모드 | 얻음 |
+| --- | --- | --- | --- |
+| 세션 1 | 트랜잭션 3082775 | ExclusiveLock | t |
+| 세션 2 | 트랜잭션 3082776 | ExclusiveLock | t |
+| 세션 2 | 트랜잭션 3082775 | ShareLock | f |
+
+`pg_stat_activity`에서 세션 2의 대기 이벤트는 `Lock / transactionid`였다. 세션 2도 자기 번호 3082776을 이미 받아 두었다. 새 행을 먼저 넣은 뒤에 검사하기 때문이다.
+
+상대가 끝나면 검사를 처음부터 다시 한다. 소스에서는 `XactLockTableWait`로 기다리고 `goto retry`로 돌아간다. 세션 1이 커밋했으면 그 행은 살아 있는 행이라 `23P01`로 거절하고, 롤백했으면 없는 행이라 통과한다.
+
+| 세션 1 | 세션 2의 INSERT |
+| --- | --- |
+| 커밋 | 2,487 ms 기다린 뒤 `23P01` |
+| 롤백 | 2,512 ms 기다린 뒤 성공 |
+
+세션 1은 행을 넣고 3초 동안 커밋을 미뤘다. 기다린 시간은 그 3초 가운데 남은 시간이다.
+
+기다린 뒤 결과가 갈리는 두 경우를 이어서 그렸다.
+
+<WaitForTxDemo client:visible />
+
+### GiST 인덱스
+
+EXCLUDE 제약조건을 만들면 PostgreSQL은 제약조건과 같은 이름의 GiST 인덱스를 함께 만든다. 검사는 테이블을 처음부터 훑지 않고 이 인덱스에서 겹치는 행만 찾는다.
+
+GiST도 B-tree처럼 균형 트리다. 다른 점은 위 페이지의 항목에 적는 값이다. 위 페이지의 항목에는 아래 페이지의 항목을 모두 덮는 값이 적힌다. 시간 범위라면 아래 범위들을 모두 감싸는 범위다.
+
+10만 건을 회의실 10개에 2,500일 치, 하루 4건씩 넣고 GiST의 페이지를 열어 봤다. 회의실 열이 섞인 키는 pageinspect로 읽히지 않아서 시간 범위만으로 만든 GiST로 구조를 봤다.
+
+- 루트 — 항목이 9개 있고 항목마다 약 8개월씩을 덮는다. 세 번째 항목은 2027년 5월 26일부터 2028년 2월 4일까지다.
+- 가운데 — 루트 항목이 가리키는 페이지에는 항목이 102개 있고 항목마다 2\~3일씩을 덮는다.
+- 잎 — 실제 행을 가리킨다. 6월 15일 11:00–12:00 항목은 회의실마다 하나씩 10개다.
+
+2027년 6월 15일 10:30–11:30과 겹치는 행을 찾으면, 루트에서는 세 번째 항목으로만 내려가고 가운데 페이지에서도 6월 15일을 덮는 항목으로만 내려간다. 다른 가지는 열어 보지 않는다.
+
+검사가 겹치는 가지만 따라 내려가는 모습을 그렸다.
+
+<GistSearchDemo client:visible />
+
+회의실 열은 btree_gist가 같은 방식으로 다룬다. 위 페이지 항목에 아래 회의실 값의 범위를 적어 두고 회의실 C를 찾을 때 C가 들어갈 수 없는 가지는 건너뛴다. 제약조건의 인덱스는 1,077페이지인데 여기서 회의실 C의 같은 조회는 인덱스 4페이지와 테이블 1페이지만 읽었다.
+
+### 기다리는 범위
+
+검사가 기다리는 상대는 인덱스에서 찾은 행을 넣은 트랜잭션뿐이다. 다른 회의실이나 겹치지 않는 시간의 행은 찾는 대상이 아니어서 기다릴 일도 없다. 요구사항 5번은 이렇게 지켜진다.
+
+세션 1이 A 10:00–11:00을 넣고 3초 동안 커밋을 미루는 사이, 0.5초 뒤에 다른 세션에서 예약을 넣어 봤다. 세 경우는 각각 따로 돌렸고 매번 되돌렸다.
+
+| 넣은 예약 | 걸린 시간 |
+| --- | --- |
+| 다른 회의실 B 10:00–11:00 | 0.70 ms |
+| 같은 회의실 A, 맞닿은 11:00–12:00 | 0.64 ms |
+| 같은 회의실 A, 겹치는 10:30–11:30 | 2,442 ms |
+
+겹치는 경우만 세션 1이 끝날 때까지 기다렸다. 2,442 ms는 쓰기가 느려서 걸린 시간이 아니라 세션 1이 커밋을 미룬 3초 가운데 남은 시간이다.
+
+세 요청 가운데 겹치는 하나만 기다리는 장면이다.
+
+<WaitScopeDemo client:visible />
+
+### 취소와 수정
+
+UPDATE는 행을 그 자리에서 고치지 않는다. 원래 행의 `xmax`에 자기 번호를 적고 새 버전을 다른 자리에 쓴다. 행의 자리는 `(페이지, 순서)`로 적는다. 실측에서 3082798이 넣은 행은 `(0,1)`에 있었다. 3082799가 이 행을 고치자 `(0,2)`에 `xmin`이 3082799인 새 버전이 생겼고, `(0,1)`에는 `xmax` 3082799와 새 버전의 자리 `(0,2)`가 적혔다.
+
+취소는 `cancelled_at`을 채우는 UPDATE다. 새 버전은 `where (cancelled_at is null)`에 맞지 않아서 제약조건의 인덱스에 들어가지 않는다. 인덱스에는 원래 행의 항목만 남고, 원래 행의 `xmax`에는 취소한 트랜잭션의 번호가 적혀 있다.
+
+그래서 취소가 커밋되기 전에 같은 시간을 잡으려는 요청은 원래 행을 만나 취소한 트랜잭션을 기다린다. 취소가 커밋되면 원래 행이 지워진 행이 되어 통과하고, 롤백되면 원래 행이 살아 있어 `23P01`로 거절된다. 실측에서는 각각 2,502 ms와 2,449 ms를 기다렸다.
+
+취소하는 동안 버전과 인덱스가 어떻게 바뀌는지 그렸다.
+
+<RowVersionDemo mode="cancel" client:visible />
+
+시간을 옮기는 수정에서는 새 버전이 새 시간으로 인덱스에 들어가 검사를 받는다. 이때 검사는 자기 원래 행도 찾는다. 하지만 dirty snapshot은 자기 트랜잭션이 지운 행을 없는 행으로 본다. 소스의 `heapam_visibility.c`에 있는 `HeapTupleSatisfiesDirty`가 이 판정을 한다. 그래서 4장에서 본 것처럼 10:00–11:00을 10:30–11:30으로 옮겨도 자기 자신과 부딪히지 않는다.
+
+수정할 때 검사가 원래 행을 넘기는 순서다.
+
+<RowVersionDemo mode="move" client:visible />
+
+### 넣은 뒤 검사
+
+UNIQUE와 EXCLUDE는 충돌을 확인하는 순서가 다르다. `execIndexing.c`의 머리 주석이 이 차이를 설명한다.
+
+UNIQUE는 인덱스에 항목을 넣으면서 같은 키가 이미 있는지 함께 확인한다. 확인과 넣기가 한 번에 일어나서 두 세션이 같은 키를 동시에 넣어도 하나만 성공한다. 같은 키를 넣은 트랜잭션이 아직 진행 중이면 자기 항목은 넣지 않은 채로 그 트랜잭션을 기다린다.
+
+EXCLUDE는 항목부터 넣고, 그다음 인덱스를 따로 훑어 겹치는 행을 찾는다. 앞에서 본 커밋 전 행까지 보는 검사와 상대 트랜잭션 기다리기가 이 두 번째 단계에서 일어난다.
+
+그래서 두 세션이 거의 같은 순간에 넣으면 둘 다 항목을 넣은 뒤에 검사를 시작한다. 각자 상대의 커밋 전 항목을 찾아 상대가 끝나기를 기다리는데, 상대도 이쪽을 기다리고 있어서 어느 쪽도 끝나지 않는다. 소스 주석도 이 경우를 적어 두었다.
+
+> There is a chance of deadlock, if two backends insert a tuple at the same time, and then perform the scan to check for conflicts. They will find each other's tuple, and both try to wait for each other. The deadlock detector will detect that, and abort one of the transactions. That's fairly harmless, as one of them was bound to abort with a "duplicate key error" anyway, although you get a different error message.
+
+주석은 어차피 한쪽은 실패할 요청이니 오류 메시지만 다를 뿐이라고 덧붙인다.
+
+같은 순간에 들어온 두 요청이 UNIQUE와 EXCLUDE에서 어떻게 갈리는지 위아래로 놓았다.
+
+<InsertThenCheckDemo client:visible />
+
+UNIQUE로도 4장의 20건 동시 실험을 해 봤다. 검사 순서만 비교하려고 `(room, starts_at)`에 UNIQUE를 걸고 시작 시각까지 같은 20건을 같은 순간에 넣었다. 10회 반복하는 동안 매번 1건이 들어가고 19건은 `23505`로 거절됐다. 교착은 한 번도 없었고 가장 늦은 요청도 32 ms 안에 끝났다. EXCLUDE는 같은 실험에서 10회 중 4회 교착이 났다.
+
+### 교착
+
+교착은 PostgreSQL이 직접 푼다. 잠금을 기다리기 시작한 세션은 `deadlock_timeout`만큼 기다린 뒤 교착 검사를 돌린다. 기본값은 1초다. 검사는 누가 누구를 기다리는지 따라가며 고리를 찾고, 고리가 있으면 검사를 돌린 세션을 `40P01 deadlock detected`로 끝낸다. 끝난 세션이 롤백되면 그 세션이 넣은 항목도 사라지고, 남은 세션은 다시 검사해 통과한다.
+
+서로를 기다리던 두 세션 가운데 한쪽이 물러나기까지의 과정이다.
+
+<DeadlockDemo client:visible />
+
+데이터는 안전하다. 겹치는 두 예약 가운데 하나만 남는다. 대신 진 쪽은 `23P01`이 아니라 `40P01`을 받고, 교착 검사를 기다린 1초만큼 늦게 받는다.
+
+4장의 20건 실험에서 교착이 난 4회는 진 19건이 모두 `40P01`을 받았다. 같은 실험을 시간을 재며 다시 10회 돌리자 6회가 그렇게 끝났다. 이때 `40P01`은 1초에 한 건꼴로 났고 이긴 1건도 18\~19초 뒤에야 들어갔다. 나머지 4회는 모두 41 ms 안에 `23P01`로 끝났다.
+
+한 세션이 물러나면 그 세션을 기다리던 나머지가 깨어나 검사를 다시 한다. 남은 세션들도 항목을 이미 넣어 둔 상태라 다시 서로를 기다리고, 교착 검사는 또 1초 뒤에 돈다.
+
+교착이 이어진 라운드 하나에서 세션마다 끝난 시각을 막대로 옮겼다.
+
+<DeadlockChainDemo client:visible />
+
+연결 예약에서는 다른 모양의 교착도 난다. A+B 예약 X와 Y를 같은 새 시간으로 동시에 옮긴다고 하자. X는 A부터, Y는 B부터 고치면 X는 B에서 Y가 고친 행을 만나 Y를 기다리고, Y는 A에서 X가 고친 행을 만나 X를 기다린다. 두 행을 고치는 사이에 1초를 두고 재 보니 2.09초 뒤에 X가 `40P01`로 끝났다. 둘 다 A부터 고치면 Y는 A에서 X를 기다리기만 한다. X가 B까지 고쳐 커밋하자 Y는 1.09초에 `23P01`을 받았다. 두 시간의 차이 1초가 교착 검사를 기다린 시간이다.
+
+고치는 순서만 다른 두 경우를 차례로 재생한다.
+
+<WriteOrderDemo client:visible />
+
+이 교착은 쓰는 순서를 고정해서 막는다. 회의실 행을 언제나 회의실 순서로 쓰면 두 트랜잭션은 처음 겹치는 회의실에서 만나고 늦게 온 쪽이 거기서 기다린다. 기다리는 쪽은 그 뒤의 회의실을 아직 쓰지 않았으니 고리가 생기지 않는다. 넣을 때는 5장처럼 `values`를 회의실 순서로 적는다. UPDATE 한 문장으로는 행을 고치는 순서를 정할 수 없어서 고칠 때는 회의실 순서로 한 행씩 UPDATE한다.
+
+```ts
+// 회의실 순서로 한 행씩 고친다.
+for (const room of [...rooms].sort()) {
+  await trx.query(
+    'update reservation_room set starts_at = $1, ends_at = $2 where reservation_id = $3 and room = $4',
+    [startsAt, endsAt, reservationId, room],
+  )
+}
+```
+
+순서를 고정해도 같은 회의실을 같은 순간에 쓰는 교착은 남는다. 5장의 A+B와 B+C는 둘 다 회의실 순서로 썼는데도 10회 중 2회는 진 쪽이 `40P01`을 받았다. 둘이 B를 거의 같은 순간에 쓴 경우다. 이미 같은 회의실에 있는 두 세션은 순서로 갈라놓을 수 없다.
+
+이 교착은 재시도로 처리한다. `40P01`을 받으면 트랜잭션을 처음부터 다시 실행한다. 다시 실행할 때는 이긴 쪽이 커밋한 뒤라 보통 `23P01`로 끝나고, 사용자는 4장의 「이미 예약된 시간입니다」를 받는다.
+
+```ts
+async function withDeadlockRetry<T>(work: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await work() // 트랜잭션 하나를 처음부터 끝까지 실행한다.
+    } catch (error) {
+      if ((error as { code?: string }).code !== '40P01' || attempt >= 3) throw error
+    }
+  }
+}
+```
+
+예약 서버에 두 요청을 같은 순간에 보내는 실험을 돌렸다. 재시도가 없을 때는 80회 중 6회, 진 사용자가 `deadlock detected`를 그대로 받았다. 재시도를 넣고 200회를 돌리자 200회 모두 한쪽은 예약되고 다른 쪽은 「이미 예약된 시간입니다」를 받았다. 그사이 DB 로그에는 교착이 34번 찍혔다. 진 쪽의 응답 시간은 중앙값 18 ms, 최대 1.2초였다.
+
+한 행을 넣는 INSERT라면 `on conflict do nothing`으로 교착을 피할 수도 있다. 이 문장은 충돌하면 트랜잭션 전체가 아니라 넣던 행만 물려야 해서 교착이 나면 안 된다. 그래서 둘이 서로를 기다리지 않고 번호가 큰 트랜잭션이 넣던 행을 먼저 물린 뒤 기다린다. 이 문장으로 20건 동시 실험을 10회 돌리자 매번 1건이 들어가고 19건은 0행을 받았다. 오류도 교착도 없었고 가장 늦은 요청도 59 ms 안에 끝났다. 다만 거절이 오류가 아니라 0행으로 돌아오므로 연결 예약처럼 여러 행을 넣을 때는 행마다 결과를 확인해야 한다. UPDATE에는 이 경로가 없다. 예약을 옮기는 수정은 여전히 교착이 날 수 있어서 재시도는 그대로 둔다.
+
+재시도로 처리하는 방식이 맞는 때는 같은 회의실, 같은 시간에 몇 건이 드물게 부딪히는 경우다. 수십 건이 한꺼번에 몰리면 1초씩 이어지는 교착이 그대로 응답 시간이 된다.
+
+## 슬롯을 미리 만들어 두면
+
+EXCLUDE의 교착은 겹치는 범위를 미리 잠글 수 없어서 생긴다. 잠글 행이 아직 없으니 EXCLUDE는 항목부터 넣고 나서 검사한다. 3장에서 미뤄 둔 방법은 반대로 잠글 행을 미리 만들어 둔다. 시간을 칸으로 쪼개 회의실과 칸마다 행을 하나씩 넣어 두는 방법이다. 이렇게 미리 만들어 둔 칸 행을 슬롯이라고 부른다.
+
+### 칸을 잡는 방법
+
+회의실마다 15분 칸을 미리 넣어 둔다. `reservation_id`가 비어 있으면 빈 칸이다.
+
+```sql
+create table room_slot (
+  room           text        not null,
+  slot_start     timestamptz not null,
+  reservation_id bigint references reservation (id), -- null이면 빈 칸
+  primary key (room, slot_start)
+);
+```
+
+예약은 빈 칸을 내 것으로 바꾸는 일이다. A 10:00–11:00이면 칸 4개를 잡는다. `:id`는 같은 트랜잭션에서 먼저 넣은 `reservation` 행의 번호다.
+
+```sql
+begin;
+-- 빈 칸을 회의실·시각 순서로 잠근다.
+select slot_start from room_slot
+where room = 'A'
+  and slot_start >= '2026-10-05 10:00+09' and slot_start < '2026-10-05 11:00+09'
+  and reservation_id is null
+order by room, slot_start
+for update;
+
+-- 4행을 잠갔을 때만 칸을 고친다. 아니면 롤백한다.
+update room_slot set reservation_id = :id
+where room = 'A'
+  and slot_start >= '2026-10-05 10:00+09' and slot_start < '2026-10-05 11:00+09';
+commit;
+```
+
+잠근 칸이 4개보다 적으면 그사이 누가 먼저 잡은 칸이 있다는 뜻이다. 그때는 롤백하고 「이미 예약된 시간입니다」를 돌려준다. 칸 하나는 예약 하나만 가질 수 있어서 겹치는 예약이 생기지 않는다. 연결 예약 A+B는 `room in ('A', 'B')`로 두 회의실의 칸 8개를 한 번에 잠근다.
+
+잠그는 순서를 `order by`로 정한 데는 이유가 있다. 교착 절에서 본 것처럼 UPDATE 한 문장으로는 행을 고치는 순서를 정할 수 없다. 실제로 위 UPDATE의 실행계획은 테이블에 행이 놓인 순서대로 읽는 Bitmap Heap Scan이었다. 잠그는 SELECT는 `room, slot_start`로 정렬한 다음 잠근다.
+
+### 같은 칸을 동시에 잡으면
+
+두 요청이 같은 칸을 잡으려 하면 이번에는 같은 행을 두고 다툰다. 먼저 잠근 쪽이 행 잠금을 쥐고, 늦은 쪽은 그 잠금이 풀리기를 기다린다. 먼저 잠근 쪽이 커밋하면 늦은 쪽은 READ COMMITTED 규칙대로 그 행의 최신 버전을 다시 읽고 `where` 조건을 다시 따진다. `reservation_id is null`이 거짓이 되었으니 그 칸은 결과에서 빠지고, 잠근 칸 수가 모자라 롤백한다.
+
+10:00–11:00과 10:30–11:30이 같은 순간에 들어온 경우를 칸 단위로 그렸다.
+
+<SlotContentionDemo client:visible />
+
+늦은 쪽은 앞 트랜잭션이 커밋하자마자 거절된다. 모두 회의실·시각 순서로 잠그므로 서로를 기다리는 고리가 생기지 않고, 교착 검사를 기다리는 1초도 없다.
+
+슬롯으로도 4장의 20건 실험을 했다. 10회 반복하는 동안 매번 1건이 4칸을 잡고 나머지 19건은 한 칸도 잠그지 못해 롤백했다. 교착은 없었고 가장 늦은 요청도 178 ms 안에 끝났다. 10:00–11:00과 10:30–11:30처럼 일부만 겹치는 두 요청은 늦은 쪽이 2칸만 잠가 롤백했고 32 ms 안에 끝났다. 연결 예약 A+B와 B+C도 10회 모두 교착 없이 한쪽만 남았다.
+
+잠그는 순서는 여기서도 지켜야 한다. 일부러 X는 A부터, Y는 B부터 한 회의실씩 잠그고 사이에 1초를 두자 2.01초 뒤에 한쪽이 `40P01`을 받았다. 행 잠금도 반대 순서로 잡으면 서로를 기다린다.
+
+### 트레이드오프
+
+같은 칸에 20건이 같은 순간에 몰린 실측 라운드를 하나씩 골라 나란히 놓았다. EXCLUDE 쪽은 교착이 이어진 라운드다.
+
+<BurstCompareDemo client:visible />
+
+평상시 비용은 2029년 한 해를 1시간 A+B+C 예약 4,380건으로 가득 채우며 쟀다. 예약끼리 겹치지 않게 하고 클라이언트 4개로 넣었다. 아래 표의 슬롯은 15분 칸이다.
+
+슬롯으로 얻는 것은 세 가지다.
+
+| 항목 | 슬롯 대 EXCLUDE |
+| --- | --- |
+| 같은 순간에 20건 | 178 ms 안에 끝남 대 교착이 이어지면 18\~19초 |
+| `40P01` 재시도 | 필요 없음 대 필요 |
+| 빈 시간 목록 | 빈 칸을 그대로 읽음 대 `range_agg`로 계산 |
+
+슬롯에서는 늦은 쪽이 행 잠금을 기다렸다가 앞 트랜잭션이 커밋하는 즉시 거절된다. 잡는 순서만 지키면 교착이 없어서 같은 순간의 교착을 처리할 재시도 코드도 필요 없다. 빈 시간을 보여 줄 때도 `reservation_id is null`인 칸을 읽으면 된다. EXCLUDE에서는 하루 범위에서 `range_agg`로 모은 예약 범위를 빼는 쿼리로 빈 구간을 구한다.
+
+그 대신 치르는 대가는 다음과 같다.
+
+| 항목 | 슬롯 대 EXCLUDE |
+| --- | --- |
+| 시간 단위 | 15분 경계만 대 분 단위 자유 |
+| 예약 한 건이 고치는 행 | 13 대 4 |
+| 평균 응답 | 1.48 ms 대 1.14 ms |
+| 건당 WAL | 3,672 B 대 1,579 B |
+| 1년 크기 | 빈 칸 3,968 kB, 다 채우면 5,128 kB 대 다 채워도 2,480 kB |
+| 미리 만드는 작업 | 필요 대 없음 |
+| 취소 | 시간 범위로 찾아야 0.44 ms 대 PK로 찾음 |
+| 시간 변경 | 옛 칸을 비운 뒤 새 칸 대 회의실 행 UPDATE |
+
+슬롯은 칸 경계에 맞는 시각만 저장한다. 15분 칸에서는 10:05에 시작할 수 없고, 50분 회의도 1시간을 차지한다. 칸 크기를 바꾸려면 앞으로의 칸을 모두 다시 만들고 이미 잡힌 예약을 새 칸에 다시 맞춰야 한다.
+
+예약 하나가 칸 12개를 잠그고 고치므로 쓰는 양이 는다. 행 수도 예약이 아니라 달력에 비례해서, 예약이 하나도 없어도 1년치 칸 52,560행이 있어야 한다.
+
+칸은 예약을 받을 기간만큼 미리 만들어 둔다. 1년치는 136 ms면 만들지만, 작업이 멈추면 그 뒤 날짜는 예약할 수 없다. 위 코드는 이때도 0칸을 잠그고 「이미 예약된 시간입니다」로 답하므로 칸이 없는 경우를 따로 가려야 한다. 회의실을 늘리거나 운영 시간을 바꿀 때도 칸을 새로 만들거나 지운다.
+
+취소할 때는 칸을 예약의 시간 범위로 찾아야 PK 인덱스를 탄다. `reservation_id`로만 찾으면 1년치 칸을 모두 읽는 Seq Scan이 되어 5.4 ms가 걸렸다. 시간을 바꿀 때는 옛 칸을 먼저 비워야 한다. 새 칸부터 빈 칸으로 잠그면 자기 칸이 빠져서, 1시간 예약을 30분 늦출 때 2칸만 잡혀 거절된다. 예약 시간이 칸 여러 행에 퍼져 있으니 취소나 변경 때 칸을 함께 고치지 않으면 시간이 풀리지 않는다.
+
+요구사항 8번처럼 분 단위로 고르게 하려면 칸이 1분이어야 한다. 그러면 1년치 칸은 788,400행, 57 MB이고 한 해를 채우면 117 MB가 된다. 예약 하나가 칸 180개를 고쳐서 평균 3.73 ms, 건당 WAL 66,963 B가 들었고, `reservation_id`로만 찾는 취소는 84.8 ms가 걸렸다.
+
+### 어울리는 서비스
+
+재고가 원래 정해진 단위로 있는 도메인에서는 슬롯이 자연스럽다. 공연 좌석, 날짜별 호텔 객실, 정해진 시간 칸 가운데서 고르는 진료 예약이 그렇다. 칸이 곧 파는 단위라서 칸 크기가 문제 되지 않고, 인기 공연처럼 같은 칸에 요청이 한꺼번에 몰리는 일도 잦다. 객실처럼 한 칸에 재고가 여러 개면 칸 행에 남은 수를 두고 `available = available - 1 where available > 0`으로 줄인다.
+
+시작과 끝을 자유롭게 고르는 회의실 예약에는 범위 제약이 맞는다. 4장에서 소개한 PostgreSQL 문서의 EXCLUDE 예제도 회의실 예약이다.
+
+### 어느 쪽을 골랐나
+
+이 회의실 예약에는 EXCLUDE와 재시도를 그대로 쓰기로 했다. 쓰는 순서를 고정하면 교착은 같은 회의실, 같은 시간을 거의 같은 순간에 잡을 때만 나고, 나더라도 데이터는 안전하다. 진 쪽이 1초쯤 늦게 「이미 예약된 시간입니다」를 받을 뿐이다. 그 1초를 없애려고 위 표의 대가를 치르는 것은 수지가 맞지 않았다. 시간이 15분 단위로 묶이고, 칸을 만드는 작업과 칸 행이라는 사본이 생기고, 예약마다 고치는 행이 4개에서 13개로 는다. 분 단위로 고르는 요구사항 8번까지 지키려면 칸이 1분이어야 해서 예약 하나가 칸 180개를 고친다.
+
+같은 칸에 요청이 몰리는 서비스라면 판단이 달라진다. 20건이 같은 순간에 몰렸을 때 EXCLUDE는 교착이 이어진 라운드에서 이긴 요청도 18\~19초를 기다렸고, 슬롯은 10회 모두 178 ms 안에 끝났다. 좌석 예매처럼 몰림이 흔한 곳에는 슬롯이 낫다.
+
+## 정리
+
+처음에 세운 여덟 가지 요구사항이 어디서 지켜지는지 모으면 다음과 같다.
+
+| 요구사항 | 지키는 곳 |
+| --- | --- |
+| 1. 같은 회의실에 겹치는 예약 금지 | EXCLUDE 제약조건의 `=`와 `&&` |
+| 2. 맞닿은 예약 허용 | 반열린 구간 `'[)'` |
+| 3. 취소·삭제하면 시간을 바로 풀기 | 부분 제약조건 `where (active)` |
+| 4. 시간을 바꿀 때도 겹침 금지 | UPDATE도 같은 검사 |
+| 5. 상관없는 요청끼리 기다리지 않기 | GiST 인덱스로 겹치는 행만 검사 |
+| 6. 연결 예약 | 부모와 회의실 행으로 나누고 회의실 행에 EXCLUDE |
+| 7. 전부 잡히거나 전부 실패 | 한 트랜잭션 |
+| 8. 분 단위로 자유롭게 | 시각을 그대로 범위로 저장 |
+
+DB가 막지 못하는 일은 앱이 맡는다.
+
+- `23P01`을 「이미 예약된 시간입니다」로 바꿔 보여 준다.
+- 같은 순간에 난 교착으로 `40P01`을 받으면 트랜잭션을 처음부터 다시 실행한다.
+- 연결 예약의 회의실 행은 언제나 회의실 순서로 쓴다.
+- A+C처럼 허용하지 않는 조합은 앱 상수로 거른다.
+- 회의실 행의 사본이 부모와 어긋나지 않았는지 점검 쿼리로 확인한다.
