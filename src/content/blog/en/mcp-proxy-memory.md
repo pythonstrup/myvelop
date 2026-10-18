@@ -17,7 +17,7 @@ My laptop fan would not stop, so I opened Activity Monitor. Typing "model" into 
 
 Start with the cause. A stdio MCP server is spawned directly by its client as a child process, and the two talk JSON-RPC over stdin/stdout. Here, "client" means each individual Claude Code session. If you are in the habit of keeping a session open in every terminal tab, every new session spawns a fresh copy of every registered MCP server.
 
-Then a multiplier lands on top. Register a server as `npx -y <package>` and an npm exec wrapper process (~85MB) comes up alongside the real server (~65MB). One server, two processes.
+Then a multiplier lands on top. Register a server as `npx -y <package>` and an npm exec wrapper process (\~85MB) comes up alongside the real server (\~65MB). One server, two processes.
 
 ![A process list where the same MCP servers appear dozens of times, differing only by PID](../../../assets/blog/mcp-proxy-memory/mcp-processes.png)
 
