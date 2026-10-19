@@ -1,0 +1,408 @@
+---
+title: "LLM 게이트웨이 - OpenRouter, LiteLLM, Cloudflare AI Gateway 중 무엇을 고를까"
+description: "OpenAI, Anthropic, Gemini API를 서비스 코드에서 직접 부르면 형식 차이, 장애 대응, 키와 비용 관리가 서비스마다 반복된다. LLM 게이트웨이가 이 반복을 어떻게 한곳으로 모으는지, 그 대가로 무엇을 내주는지 짚고 OpenRouter, LiteLLM, Cloudflare AI Gateway의 지연, fallback, 응답 캐시, 팀별 예산을 공식 문서와 공개된 측정으로 비교했다. 첫 토큰까지는 Cloudflare가 26~37ms, OpenRouter가 200ms 남짓 더 걸렸다."
+pubDate: "2026-10-19T20:15:00+09:00"
+tags: ["llm", "llm-gateway", "openrouter", "litellm", "cloudflare"]
+series: "LLM API 운영"
+seriesOrder: 1
+socialImage: "../../../assets/blog/llm-gateway/og.png"
+---
+import FallbackDemo from "@/materials/llm-gateway/FallbackDemo";
+import GatewayStructureDiagram from "@/materials/llm-gateway/GatewayStructureDiagram";
+import LatencyRaceDemo from "@/materials/llm-gateway/LatencyRaceDemo";
+
+## 들어가며
+
+회계 SaaS에 LLM 기능 세 개를 붙인다고 해 보자. 세무 상담 챗봇, 재무제표 분석, 문서 요약이다. 어느 모델을 쓸지 도메인별 벤치마크를 찾아보면, 2026년 10월 기준으로 기능마다 1위 회사가 다르다.
+
+- 세무: Vals AI의 [Tax Agent Bench](https://www.vals.ai/benchmarks/tax_agent_bench)에서 Anthropic 모델이 1\~3위를 차지했다.
+- 재무 분석: Vals AI의 [Finance Agent v2](https://www.vals.ai/benchmarks/fabv2)에서는 Google의 Gemini 4 Argon이 1위였다.
+- 요약: [Vectara 환각 리더보드](https://github.com/vectara/hallucination-leaderboard)에서 OpenAI의 `gpt-5.4-nano`는 원문에 없는 내용을 3.1%만 지어내 2위에 올랐다.
+
+기능마다 가장 나은 모델을 고르면 서비스 코드 안에서 SDK 세 개를 함께 부르게 된다.
+
+```typescript
+import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+export async function summarize(text: string) {
+  const res = await openai.chat.completions.create({
+    model: "gpt-5.4-nano",
+    messages: [
+      { role: "system", content: "세 문장으로 요약하라." },
+      { role: "user", content: text },
+    ],
+  });
+  return res.choices[0].message.content ?? "";
+}
+
+export async function answerTax(question: string) {
+  const res = await anthropic.messages.create({
+    model: "claude-opus-5-5",
+    max_tokens: 1024,
+    system: "세무 상담원으로서 답하라.",
+    messages: [{ role: "user", content: question }],
+  });
+  const block = res.content[0];
+  return block.type === "text" ? block.text : "";
+}
+
+export async function analyzeStatement(statement: string) {
+  const res = await gemini.interactions.create({
+    model: "gemini-4-argon",
+    system_instruction: "재무제표를 분석하는 애널리스트로서 답하라.",
+    input: statement,
+  });
+  return res.output_text;
+}
+```
+
+처음에는 이걸로 충분하다. 함수 세 개에 키 세 개라 관리할 것도 별로 없다. 문제는 서비스가 커지면서 생긴다. 모델이 늘고, 호출하는 서비스가 늘고, 한쪽 제공자가 멈추는 날이 온다. 그때마다 같은 코드를 서비스마다 다시 짜게 된다.
+
+LLM 게이트웨이는 이 문제를 앱과 제공자 사이의 한 겹에서 풀려는 도구다. 이 글은 API를 직접 부를 때 무엇이 불편해지는지부터 짚는다. 그다음 OpenRouter, LiteLLM, Cloudflare AI Gateway를 공식 문서와 공개된 측정으로 비교하고, 언제 무엇을 고르면 좋은지 정리한다.
+
+## API를 직접 부를 때 생기는 문제
+
+### 제공자마다 형식이 다르다
+
+위 세 함수는 모두 모델에 질문을 보내고 답을 받는데, 생김새는 제각각이다.
+
+| | OpenAI Chat Completions | Anthropic Messages | Gemini Interactions |
+| --- | --- | --- | --- |
+| 시스템 프롬프트 | `messages` 안의 `role: "system"` | 별도 `system` 필드 | 별도 `system_instruction` 필드 |
+| 최대 출력 토큰 | 선택 | `max_tokens` 필수 | 선택(`generation_config.max_output_tokens`) |
+| 응답 텍스트 | `choices[0].message.content` | `content[0].text` | `output_text` |
+| 토큰 사용량 | `usage.prompt_tokens`, `completion_tokens` | `usage.input_tokens`, `output_tokens` | `usage.total_input_tokens`, `total_output_tokens` |
+
+순위는 몇 달이면 바뀐다. Tax Agent Bench 1위인 Claude Fable 5.1은 49.19%로, 38.28%였던 이전 세대 Claude Fable 5보다 11%p 가까이 높다. 모델의 수명도 짧다. 2026년 7월 24일에 나온 Claude Opus 5는 석 달이 지난 지금 [레거시](https://platform.claude.com/docs/en/models/opus-5/overview)로 분류되어 있다. 새 모델이 나올 때마다 기능별 모델을 다시 고르게 되는데, 제공자가 바뀌면 모델 이름만 바꿔서는 끝나지 않는다. SDK를 바꾸고, 요청을 다시 짜고, 응답을 읽는 코드를 고친 뒤 배포해야 한다. 모델 하나를 시험해 보는 데 배포가 한 번 필요한 셈이다.
+
+### 장애 대응을 직접 짜야 한다
+
+어느 날 Anthropic이 429를 돌려주기 시작했다. 세무 상담 챗봇을 멈출 수는 없으니, Tax Agent Bench에서 Anthropic 다음 순위였던 Gemini로 넘기는 fallback을 붙인다.
+
+```typescript
+export async function answerTax(question: string) {
+  try {
+    const res = await anthropic.messages.create({
+      model: "claude-opus-5-5",
+      max_tokens: 1024,
+      system: SYSTEM,
+      messages: [{ role: "user", content: question }],
+    });
+    const block = res.content[0];
+    return block.type === "text" ? block.text : "";
+  } catch (err) {
+    if (!(err instanceof Anthropic.RateLimitError || err instanceof Anthropic.InternalServerError)) {
+      throw err;
+    }
+    const res = await gemini.interactions.create({
+      model: "gemini-4-argon",
+      system_instruction: SYSTEM,
+      input: question,
+    });
+    return res.output_text;
+  }
+}
+```
+
+같은 요청을 두 형식으로 두 번 쓰게 되고, 어떤 에러에서 넘길지 정해야 하고, 재시도 간격도 따로 챙겨야 한다. 요약과 재무 분석에도 같은 코드가 필요하다. 서비스가 셋이면 세 번 짠다.
+
+### 팀이 늘면 관리가 흩어진다
+
+이제 회사에서 LLM을 쓰는 팀이 다섯으로 늘었다고 해 보자.
+
+- API 키가 서비스마다 환경 변수로 흩어진다. 키 하나가 새면 어느 서비스의 키인지부터 찾아야 한다.
+- 누가 얼마를 썼는지 한곳에서 보이지 않는다. 청구서는 제공자마다 따로 나오고, 사용량 필드는 위 표처럼 이름이 달라 합산하기도 번거롭다.
+- 같은 조직 계정을 나눠 쓰면 한 팀의 트래픽이 다른 팀의 한도까지 함께 깎는다. 배치 작업 하나가 세무 상담 챗봇을 429로 멈추게 할 수 있다.
+
+하나하나는 서비스 코드로 풀 수 있는 문제다. 다만 서비스마다 같은 코드를 반복해야 하고, 그 코드가 서비스마다 조금씩 달라진다. 이 반복을 한곳으로 모은 것이 LLM 게이트웨이다.
+
+## LLM 게이트웨이란
+
+LLM 게이트웨이는 앱과 모델 제공자 사이에 서는 프록시다. 앱은 게이트웨이 하나에만 요청을 보내고, 게이트웨이가 요청을 알맞은 제공자로 넘긴 뒤 응답을 돌려준다. 이 글에서 다룰 세 게이트웨이는 모두 OpenAI Chat Completions 형식으로 요청을 받으므로 앱은 OpenAI SDK 하나만 쓰면 되고, Anthropic이나 Gemini로 가는 요청의 형식 변환은 게이트웨이가 맡는다.
+
+서비스와 제공자 사이의 연결이 어떻게 달라지는지 위아래로 놓고 보면 다음과 같다.
+
+<GatewayStructureDiagram />
+
+앞의 세 함수는 이렇게 하나로 줄어든다.
+
+```typescript
+import OpenAI from "openai";
+
+const llm = new OpenAI({
+  baseURL: process.env.LLM_GATEWAY_URL,
+  apiKey: process.env.LLM_GATEWAY_KEY,
+});
+
+async function ask(model: string, system: string, input: string) {
+  const res = await llm.chat.completions.create({
+    model,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: input },
+    ],
+  });
+  return res.choices[0].message.content ?? "";
+}
+
+export const summarize = (text: string) => ask("summarize", "세 문장으로 요약하라.", text);
+export const answerTax = (question: string) => ask("tax", "세무 상담원으로서 답하라.", question);
+export const analyzeStatement = (statement: string) =>
+  ask("finance", "재무제표를 분석하는 애널리스트로서 답하라.", statement);
+```
+
+`summarize`, `tax`, `finance`는 모델 이름이 아니라 게이트웨이에 정해 둔 별칭이다. 별칭을 어떤 모델에 연결할지는 게이트웨이 설정에서 정한다. 이 글에서 다룰 세 게이트웨이 모두 별칭을 둘 수 있는데 적는 형식은 조금씩 다르다. LiteLLM은 설정 파일의 `model_name`을 그대로 쓰고, OpenRouter는 프리셋을 `@preset/tax`로, Cloudflare는 경로를 `dynamic/tax`로 부른다.
+
+### 게이트웨이가 대신 해 주는 일
+
+| 문제 | 게이트웨이에서 바뀌는 것 |
+| --- | --- |
+| 제공자마다 형식이 다르다 | 앱은 OpenAI 형식 하나만 쓴다. 모델을 바꿀 때 앱 코드를 고치거나 배포하지 않고 게이트웨이 설정만 바꾼다. |
+| 장애 대응을 직접 짜야 한다 | 재시도와 fallback을 게이트웨이 설정에 한 번 적어 두면 모든 서비스가 함께 쓴다. |
+| 키가 흩어진다 | 제공자 키는 게이트웨이만 갖는다. 서비스에는 게이트웨이용 키를 따로 나눠 주고, 새면 그 키만 끊는다. |
+| 사용량이 한곳에 보이지 않는다 | 모든 요청이 게이트웨이를 지나므로 사용량과 비용을 한곳에서 집계한다. |
+| 팀끼리 한도를 깎아 먹는다 | 게이트웨이 키마다 예산과 rate limit을 따로 건다. |
+
+아래 애니메이션은 Anthropic이 429를 돌려줄 때 세무 서비스가 직접 Gemini로 넘기는 경우와 게이트웨이가 넘기는 경우를 이어서 보여준다.
+
+<FallbackDemo client:visible />
+
+### LLM 게이트웨이 도구
+
+같은 역할을 하더라도 어디서 돌아가는지에 따라 성격이 갈린다.
+
+- <strong>OpenRouter</strong> — 회사가 운영하는 SaaS다. 공식 문서는 "단일 API 엔드포인트로 수백 개의 모델에 접근한다"고 소개한다. 제공자와 따로 계약하지 않아도 OpenRouter 크레딧으로 여러 회사의 모델을 부를 수 있다.
+- <strong>LiteLLM</strong> — 직접 띄우는 오픈소스 서버다. 공식 문서도 "셀프호스팅 서버"라고 소개한다. Docker나 Helm으로 띄우고, 키·예산·사용량을 담을 Postgres를 붙인다.
+- <strong>Cloudflare AI Gateway</strong> — Cloudflare 네트워크 위에서 돌아가는 관리형 게이트웨이다. 분석, 캐싱, rate limit 같은 핵심 기능은 무료이고, 앱에서는 `baseURL`을 Cloudflare 주소로 바꾸면 된다.
+
+### 게이트웨이를 두면 감수해야 할 것
+
+얻는 것만 있지는 않다. 고르기 전에 이것부터 알아 두는 편이 좋다.
+
+- <strong>지연</strong> — 요청이 거치는 곳이 하나 늘어난다. 공개된 측정을 보면 게이트웨이마다 붙는 지연이 수십 ms에서 수백 ms까지 벌어진다. 수치는 뒤에서 따로 살펴본다.
+- <strong>단일 장애점</strong> — 게이트웨이가 멈추면 모든 LLM 호출이 함께 멈춘다. 셀프호스팅이라면 게이트웨이의 가용성까지 직접 챙겨야 하고, SaaS라면 그 회사의 가용성에 기대야 한다.
+- <strong>수수료</strong> — OpenRouter는 모델 가격에 마진을 붙이지 않는 대신 카드로 크레딧을 살 때 5.5%를 받고, 최소 수수료는 $0.80이다. 제공자 키를 직접 등록하는 BYOK는 월 $25,000어치까지 수수료가 없고 넘는 사용량에는 5%가 붙는다. Cloudflare는 제공자 키 없이 Cloudflare 크레딧으로 부르는 Unified Billing에 5%를 받는다. LiteLLM은 수수료가 없는 대신 서버 운영 비용이 든다.
+- <strong>데이터 경로</strong> — SaaS 게이트웨이를 쓰면 프롬프트와 응답이 제3자의 서버를 지난다. OpenRouter는 사용자가 따로 켜지 않는 한 프롬프트와 응답을 기록하지 않는다고 밝히지만, 요청이 OpenRouter를 거쳐 제공자로 가는 구조는 그대로다. 셀프호스팅이면 데이터가 우리 인프라 안에 머문다.
+- <strong>제공자 고유 기능</strong> — OpenAI 형식에 없는 기능은 게이트웨이마다 다루는 방식이 다르다. Anthropic의 프롬프트 캐싱처럼 요청에 제공자 고유 필드가 붙는 기능이 그렇다. 형식을 하나로 맞추는 대가로, 이런 기능이 게이트웨이에서 어떻게 넘어가는지 따로 확인해야 한다.
+
+이 대가가 작게 느껴질수록 게이트웨이를 들일 이유가 커진다. 어떤 대가가 크게 걸리는지는 이어서 세 게이트웨이를 하나씩 살펴보며 확인한다.
+
+## 게이트웨이가 더하는 지연
+
+지연은 공개된 측정으로 살펴본다. 측정마다 재는 주체와 조건이 달라서 함께 적는다.
+
+### 여섯 게이트웨이를 같은 조건으로 잰 결과
+
+게이트웨이 회사 Edgee가 2026년 8월 5\~6일에 [여섯 게이트웨이를 비교](https://www.edgee.ai/blog/posts/i-benchmarked-six-ai-gateways-including-ours)했다. 43개 Google Cloud 리전에서 같은 프롬프트를 각 게이트웨이와 제공자에 1초 간격으로 보내 16,344회를 쟀다. 지표는 첫 토큰이 도착하기까지 걸린 시간인 TTFT의 중앙값이다.
+
+gpt-5.4 측정값으로 경로마다 첫 토큰이 도착하는 순간을 겹쳐 보면 다음과 같다.
+
+<LatencyRaceDemo client:visible />
+
+| 경로 | gpt-5.4 | 직접 호출 대비 | claude-sonnet-4-6 | 직접 호출 대비 |
+| --- | --- | --- | --- | --- |
+| 직접 호출 | 774ms | 기준 | 1,114ms | 기준 |
+| Edgee | 798ms | +24ms | 1,215ms | +101ms |
+| Cloudflare | 811ms | +37ms | 1,140ms | +26ms |
+| TrueFoundry | 869ms | +95ms | 1,232ms | +118ms |
+| Vercel | 938ms | +164ms | 1,307ms | +193ms |
+| OpenRouter | 1,020ms | +246ms | 1,321ms | +207ms |
+| Kong | 1,718ms | +944ms | 5,101ms | +3,987ms |
+
+Cloudflare는 직접 호출보다 2\~5% 늦었고, OpenRouter는 19\~32% 늦었다. 걸러 읽어야 할 점도 있다. Edgee는 비교 대상과 경쟁하는 회사이고, 짧은 프롬프트와 짧은 답만 쟀다. Kong은 측정 환경에서 Anthropic 경로가 스트리밍되지 않아 그쪽 수치가 크게 튀었다.
+
+### LiteLLM은 몇 대를 띄우느냐에 달렸다
+
+LiteLLM은 위 비교에 없다. 대신 공식 문서에 [자체 벤치마크](https://docs.litellm.ai/docs/benchmarks)가 있다. 4 vCPU, 8GB 메모리 인스턴스에 약 1,000 RPS를 걸고, 응답 헤더 `x-litellm-overhead-duration-ms`로 프록시가 더한 시간을 쟀다.
+
+| 인스턴스 | p50 | p95 |
+| --- | --- | --- |
+| 2대 | 12ms | 29ms |
+| 4대 | 2ms | 8ms |
+
+제공자 대신 mock 엔드포인트를 붙여 쟀으므로 이 수치는 네트워크 구간을 뺀 프록시 처리 시간이다. 측정한 버전과 날짜는 밝혀 두지 않았다. 셀프호스팅은 앱 가까이에 띄울 수 있어 네트워크 구간이 짧은 대신, 지연을 줄이려면 인스턴스를 늘려야 한다. 낮은 지연을 서버 비용으로 사는 셈이다.
+
+### OpenRouter의 지연이 커지는 때
+
+OpenRouter [공식 문서](https://openrouter.ai/docs/guides/best-practices/latency-and-performance)는 지연을 최소한으로 더하도록 설계했다고만 밝힌다. 대신 지연이 커지는 조건을 적어 두었다.
+
+- 새 리전에 트래픽이 들어오기 시작한 뒤 1\~2분 동안은 엣지 캐시가 비어 있어 조금 느리다.
+- 잔액이 한 자릿수 달러로 떨어지거나 키가 크레딧 한도에 가까워지면 데이터베이스 확인이 늘어 느려진다.
+- 첫 시도가 실패해 다른 모델이나 제공자로 넘어가면 그 요청에는 실패한 시도만큼 지연이 붙는다.
+
+과금 방식에 따라서도 차이가 난다. TrueFoundry가 Claude Haiku 4.5로 [잰 결과](https://www.truefoundry.com/blog/openrouter-latency-on-anthropic-why-bringing-your-own-key-is-faster)를 보면, OpenRouter 크레딧으로 부를 때는 첫 토큰이 약 200ms, 자기 Anthropic 키를 쓰는 BYOK로 부를 때는 약 120ms 늦었다. 프롬프트를 2만 토큰으로 늘리자 각각 303ms와 186ms로 커졌다.
+
+짧은 요청이 많고 첫 토큰이 빨리 떠야 하는 서비스라면 이 차이가 체감된다. 답 하나에 몇 초씩 걸리는 작업이라면 수백 ms는 작은 편이다.
+
+## fallback과 응답 캐시
+
+앞에서 서비스마다 짜야 했던 장애 대응을 세 게이트웨이는 각자 다른 방식으로 맡는다. 무엇을 단위로 넘기는지, 그 설정을 어디에 두는지가 다르다.
+
+### 넘기는 단위와 설정 위치가 다르다
+
+| | 같은 모델의 다른 공급처로 | 다른 모델로 | 설정하는 곳 |
+| --- | --- | --- | --- |
+| OpenRouter | 기본으로 켜져 있다. 최근 30초 동안 장애가 없던 공급처 가운데 쌀수록 먼저 고를 가능성이 크고, 실패하면 다음 공급처로 넘긴다. | `models` 배열에 적은 순서대로 넘긴다. 요금은 실제로 응답한 모델 기준이다. | 요청 본문, 또는 프리셋 |
+| LiteLLM | 같은 별칭에 묶인 deployment끼리 `num_retries`만큼 재시도한다. 분당 실패가 `allowed_fails`를 넘은 deployment는 `cooldown_time` 동안 뺀다. | 재시도를 다 쓰면 `fallbacks`로 넘긴다. 컨텍스트 초과는 `context_window_fallbacks`, 콘텐츠 정책 위반은 `content_policy_fallbacks`로 따로 받는다. | 게이트웨이 설정 파일 |
+| Cloudflare | 따로 없다. 경로에 적은 제공자로만 보낸다. | Dynamic Routing 경로에서 모델 노드의 `fallback` 출구를 다른 모델에 잇는다. 재시도를 다 쓰거나 시간이 초과되면 그쪽으로 간다. | 게이트웨이의 경로 |
+
+OpenRouter에서는 같은 모델을 여러 공급처가 서비스하므로, 다른 모델로 넘기기 전에 공급처부터 바꿔 본다. LiteLLM은 같은 별칭 아래 deployment를 여럿 두는 구조라 재시도와 cooldown이 그 역할을 한다. Cloudflare는 모델 노드마다 재시도 횟수를 정해 두고, 그래도 실패하면 다른 모델로 넘긴다.
+
+설정 위치도 눈여겨봐야 한다. OpenRouter는 fallback 목록을 요청 본문에 바로 적을 수 있는데, 이렇게 쓰면 순서를 바꿀 때마다 앱을 고쳐 배포해야 한다. 같은 목록을 [프리셋](https://openrouter.ai/docs/guides/features/presets)에 담아 두면 앱은 `@preset/tax`만 부르고 설정은 대시보드에서 바꾼다. 앞에서 짚은 "모델을 바꿀 때 앱 코드를 고치지 않는다"는 이점은 설정이 게이트웨이 쪽에 있어야 온전히 누릴 수 있다.
+
+### 같은 fallback을 세 도구로 적으면
+
+세무 상담 요청을 Claude Opus 5.5로 보내고, 실패하면 Gemini 4 Argon으로 넘기는 설정을 세 도구로 옮겨 보자.
+
+LiteLLM은 설정 파일에 두 모델을 별칭으로 등록하고 `fallbacks`로 잇는다.
+
+```yaml
+model_list:
+  - model_name: tax
+    litellm_params:
+      model: anthropic/claude-opus-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: tax-fallback
+    litellm_params:
+      model: gemini/gemini-4-argon
+      api_key: os.environ/GEMINI_API_KEY
+
+litellm_settings:
+  num_retries: 2
+  fallbacks: [{ "tax": ["tax-fallback"] }]
+```
+
+OpenRouter는 요청 본문의 `models` 배열에 순서대로 적는다. 모델 이름은 OpenRouter의 표기를 따른다.
+
+```json
+{
+  "models": ["anthropic/claude-opus-5.5", "google/gemini-4-argon"],
+  "messages": [{ "role": "user", "content": "법인세 중간예납 기한이 언제인가?" }]
+}
+```
+
+Cloudflare는 Dynamic Routing 경로를 만든다. 대시보드의 흐름도 편집기로 그려도 되고, 같은 내용을 JSON으로 적을 수도 있다. 요지만 옮기면 다음과 같다.
+
+```json
+{
+  "name": "tax",
+  "elements": [
+    { "id": "start", "type": "start", "outputs": { "next": { "elementId": "claude" } } },
+    {
+      "id": "claude",
+      "type": "model",
+      "properties": { "provider": "anthropic", "model": "claude-opus-5-5", "timeout": 30000, "retries": 2 },
+      "outputs": { "success": { "elementId": "end" }, "fallback": { "elementId": "gemini" } }
+    },
+    {
+      "id": "gemini",
+      "type": "model",
+      "properties": { "provider": "google-ai-studio", "model": "gemini-4-argon", "timeout": 30000, "retries": 2 },
+      "outputs": { "success": { "elementId": "end" } }
+    },
+    { "id": "end", "type": "end", "outputs": {} }
+  ]
+}
+```
+
+앱은 모델 자리에 `dynamic/tax`를 넣어 부른다. 제공자 키는 요청에 싣지 않고, 게이트웨이에 저장해 두거나 Unified Billing으로 대신한다.
+
+세 설정 모두 앱 코드에는 `tax` 하나만 남긴다. 다른 점은 fallback을 바꿀 때 손대는 곳이다. LiteLLM은 게이트웨이 설정을 고치고, OpenRouter 프리셋과 Cloudflare 경로는 대시보드에서 새 버전을 발행한다.
+
+### 응답 캐시
+
+세 게이트웨이 모두 같은 요청이 다시 오면 저장해 둔 답을 돌려주는 응답 캐시를 둘 수 있다. 응답 캐시는 모델 제공자가 입력 앞부분을 재사용하는 프롬프트 캐싱과는 다른 기능이다. 둘의 차이는 [AI 캐시가 제값을 하려면](/ko/blog/llm-prompt-caching/)에서 다뤘다.
+
+| | 켜는 방법 | 유효 시간 | 맞추는 기준 |
+| --- | --- | --- | --- |
+| OpenRouter | 요청 헤더 `X-OpenRouter-Cache: true`, 또는 프리셋의 `cache_enabled` | 기본 5분, 1초\~24시간 | API 키, 모델, 스트리밍 여부, 요청 본문이 모두 같아야 한다. 적중하면 요금이 0이다. |
+| Cloudflare | 기본은 꺼져 있다. 대시보드에서 켜거나 `cf-aig-cache-ttl` 헤더를 붙인다. | 60초\~1개월 | 요청 전체가 정확히 같아야 한다. 의미가 비슷한 요청을 묶는 기능은 계획 중이다. |
+| LiteLLM | 설정 파일에 `cache: True`와 저장소를 정하는 `cache_params`를 적는다. | 저장소 설정에 따른다 | 정확히 같은 요청을 기본으로 하고, `redis-semantic`, `qdrant-semantic`을 고르면 의미가 비슷한 요청도 묶는다. |
+
+정확히 같은 요청만 맞추는 캐시는 생각보다 적중하기 어렵다. 요청 본문에 섞인 사용자 이름이나 시각이 한 글자만 달라도 다른 요청이 된다. OpenRouter는 JSON 속성의 순서까지 따진다. 그래서 응답 캐시는 같은 질문이 그대로 반복되는 곳, 예를 들어 자주 묻는 질문 답변이나 같은 문서를 여러 번 요약하는 배치에 맞는다. 대화처럼 매번 맥락이 달라지는 요청에는 기대하지 않는 편이 낫다.
+
+## 팀이 늘면 사용량을 나눠서 관리한다
+
+앞에서 LLM을 쓰는 팀이 다섯으로 늘면 키가 흩어지고, 누가 얼마를 썼는지 보이지 않고, 한 팀이 다른 팀의 한도까지 깎아 먹는다고 짚었다. 게이트웨이는 이 문제를 한 가지 방식으로 푼다. 제공자 키는 게이트웨이만 갖고, 팀에는 게이트웨이용 키를 따로 나눠 준 뒤, 그 단위로 사용량을 쌓고 한도를 건다.
+
+### 팀을 나누는 단위와 걸 수 있는 한도
+
+| | 팀을 나누는 단위 | 팀마다 걸 수 있는 것 | 한도를 넘으면 |
+| --- | --- | --- | --- |
+| LiteLLM | 팀(`team_id`), 팀에 속한 virtual key, 팀 안의 멤버 | 예산(`max_budget`, 초기화 주기 `budget_duration`), 분당 요청·토큰 수(`rpm_limit`, `tpm_limit`), 동시 요청 수, 쓸 수 있는 모델(`models`) | 요청을 거절한다. 속도 제한은 429로 막는다. |
+| OpenRouter | 워크스페이스, 멤버, API 키 | 워크스페이스 예산(일·주·월·전체 기간), 가드레일로 멤버·키마다 거는 예산, 쓸 수 있는 모델과 공급처, 데이터를 남기지 않는 공급처만 쓰도록 강제하는 ZDR | 요청을 거절한다. 워크스페이스 예산은 403으로 막는다. |
+| Cloudflare | 요청 헤더 `cf-aig-metadata`에 앱이 붙인 값(`{"team": "tax"}`) | 메타데이터 값마다 나눠 거는 지출 한도. 게이트웨이 하나에 규칙을 20개까지 둔다. | 429로 막거나, Dynamic Routing으로 다른 모델에 넘긴다. |
+
+LiteLLM과 OpenRouter는 키로 팀을 가른다. 팀이 받은 키로 부르는 한 다른 팀인 척할 수 없다. Cloudflare는 앱이 요청마다 스스로 밝힌 메타데이터로 가르므로, 앱이 값을 잘못 붙이면 다른 팀의 예산에서 돈이 나간다. 게이트웨이 앞에 Cloudflare Access를 두면 인증된 사용자 ID인 `cf.user_id`가 자동으로 붙는데, 팀 단위는 여전히 앱이 붙여야 한다.
+
+한도가 정확히 지켜지지 않는 경우도 있다. OpenRouter는 이미 보낸 요청을 끝까지 처리하므로 예산을 조금 넘길 수 있다고 밝힌다. Cloudflare는 요청이 끝난 뒤에 비용을 기록하므로 동시 요청이 몰리면 잠깐 한도를 넘는다. LiteLLM은 예산을 Postgres에 쌓인 사용량으로 판단하므로 DB 없이 띄우면 예산이 걸리지 않는다.
+
+### 나눠 두면 할 수 있는 것
+
+- <strong>팀별로 비용을 나눠 보여준다</strong> — 사용량이 키나 팀 단위로 쌓이므로 월말에 청구서 한 장을 팀별 비용으로 쪼갤 수 있다. 각 팀이 자기 몫을 알게 되면 비용을 줄일 이유도 생긴다.
+- <strong>사고가 번지는 범위를 줄인다</strong> — 무한 루프에 빠진 배치나 새어 나간 키가 쓸 수 있는 돈이 그 팀 예산까지로 묶인다. 수습할 때도 그 키 하나만 끊으면 된다.
+- <strong>팀끼리 한도를 지켜 준다</strong> — 배치 작업 하나가 세무 상담 챗봇을 429로 멈추게 하던 문제를 팀별 분당 요청·토큰 한도로 막는다.
+- <strong>모델을 데이터로 고른다</strong> — 어느 팀이 어떤 모델에 얼마를 쓰는지 보이면 비싼 모델을 싼 모델로 바꿔도 되는 곳이 드러난다.
+- <strong>팀마다 다른 조건을 건다</strong> — 개인정보를 다루는 팀은 데이터를 남기지 않는 공급처와 승인된 모델만 쓰게 하고, 실험하는 팀에는 넓게 열어 준다.
+
+### 왜 해야 하나
+
+LLM 비용은 요청 수가 아니라 토큰으로 매겨지고, 같은 요청이라도 어느 모델로 보내느냐에 따라 단가가 크게 벌어진다. 같은 Anthropic 안에서도 Claude Opus 5.5는 100만 토큰당 입력 $4, 출력 $20이고 Claude Haiku 5.5는 $0.10, $0.50부터다. 40배 차이다. 사용량이 청구서 한 장으로만 보이면 누가 비용을 늘렸는지 모르는 채로 금액만 커진다.
+
+장애도 같은 구조다. 팀을 나누지 않으면 한 팀의 실수가 조직 전체의 한도와 예산을 함께 깎는다. 나누는 작업은 늦출수록 비싸진다. 팀이 둘일 때는 키 두 개를 나눠 주면 끝나지만, 다섯이 된 뒤에는 이미 흩어진 키를 회수하고 서비스마다 코드를 고쳐야 한다.
+
+나눠 둔 사용량을 대시보드와 알림으로 들여다보는 방법은 [LiteLLM 프록시 모니터링](/ko/blog/litellm-proxy-monitoring/) 글에서 다뤘다.
+
+## 다른 LLM 게이트웨이
+
+이 글은 세 도구를 중심으로 봤지만 선택지는 더 있다. 앞의 지연 비교에 나온 Vercel과 Kong, 그리고 오픈소스 게이트웨이를 함께 내놓은 Portkey까지 셋을 짧게 살펴본다.
+
+- <strong>Portkey</strong> — 관리형 서비스가 중심이지만 게이트웨이 자체는 MIT 라이선스 [오픈소스](https://github.com/Portkey-AI/gateway)다. `npx @portkey-ai/gateway` 한 줄로 로컬에 띄울 수 있다. 어떤 오류에서 넘길지 골라 fallback을 걸고, 지수 백오프로 최대 5번까지 재시도하며, 미리 만들어 둔 가드레일을 수십 개 갖췄다. 관리형은 월 1만 요청까지 무료이고 의미 기반 캐시는 엔터프라이즈 버전에 있다.
+- <strong>Vercel AI Gateway</strong> — Vercel이 운영하는 관리형 게이트웨이지만 앱이 Vercel에서 돌 필요는 없다. [공식 문서](https://vercel.com/docs/ai-gateway)는 제공자 토큰 가격에 마진을 붙이지 않고, BYOK에도 마찬가지라고 밝힌다. OpenAI Chat Completions뿐 아니라 Anthropic Messages 형식으로도 요청을 받는다. 팀, 프로젝트, API 키, 멤버마다 예산을 걸 수 있는데, 이 예산은 Vercel 크레딧으로 쓴 비용에만 걸리고 한도를 조금 넘을 수 있는 소프트 캡이다.
+- <strong>Kong AI Gateway</strong> — API 게이트웨이 Kong 위에 올린 AI 기능이다. 설정과 관측은 관리형 콘솔인 Konnect에서 하고, 요청을 처리하는 데이터 플레인은 우리 서버나 클라우드, 쿠버네티스에 띄운다. 의미 기반 캐시, 비용 기준 속도 제한, 금지된 주제를 막는 프롬프트 가드, 개인정보를 지우고 넘기는 Sanitizer를 정책으로 붙인다. 이미 Kong으로 API를 관리하는 조직이라면 LLM 트래픽도 같은 운영 체계에 얹을 수 있다.
+
+### 여섯 도구 한눈에 비교
+
+공식 문서에서 확인하지 못한 칸은 `—`로 두었다.
+
+| | 운영 형태 | 오픈소스 | 비용 | 팀별 예산 | 의미 기반 캐시 |
+| --- | --- | --- | --- | --- | --- |
+| OpenRouter | 관리형 | 아니다 | 크레딧 구매 시 5.5%, BYOK는 월 $25,000 초과분에 5% | 워크스페이스, 멤버, 키 | —(응답 캐시는 정확히 같은 요청만 맞춘다) |
+| LiteLLM | 셀프호스팅 | 그렇다(MIT, `enterprise/`는 별도 라이선스) | 수수료 없음, 서버 운영 비용 | 팀, 키, 멤버 | 있다 |
+| Cloudflare AI Gateway | 관리형 | 아니다 | 핵심 기능 무료, Unified Billing 크레딧에 5% | 메타데이터 값마다 지출 한도 | 계획 중 |
+| Portkey | 관리형, 게이트웨이는 셀프호스팅도 된다 | 게이트웨이는 그렇다(MIT) | 관리형은 월 1만 요청까지 무료 | — | 엔터프라이즈 버전 |
+| Vercel AI Gateway | 관리형 | 아니다 | 토큰 가격에 마진 없음 | 팀, 프로젝트, 키, 멤버 | — |
+| Kong AI Gateway | 관리형 콘솔 + 직접 띄우는 데이터 플레인 | — | — | 비용 기준 속도 제한 | 있다 |
+
+## 언제 무엇을 고르나
+
+### 게이트웨이가 필요 없는 경우
+
+고르기 전에 게이트웨이가 정말 필요한지부터 따져 보자. 앞에서 본 대로 게이트웨이를 두면 지연이 붙고, 장애점이 하나 늘고, 관리형이라면 수수료와 데이터 경로까지 따라온다. 다음 경우에는 이 대가를 치를 이유가 약하다.
+
+- <strong>서비스 하나가 모델 하나만 부른다</strong> — 바꿀 계획도 없다면 SDK를 바로 부르는 편이 단순하다. 형식 차이도, 서비스마다 반복되는 fallback 코드도 아직 생기지 않았다.
+- <strong>제공자 고유 기능에 깊이 기대고 있다</strong> — 프롬프트 캐싱처럼 요청에 제공자 고유 필드를 붙이는 기능이 핵심이라면, 게이트웨이가 그 필드를 그대로 넘기는지부터 확인해야 한다. 넘기지 않는다면 형식을 하나로 맞춘 이득보다 잃는 것이 크다.
+- <strong>쓰는 모델이 모두 한 클라우드 안에 있다</strong> — Amazon Bedrock의 [Converse API](https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html)는 Bedrock 모델을 하나의 형식으로 부르게 해 주고, [애플리케이션 추론 프로필](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles.html)에 태그를 붙이면 팀별 비용도 나눠 볼 수 있다. Google Cloud의 Vertex AI에서도 Gemini와 Claude를 함께 부를 수 있다. 다만 이 글의 예시처럼 OpenAI, Anthropic, Gemini를 한꺼번에 써야 한다면 클라우드 하나로는 다 담기지 않는다.
+
+### 상황별 선택
+
+게이트웨이가 필요하다면 무엇을 먼저 따지느냐에 따라 고를 도구가 달라진다.
+
+- <strong>팀이 하나이고 여러 회사 모델을 빨리 써 보고 싶다면 OpenRouter</strong> — 제공자마다 계약하지 않아도 계정 하나로 수백 개 모델을 부른다. 같은 모델의 공급처를 알아서 바꿔 주는 것도 장점이다. 대신 크레딧을 살 때 5.5% 수수료가 붙고, 요청이 제3자를 거치며, 지연은 앞의 측정에서 200ms 남짓 붙었다.
+- <strong>지연에 민감하고 이미 Cloudflare를 쓰고 있다면 Cloudflare AI Gateway</strong> — 핵심 기능이 무료이고 앞의 측정에서 붙은 지연이 26\~37ms로 이 글에서 다룬 도구 가운데 가장 작았다. 다만 팀을 앱이 붙인 메타데이터로 가르고, 응답 캐시는 정확히 같은 요청에만 맞는다.
+- <strong>데이터가 회사 인프라를 벗어나면 안 되거나 팀별 예산을 세밀하게 나눠야 한다면 LiteLLM</strong> — 직접 띄우므로 요청이 우리 네트워크 안에 머물고 수수료가 없다. 팀, 키, 멤버 단위로 예산과 한도를 걸 수 있다. 대신 Postgres와 게이트웨이의 가용성을 직접 챙겨야 하고, 지연을 줄이려면 인스턴스를 늘려야 한다.
+- <strong>이미 쓰는 플랫폼이 있다면 그 플랫폼의 게이트웨이</strong> — Kong으로 API를 관리하고 있다면 Kong AI Gateway를, Vercel에서 앱을 운영한다면 Vercel AI Gateway를 먼저 살펴보자. 익숙한 운영 체계 위에 LLM 트래픽을 얹는 비용이 가장 적다.
+
+한 번 고르면 끝나는 선택도 아니다. 앱이 OpenAI 형식으로 게이트웨이 하나만 부르도록 만들어 두었다면, 나중에 게이트웨이를 바꿀 때도 앱에서는 `baseURL`과 키, 별칭 정도만 바꾸면 된다. 처음에는 OpenRouter로 시작했다가 팀이 늘면 LiteLLM으로 옮기는 길도 열려 있다.
+
+## 정리
+
+여러 회사의 모델을 직접 부르면 형식 차이, 장애 대응, 키와 비용 관리가 서비스마다 반복된다. LLM 게이트웨이는 이 반복을 앱과 제공자 사이의 한 겹으로 모으는 대신, 지연과 장애점을 하나씩 더하고 관리형이라면 수수료와 데이터 경로까지 얹는다. 세 도구는 같은 일을 서로 다른 자리에서 한다. OpenRouter는 남의 인프라에서 모델을 넓게 열어 주고, Cloudflare는 엣지에서 가볍게 얹히며, LiteLLM은 우리 인프라 안에서 팀과 예산을 세밀하게 나눈다.
+
+시작은 작게 해도 된다. 가장 많이 부르는 기능 하나를 골라 OpenAI SDK의 `baseURL`을 게이트웨이로 바꾸고, 그 기능에 별칭과 fallback을 하나씩 걸어 보자. 응답 형식이 그대로인지, 지연이 얼마나 붙는지 확인한 뒤에 나머지 서비스로 넓히면 된다.

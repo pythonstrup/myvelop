@@ -3,6 +3,8 @@ title: "When AI Caching Pays Off"
 description: "An AI API cache hit is not a response cache that hands back a stored answer. It reuses the KV computed for the start of the input. This post works out which requests hit and how high the hit rate must be to break even once write costs are counted, then compares an agent and a chatbot using Claude Code measurements and a Slack chatbot's production logs. In the agent's sessions, 97.6% of input tokens were cache reads."
 pubDate: "2026-09-29T22:00:00+09:00"
 tags: ["llm", "prompt-caching", "claude", "agent", "litellm", "bedrock"]
+series: "Running LLM APIs"
+seriesOrder: 3
 socialImage: "../../../assets/blog/llm-prompt-caching/og.png"
 ---
 import BreakEvenDiagram from "@/materials/llm-prompt-caching/BreakEvenDiagram";

@@ -3,6 +3,8 @@ title: "LiteLLM 프록시 모니터링 - Admin UI로 충분한 것과 Grafana, L
 description: "LiteLLM 프록시에 Prometheus·Grafana와 Langfuse를 붙이고 같은 mock 트래픽을 14분간 흘렸다. 내장 Admin UI는 누가 얼마나 썼는지까지 보여주고, 시계열과 알림은 Grafana, 요청 본문·세션·트레이스·점수는 Langfuse가 있어야 보인다. 어디까지 Admin UI로 충분한지와 붙이는 순서를 정리했다."
 pubDate: "2026-09-15T21:00:00+09:00"
 tags: ["litellm", "llm", "observability", "grafana", "prometheus", "langfuse"]
+series: "LLM API 운영"
+seriesOrder: 2
 socialImage: "../../../assets/blog/litellm-proxy-monitoring/og.png"
 ---
 ## 들어가며

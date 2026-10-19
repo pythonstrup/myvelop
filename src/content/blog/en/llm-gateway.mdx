@@ -1,0 +1,408 @@
+---
+title: "LLM Gateways - Choosing Between OpenRouter, LiteLLM, and Cloudflare AI Gateway"
+description: "Calling the OpenAI, Anthropic, and Gemini APIs straight from service code means every service repeats the same format handling, failover, and key and cost management. This post looks at how an LLM gateway pulls that repetition into one place and what it costs in return, then compares OpenRouter, LiteLLM, and Cloudflare AI Gateway on latency, fallbacks, response caching, and per-team budgets using official docs and published measurements. Cloudflare added 26–37 ms to the first token; OpenRouter added a little over 200 ms."
+pubDate: "2026-10-19T20:15:00+09:00"
+tags: ["llm", "llm-gateway", "openrouter", "litellm", "cloudflare"]
+series: "Running LLM APIs"
+seriesOrder: 1
+socialImage: "../../../assets/blog/llm-gateway/og.png"
+---
+import FallbackDemo from "@/materials/llm-gateway/FallbackDemo";
+import GatewayStructureDiagram from "@/materials/llm-gateway/GatewayStructureDiagram";
+import LatencyRaceDemo from "@/materials/llm-gateway/LatencyRaceDemo";
+
+## Introduction
+
+Say you are adding three LLM features to an accounting SaaS: a tax advice chatbot, financial statement analysis, and document summaries. When you look up domain benchmarks to pick a model, the company in first place differs by feature as of October 2026.
+
+- Tax: on Vals AI's [Tax Agent Bench](https://www.vals.ai/benchmarks/tax_agent_bench), Anthropic models took the top three spots.
+- Financial analysis: on Vals AI's [Finance Agent v2](https://www.vals.ai/benchmarks/fabv2), Google's Gemini 4 Argon came first.
+- Summaries: on the [Vectara hallucination leaderboard](https://github.com/vectara/hallucination-leaderboard), OpenAI's `gpt-5.4-nano` made up content absent from the source only 3.1% of the time, placing second.
+
+Pick the best model for each feature, and your service code ends up calling three SDKs side by side.
+
+```typescript
+import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+export async function summarize(text: string) {
+  const res = await openai.chat.completions.create({
+    model: "gpt-5.4-nano",
+    messages: [
+      { role: "system", content: "Summarize in three sentences." },
+      { role: "user", content: text },
+    ],
+  });
+  return res.choices[0].message.content ?? "";
+}
+
+export async function answerTax(question: string) {
+  const res = await anthropic.messages.create({
+    model: "claude-opus-5-5",
+    max_tokens: 1024,
+    system: "Answer as a tax consultant.",
+    messages: [{ role: "user", content: question }],
+  });
+  const block = res.content[0];
+  return block.type === "text" ? block.text : "";
+}
+
+export async function analyzeStatement(statement: string) {
+  const res = await gemini.interactions.create({
+    model: "gemini-4-argon",
+    system_instruction: "Answer as an analyst reviewing financial statements.",
+    input: statement,
+  });
+  return res.output_text;
+}
+```
+
+At first this is enough. Three functions and three keys leave little to manage. The trouble starts as the product grows. Models multiply, more services make calls, and one day a provider goes down. Each time, the same code gets rewritten in every service.
+
+An LLM gateway is a tool that tries to solve this in one layer between the app and the providers. This post starts with what gets painful when you call the APIs directly. It then compares OpenRouter, LiteLLM, and Cloudflare AI Gateway using official docs and published measurements, and closes with when to pick which.
+
+## Problems with calling the APIs directly
+
+### Every provider has its own format
+
+The three functions above all send a question to a model and get an answer back, yet each looks different.
+
+| | OpenAI Chat Completions | Anthropic Messages | Gemini Interactions |
+| --- | --- | --- | --- |
+| System prompt | `role: "system"` inside `messages` | Separate `system` field | Separate `system_instruction` field |
+| Max output tokens | Optional | `max_tokens` required | Optional (`generation_config.max_output_tokens`) |
+| Response text | `choices[0].message.content` | `content[0].text` | `output_text` |
+| Token usage | `usage.prompt_tokens`, `completion_tokens` | `usage.input_tokens`, `output_tokens` | `usage.total_input_tokens`, `total_output_tokens` |
+
+Rankings change within months. Claude Fable 5.1, first on Tax Agent Bench at 49.19%, beats the previous generation, Claude Fable 5 at 38.28%, by almost 11 points. Models also age fast. Claude Opus 5, released on July 24, 2026, is already classified as [legacy](https://platform.claude.com/docs/en/models/opus-5/overview) three months later. Every new release sends you back to choosing a model per feature, and when the provider changes, renaming the model is not enough. You swap the SDK, rewrite the request, fix the code that reads the response, and deploy. Trying out one model costs a deploy.
+
+### You write the failover yourself
+
+One day Anthropic starts returning 429s. The tax chatbot cannot stop, so you add a fallback to Gemini, which ranked right after Anthropic on Tax Agent Bench.
+
+```typescript
+export async function answerTax(question: string) {
+  try {
+    const res = await anthropic.messages.create({
+      model: "claude-opus-5-5",
+      max_tokens: 1024,
+      system: SYSTEM,
+      messages: [{ role: "user", content: question }],
+    });
+    const block = res.content[0];
+    return block.type === "text" ? block.text : "";
+  } catch (err) {
+    if (!(err instanceof Anthropic.RateLimitError || err instanceof Anthropic.InternalServerError)) {
+      throw err;
+    }
+    const res = await gemini.interactions.create({
+      model: "gemini-4-argon",
+      system_instruction: SYSTEM,
+      input: question,
+    });
+    return res.output_text;
+  }
+}
+```
+
+You write the same request twice in two formats, decide which errors should trigger the switch, and handle retry intervals on your own. Summaries and financial analysis need the same code. Three services mean writing it three times.
+
+### More teams, scattered management
+
+Now say five teams in the company use LLMs.
+
+- API keys scatter across services as environment variables. When one leaks, you first have to find out which service it belongs to.
+- Nobody can see in one place who spent how much. Each provider sends its own bill, and the usage fields have different names, as the table above shows, so even adding them up is a chore.
+- When teams share one organization account, one team's traffic eats into everyone else's limits. A single batch job can knock the tax chatbot out with 429s.
+
+Each of these can be solved in service code. But every service has to repeat that code, and each copy drifts a little. An LLM gateway is what you get when you pull that repetition into one place.
+
+## What an LLM gateway is
+
+An LLM gateway is a proxy that sits between the app and the model providers. The app sends requests only to the gateway, which forwards each one to the right provider and returns the response. All three gateways covered here accept requests in the OpenAI Chat Completions format. So the app needs only the OpenAI SDK, and the gateway handles format translation for requests bound for Anthropic or Gemini.
+
+Stacking the two setups shows how the connections between services and providers change.
+
+<GatewayStructureDiagram lang="en" />
+
+The three functions from earlier shrink to this.
+
+```typescript
+import OpenAI from "openai";
+
+const llm = new OpenAI({
+  baseURL: process.env.LLM_GATEWAY_URL,
+  apiKey: process.env.LLM_GATEWAY_KEY,
+});
+
+async function ask(model: string, system: string, input: string) {
+  const res = await llm.chat.completions.create({
+    model,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: input },
+    ],
+  });
+  return res.choices[0].message.content ?? "";
+}
+
+export const summarize = (text: string) => ask("summarize", "Summarize in three sentences.", text);
+export const answerTax = (question: string) => ask("tax", "Answer as a tax consultant.", question);
+export const analyzeStatement = (statement: string) =>
+  ask("finance", "Answer as an analyst reviewing financial statements.", statement);
+```
+
+`summarize`, `tax`, and `finance` are not model names but aliases defined in the gateway. The gateway's configuration decides which model each alias points to. All three gateways covered here support aliases, written slightly differently. LiteLLM uses the `model_name` from its config file as is, OpenRouter calls a preset as `@preset/tax`, and Cloudflare calls a route as `dynamic/tax`.
+
+### What the gateway takes over
+
+| Problem | What changes with a gateway |
+| --- | --- |
+| Every provider has its own format | The app uses only the OpenAI format. Switching models means changing gateway config, not editing or deploying app code. |
+| You write the failover yourself | Write retries and fallbacks once in the gateway config, and every service shares them. |
+| Keys are scattered | Only the gateway holds provider keys. Each service gets its own gateway key, and a leak means revoking just that key. |
+| Usage is not visible in one place | Every request passes through the gateway, so usage and cost are tallied in one place. |
+| Teams eat into each other's limits | Set a budget and rate limit on each gateway key. |
+
+The animation below plays two cases back to back when Anthropic returns a 429: the tax service switching to Gemini itself, and the gateway doing it.
+
+<FallbackDemo client:visible lang="en" />
+
+### LLM gateway tools
+
+Gateways play the same role, but where they run shapes their character.
+
+- <strong>OpenRouter</strong> — A SaaS run by a company. Its docs describe it as giving "access to hundreds of AI models through a single API endpoint." You can call models from many companies with OpenRouter credits, without signing up with each provider.
+- <strong>LiteLLM</strong> — An open-source server you run yourself. Its docs also call it "a self-hosted server." You deploy it with Docker or Helm and attach Postgres to hold keys, budgets, and usage.
+- <strong>Cloudflare AI Gateway</strong> — A managed gateway running on Cloudflare's network. Core features such as analytics, caching, and rate limiting are free, and the app only has to point its `baseURL` at a Cloudflare address.
+
+### What you give up with a gateway
+
+It is not all gain. Know these before you pick one.
+
+- <strong>Latency</strong> — Requests pass through one more hop. Published measurements show the added latency ranging from tens to hundreds of milliseconds depending on the gateway. The numbers come later.
+- <strong>Single point of failure</strong> — When the gateway stops, every LLM call stops with it. Self-hosted, you own the gateway's availability; with a SaaS, you rely on that company's.
+- <strong>Fees</strong> — OpenRouter adds no margin to model prices but charges 5.5% when you buy credits by card, with a $0.80 minimum. BYOK, where you register your own provider keys, is free up to $25,000 a month, with 5% on usage beyond that. Cloudflare charges 5% on Unified Billing, where you call providers with Cloudflare credits instead of your own keys. LiteLLM has no fees but costs you servers to run.
+- <strong>Data path</strong> — With a SaaS gateway, prompts and responses pass through a third party's servers. OpenRouter says it does not log prompts or completions unless you opt in, but requests still travel through OpenRouter to the provider. Self-hosted, the data stays inside your own infrastructure.
+- <strong>Provider-specific features</strong> — Gateways differ in how they handle features the OpenAI format lacks. Anthropic's prompt caching, which adds provider-specific fields to the request, is one example. The price of a single format is checking how each provider-specific feature makes it through the gateway.
+
+The smaller these costs feel, the stronger the case for a gateway. The rest of this post walks through the three gateways to see which costs weigh most.
+
+## The latency a gateway adds
+
+This section relies on published measurements. Who measured and under what conditions differ, so both are noted.
+
+### Six gateways measured under the same conditions
+
+Edgee, itself a gateway company, [compared six gateways](https://www.edgee.ai/blog/posts/i-benchmarked-six-ai-gateways-including-ours) on August 5–6, 2026. From 43 Google Cloud regions, it sent the same prompt to each gateway and provider one second apart, collecting 16,344 measurements. The metric is the median time to first token, or TTFT.
+
+Overlaying the moment the first token arrives on each path, using the gpt-5.4 numbers, looks like this.
+
+<LatencyRaceDemo client:visible lang="en" />
+
+| Path | gpt-5.4 | vs. direct | claude-sonnet-4-6 | vs. direct |
+| --- | --- | --- | --- | --- |
+| Direct | 774ms | baseline | 1,114ms | baseline |
+| Edgee | 798ms | +24ms | 1,215ms | +101ms |
+| Cloudflare | 811ms | +37ms | 1,140ms | +26ms |
+| TrueFoundry | 869ms | +95ms | 1,232ms | +118ms |
+| Vercel | 938ms | +164ms | 1,307ms | +193ms |
+| OpenRouter | 1,020ms | +246ms | 1,321ms | +207ms |
+| Kong | 1,718ms | +944ms | 5,101ms | +3,987ms |
+
+Cloudflare was 2–5% slower than calling directly, and OpenRouter was 19–32% slower. A few caveats apply. Edgee competes with the gateways it measured, and it tested only short prompts and short answers. Kong's Anthropic path did not stream in the test setup, which is why that number jumps.
+
+### LiteLLM depends on how many instances you run
+
+LiteLLM is not in that comparison. Instead, its docs include [its own benchmark](https://docs.litellm.ai/docs/benchmarks). It drove about 1,000 RPS at instances with 4 vCPUs and 8 GB of memory, and read the time the proxy added from the `x-litellm-overhead-duration-ms` response header.
+
+| Instances | p50 | p95 |
+| --- | --- | --- |
+| 2 | 12ms | 29ms |
+| 4 | 2ms | 8ms |
+
+It was measured against a mock endpoint instead of a real provider, so these numbers are proxy processing time without the network leg. The version and date are not stated. Self-hosting lets you run the gateway close to the app, keeping the network leg short, but cutting latency means adding instances. You buy lower latency with server cost.
+
+### When OpenRouter's latency grows
+
+OpenRouter's [docs](https://openrouter.ai/docs/guides/best-practices/latency-and-performance) say only that it is designed to add minimal latency. They do, however, list the conditions under which latency grows.
+
+- For the first 1–2 minutes after traffic starts arriving in a new region, edge caches are empty and requests are a little slower.
+- When the balance drops to single-digit dollars or a key nears its credit limit, extra database checks slow things down.
+- When a first attempt fails and the request moves to another model or provider, that request carries the latency of the failed attempt.
+
+How you pay matters too. In [TrueFoundry's measurement](https://www.truefoundry.com/blog/openrouter-latency-on-anthropic-why-bringing-your-own-key-is-faster) with Claude Haiku 4.5, the first token arrived about 200 ms later with OpenRouter credits and about 120 ms later with BYOK using their own Anthropic key. With 20,000-token prompts, the gaps grew to 303 ms and 186 ms.
+
+For a service with many short requests where the first token has to appear fast, this difference is noticeable. For work where each answer takes several seconds, a few hundred milliseconds is small.
+
+## Fallbacks and response caching
+
+The failover that every service had to write earlier is handled differently by each gateway. They differ in what they switch between and where that setting lives.
+
+### What they switch between, and where the setting lives
+
+| | To another provider of the same model | To another model | Where it is configured |
+| --- | --- | --- | --- |
+| OpenRouter | On by default. Among providers with no outage in the last 30 seconds, cheaper ones are more likely to be tried first, and a failure moves to the next provider. | Moves through the `models` array in order. You pay for the model that actually answered. | Request body, or a preset |
+| LiteLLM | Retries `num_retries` times across deployments under the same alias. A deployment whose failures per minute exceed `allowed_fails` is pulled out for `cooldown_time`. | Once retries run out, moves to `fallbacks`. Context overflows go to `context_window_fallbacks` and content policy violations to `content_policy_fallbacks`. | Gateway config file |
+| Cloudflare | None. Requests go only to the provider named in the route. | In a Dynamic Routing route, connect a model node's `fallback` output to another model. It takes that path when retries run out or the request times out. | Gateway route |
+
+Because several providers serve the same model on OpenRouter, it tries another provider before moving to another model. LiteLLM puts several deployments under one alias, so retries and cooldowns play that role. Cloudflare sets a retry count per model node and moves to another model if that still fails.
+
+Where the setting lives deserves attention too. OpenRouter lets you write the fallback list straight into the request body, but then every reorder means editing and deploying the app. Put the same list in a [preset](https://openrouter.ai/docs/guides/features/presets), and the app calls only `@preset/tax` while the setting changes in the dashboard. The benefit noted earlier, switching models without touching app code, is fully yours only when the setting lives on the gateway side.
+
+### The same fallback in three tools
+
+Let's write one setup in all three tools: send tax questions to Claude Opus 5.5, and fall back to Gemini 4 Argon on failure.
+
+LiteLLM registers both models as aliases in its config file and links them with `fallbacks`.
+
+```yaml
+model_list:
+  - model_name: tax
+    litellm_params:
+      model: anthropic/claude-opus-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: tax-fallback
+    litellm_params:
+      model: gemini/gemini-4-argon
+      api_key: os.environ/GEMINI_API_KEY
+
+litellm_settings:
+  num_retries: 2
+  fallbacks: [{ "tax": ["tax-fallback"] }]
+```
+
+OpenRouter lists them in order in the request body's `models` array. Model names follow OpenRouter's own naming.
+
+```json
+{
+  "models": ["anthropic/claude-opus-5.5", "google/gemini-4-argon"],
+  "messages": [{ "role": "user", "content": "When is the interim corporate tax payment due?" }]
+}
+```
+
+Cloudflare uses a Dynamic Routing route. You can draw it in the dashboard's flow editor or write the same thing as JSON. The gist looks like this.
+
+```json
+{
+  "name": "tax",
+  "elements": [
+    { "id": "start", "type": "start", "outputs": { "next": { "elementId": "claude" } } },
+    {
+      "id": "claude",
+      "type": "model",
+      "properties": { "provider": "anthropic", "model": "claude-opus-5-5", "timeout": 30000, "retries": 2 },
+      "outputs": { "success": { "elementId": "end" }, "fallback": { "elementId": "gemini" } }
+    },
+    {
+      "id": "gemini",
+      "type": "model",
+      "properties": { "provider": "google-ai-studio", "model": "gemini-4-argon", "timeout": 30000, "retries": 2 },
+      "outputs": { "success": { "elementId": "end" } }
+    },
+    { "id": "end", "type": "end", "outputs": {} }
+  ]
+}
+```
+
+The app calls it by putting `dynamic/tax` where the model goes. Provider keys do not travel with the request; they are stored on the gateway, or Unified Billing stands in for them.
+
+In all three setups, only `tax` remains in the app code. What differs is where you go to change the fallback. With LiteLLM you edit the gateway config; OpenRouter presets and Cloudflare routes get a new version published from the dashboard.
+
+### Response caching
+
+All three gateways can keep a response cache that returns a stored answer when the same request comes in again. It is a different feature from prompt caching, where the model provider reuses the start of the input. The difference between the two is covered in [When AI Caching Pays Off](/blog/llm-prompt-caching/).
+
+| | How to turn it on | Lifetime | What has to match |
+| --- | --- | --- | --- |
+| OpenRouter | Request header `X-OpenRouter-Cache: true`, or `cache_enabled` on a preset | 5 minutes by default, 1 second to 24 hours | API key, model, streaming mode, and request body must all match. A hit costs nothing. |
+| Cloudflare | Off by default. Turn it on in the dashboard or send a `cf-aig-cache-ttl` header. | 60 seconds to 1 month | The whole request must match exactly. Grouping similar requests by meaning is planned. |
+| LiteLLM | Set `cache: True` and a backend (`cache_params`) in the config file | Depends on the backend settings | Exact match by default; choosing `redis-semantic` or `qdrant-semantic` also groups requests with similar meaning. |
+
+A cache that only matches identical requests hits less often than you might expect. A single character of a user's name or a timestamp in the body makes it a different request. OpenRouter even counts the order of JSON properties. Response caching suits places where the same question repeats verbatim, such as answers to frequently asked questions or batches that summarize the same document many times. Do not expect much from it for conversations, where the context changes with every request.
+
+## Splitting usage by team as teams grow
+
+Earlier, with five teams using LLMs, keys scattered, nobody could see who spent what, and one team ate into the others' limits. A gateway solves all of this the same way. Only the gateway holds provider keys, each team gets its own gateway key, and usage and limits are tracked at that level.
+
+### How teams are separated, and what limits you can set
+
+| | Unit that separates teams | What you can set per team | When a limit is exceeded |
+| --- | --- | --- | --- |
+| LiteLLM | Teams (`team_id`), virtual keys in a team, members within a team | Budget (`max_budget`, reset interval `budget_duration`), requests and tokens per minute (`rpm_limit`, `tpm_limit`), concurrent requests, allowed models (`models`) | The request is rejected. Rate limits return 429. |
+| OpenRouter | Workspaces, members, API keys | Workspace budgets (daily, weekly, monthly, lifetime), per-member and per-key budgets through guardrails, allowed models and providers, ZDR to force providers that keep no data | The request is rejected. Workspace budgets return 403. |
+| Cloudflare | A value the app attaches in the `cf-aig-metadata` request header (`{"team": "tax"}`) | Spend limits split per metadata value, up to 20 rules per gateway | Blocked with 429, or routed to another model through Dynamic Routing. |
+
+LiteLLM and OpenRouter separate teams by key. As long as a team calls with the key it was given, it cannot pose as another team. Cloudflare separates them by metadata the app declares on each request, so if the app attaches the wrong value, the money comes out of another team's budget. Putting Cloudflare Access in front of the gateway attaches an authenticated user ID (`cf.user_id`) automatically, but the team still has to be attached by the app.
+
+Limits are not always exact. OpenRouter says requests already in flight run to completion, so spend can slightly exceed a budget. Cloudflare records cost after a request finishes, so a burst of concurrent requests can briefly overshoot. LiteLLM judges budgets from usage stored in Postgres, so without a database no budget is enforced.
+
+### What splitting lets you do
+
+- <strong>Show costs per team</strong> — Usage accumulates per key or team, so at the end of the month one bill can be broken down into per-team costs. Once each team knows its share, it has a reason to cut it.
+- <strong>Contain the blast radius</strong> — A batch stuck in an infinite loop or a leaked key can spend only up to that team's budget. Cleaning up means revoking just that one key.
+- <strong>Keep teams within their limits</strong> — Per-team request and token limits stop a single batch job from knocking the tax chatbot out with 429s.
+- <strong>Choose models from data</strong> — Seeing which team spends how much on which model reveals where an expensive model could be swapped for a cheaper one.
+- <strong>Set different terms per team</strong> — A team handling personal data can be restricted to providers that keep no data and to approved models, while an experimenting team gets broad access.
+
+### Why it is worth doing
+
+LLM costs are billed by tokens, not requests, and the unit price for the same request varies widely with the model you send it to. Even within Anthropic, Claude Opus 5.5 costs $4 per million input tokens and $20 per million output tokens, while Claude Haiku 5.5 starts at $0.10 and $0.50. That is a 40x difference. When usage shows up only as a single bill, the total grows without anyone knowing who drove it up.
+
+Failures work the same way. Without separation, one team's mistake drains the whole organization's limits and budget. And splitting gets more expensive the longer you wait. With two teams, handing out two keys is enough; with five, you first have to recall the scattered keys and change the code in every service.
+
+The [LiteLLM proxy monitoring post](/blog/litellm-proxy-monitoring/) covers how to watch the split usage through dashboards and alerts.
+
+## Other LLM gateways
+
+This post focused on three tools, but there are more options. Here is a short look at three: Vercel and Kong from the latency comparison, and Portkey, which also publishes an open-source gateway.
+
+- <strong>Portkey</strong> — Centered on a managed service, but the gateway itself is [open source](https://github.com/Portkey-AI/gateway) under the MIT license. One line, `npx @portkey-ai/gateway`, runs it locally. You choose which errors trigger a fallback, it retries up to 5 times with exponential backoff, and it ships with dozens of prebuilt guardrails. The managed version is free up to 10,000 requests a month, and semantic caching is in the enterprise version.
+- <strong>Vercel AI Gateway</strong> — A managed gateway run by Vercel, but your app does not need to run on Vercel. Its [docs](https://vercel.com/docs/ai-gateway) say it adds no markup to provider token prices, BYOK included. Besides OpenAI Chat Completions, it accepts requests in the Anthropic Messages format. You can set budgets per team, project, API key, or member, but those budgets apply only to spend billed through Vercel credits and are soft caps that can slightly overshoot.
+- <strong>Kong AI Gateway</strong> — AI features built on top of the Kong API gateway. Configuration and observability live in Konnect, a managed console, while the data plane that handles requests runs on your own servers, cloud, or Kubernetes. Semantic caching, cost-based rate limiting, a prompt guard that blocks disallowed topics, and a Sanitizer that strips personal data are attached as policies. An organization already managing its APIs with Kong can put LLM traffic on the same operational setup.
+
+### Six tools at a glance
+
+Cells that could not be confirmed in the official docs are marked `—`.
+
+| | Deployment | Open source | Cost | Per-team budgets | Semantic cache |
+| --- | --- | --- | --- | --- | --- |
+| OpenRouter | Managed | No | 5.5% on credit purchases; BYOK 5% beyond $25,000 a month | Workspaces, members, keys | — (response cache matches identical requests only) |
+| LiteLLM | Self-hosted | Yes (MIT; `enterprise/` under a separate license) | No fees; server costs | Teams, keys, members | Yes |
+| Cloudflare AI Gateway | Managed | No | Core features free; 5% on Unified Billing credits | Spend limits per metadata value | Planned |
+| Portkey | Managed; the gateway can also be self-hosted | Gateway is (MIT) | Managed version free up to 10,000 requests a month | — | Enterprise version |
+| Vercel AI Gateway | Managed | No | No markup on token prices | Teams, projects, keys, members | — |
+| Kong AI Gateway | Managed console + self-run data plane | — | — | Cost-based rate limiting | Yes |
+
+## When to pick which
+
+### When you do not need a gateway
+
+Before picking one, ask whether you need a gateway at all. As shown above, a gateway adds latency and a point of failure, and a managed one brings fees and a data path along. In these cases there is little reason to pay that price.
+
+- <strong>One service calls one model</strong> — If there is no plan to change it, calling the SDK directly is simpler. The format differences and the fallback code repeated across services have not appeared yet.
+- <strong>You depend heavily on provider-specific features</strong> — If a feature that adds provider-specific fields to the request, like prompt caching, is central, first check that the gateway passes those fields through untouched. If it does not, you lose more than a single format gains you.
+- <strong>All your models live in one cloud</strong> — Amazon Bedrock's [Converse API](https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html) lets you call Bedrock models in one format, and tagging [application inference profiles](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles.html) splits costs by team. Google Cloud's Vertex AI also lets you call Gemini and Claude together. But if, as in this post's example, you need OpenAI, Anthropic, and Gemini at once, a single cloud cannot hold them all.
+
+### Picking by situation
+
+If you do need a gateway, the right tool depends on what you weigh first.
+
+- <strong>One team that wants to try many companies' models quickly: OpenRouter</strong> — One account calls hundreds of models without a contract with each provider. It also switches between providers of the same model for you. In return, credit purchases carry a 5.5% fee, requests pass through a third party, and the measurements above showed a little over 200 ms of added latency.
+- <strong>Latency-sensitive and already on Cloudflare: Cloudflare AI Gateway</strong> — Core features are free, and in the measurements above it added 26–37 ms, the least of the tools covered here. In return, teams are separated by metadata the app attaches, and the response cache matches identical requests only.
+- <strong>Data must not leave company infrastructure, or per-team budgets must be fine-grained: LiteLLM</strong> — You run it yourself, so requests stay inside your network and there are no fees. Budgets and limits can be set per team, key, and member. In return, you own the availability of Postgres and the gateway, and cutting latency means adding instances.
+- <strong>Already on a platform: that platform's gateway</strong> — If you manage APIs with Kong, look at Kong AI Gateway first; if your app runs on Vercel, look at Vercel AI Gateway. Putting LLM traffic on an operational setup you already know costs the least.
+
+Nor is it a one-time choice. If the app calls a single gateway in the OpenAI format, switching gateways later means changing little more than the `baseURL`, the key, and the aliases in the app. Starting with OpenRouter and moving to LiteLLM as teams grow is a path that stays open.
+
+## Summary
+
+Calling models from several companies directly means every service repeats format handling, failover, and key and cost management. An LLM gateway pulls that repetition into one layer between the app and the providers, at the cost of one more source of latency and one more point of failure, plus fees and a data path if it is managed. The three tools do the same job from different places. OpenRouter opens up a wide range of models from someone else's infrastructure, Cloudflare sits lightly at the edge, and LiteLLM splits teams and budgets finely inside your own infrastructure.
+
+You can start small. Pick the feature you call most, point the OpenAI SDK's `baseURL` at a gateway, and give that feature one alias and one fallback. Once you confirm the response format is unchanged and see how much latency is added, extend it to the remaining services.
