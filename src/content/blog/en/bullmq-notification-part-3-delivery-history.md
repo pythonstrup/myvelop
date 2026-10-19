@@ -272,9 +272,9 @@ The reason to insert it is cost. S3 has no API for uploading multiple objects at
 
 | Monthly cost at peak | Direct S3 PUT | Via Firehose |
 | --- | --- | --- |
-| PUT · ingest | ~$56.7 | ~$1.84 |
-| Per-object SQS · Lambda | ~$16.4 | ~$0.05 |
-| Total | ~$73 | ~$1.9 |
+| PUT · ingest | \~$56.7 | \~$1.84 |
+| Per-object SQS · Lambda | \~$16.4 | \~$0.05 |
+| Total | \~$73 | \~$1.9 |
 
 
 Buffer and batch and the gap disappears; Firehose means not building that buffering yourself. But <strong>it bills every record rounded up to a 5KB multiple.</strong> A single-send job is actually 555B, billed as 5KB — nine times over. Real usage of 12.7GB turning into 63.3GB on the bill is this structure at work. The absolute amount still favors Firehose.
@@ -299,11 +299,11 @@ This option fits when S3 is pure archive, never queried directly and never the b
 | Consistency | Single store | Self-healing | Manual backfill | Self-healing |
 | Freshness | Immediate | Seconds to minutes | Seconds | Buffer interval (1–15 min) |
 | Things to manage | Instance · sweep · purge · PII | S3 · SQS · Lambda | Those + SNS | Those + the stream |
-| Monthly cost, baseline | ~$70 | ~$11 | ~$15 | ~$5 |
-| Monthly cost, peak | ~$360 | ~$79 | ~$92 | ~$7 |
+| Monthly cost, baseline | \~$70 | \~$11 | \~$15 | \~$5 |
+| Monthly cost, peak | \~$360 | \~$79 | \~$92 | \~$7 |
 
 
-Costs all assume direct S3 PUTs. The Firehose column is with it inserted into the serial option; inserted into fan-out it becomes ~$8 baseline and ~$21 at peak.
+Costs all assume direct S3 PUTs. The Firehose column is with it inserted into the serial option; inserted into fan-out it becomes \~$8 baseline and \~$21 at peak.
 
 The flip at peak stands out. At baseline the serial option is six times cheaper than the relational DB. Toward peak, PUT requests dominate the bill and it climbs to $79, close to the relational DB. Insert Firehose in that regime and it drops nearly tenfold again. The relational DB moves the other way: more volume means a bigger instance, and the gap widens.
 

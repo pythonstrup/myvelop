@@ -9,9 +9,9 @@ socialImage: "../../../assets/blog/mcp-proxy-memory/mcp.png"
 
 노트북 팬이 그칠 줄을 몰라서 Activity Monitor를 열었다. 검색창에 "model"을 치자 목록이 한 화면에 다 안 담겼다.
 
-![Activity Monitor에서 @modelcontextprotocol 계열 MCP 서버 프로세스 수십 개가 각각 50~90MB씩 메모리를 차지한 모습](../../../assets/blog/mcp-proxy-memory/mcp.png)
+![Activity Monitor에서 @modelcontextprotocol 계열 MCP 서버 프로세스 수십 개가 각각 50\~90MB씩 메모리를 차지한 모습](../../../assets/blog/mcp-proxy-memory/mcp.png)
 
-`server-filesystem`, `server-memory`, `server-sequential-thinking`, `context7-mcp`가 PID만 바꿔가며 수십 줄 반복되고 있었고, 하나가 50~90MB씩 물고 있었다. 이 글은 이 목록을 지워나간 과정이다. 처음에는 메모리를 아끼는 이야기로 시작했는데, 끝에 가서는 "MCP가 아직 필요한가"라는 질문이 남았다.
+`server-filesystem`, `server-memory`, `server-sequential-thinking`, `context7-mcp`가 PID만 바꿔가며 수십 줄 반복되고 있었고, 하나가 50\~90MB씩 물고 있었다. 이 글은 이 목록을 지워나간 과정이다. 처음에는 메모리를 아끼는 이야기로 시작했는데, 끝에 가서는 "MCP가 아직 필요한가"라는 질문이 남았다.
 
 ## 세션 수 × 서버 수 × 2
 
