@@ -107,6 +107,43 @@ async function verifyPostNames() {
 	return names;
 }
 
+async function verifySeriesOrder() {
+	// seriesOrder는 한 시리즈의 글 전부에 넣거나 전부 빼고, 같은 번호를 두 번 쓰지 않는다. 번역쌍은 같은 번호를 쓴다.
+	const orders = {};
+	for (const lang of ['en', 'ko']) {
+		const directory = join(root, 'src/content/blog', lang);
+		const series = new Map();
+		orders[lang] = new Map();
+		for (const file of (await readdir(directory)).filter((name) => /\.(?:md|mdx)$/.test(name))) {
+			const frontmatter = (await readFile(join(directory, file), 'utf8')).match(/^---\n([\s\S]*?)\n---/)?.[1] ?? '';
+			const slug = file.replace(/\.(?:md|mdx)$/, '');
+			const name = frontmatter.match(/^series:\s*["']?(.*?)["']?\s*$/m)?.[1];
+			const order = frontmatter.match(/^seriesOrder:\s*(\S+)\s*$/m)?.[1];
+			orders[lang].set(slug, order);
+			if (order !== undefined && !name) fail(`${displayPath(join(directory, file))}: seriesOrder is set without series`);
+			if (!name) continue;
+			if (!series.has(name)) series.set(name, []);
+			series.get(name).push({ slug, order });
+		}
+		for (const [name, posts] of series) {
+			const ordered = posts.filter((post) => post.order !== undefined);
+			if (ordered.length && ordered.length !== posts.length) {
+				const missing = posts.filter((post) => post.order === undefined).map((post) => post.slug);
+				fail(`${displayPath(directory)}: series "${name}" is missing seriesOrder on ${missing.join(', ')}`);
+			}
+			const counts = new Map();
+			for (const post of ordered) counts.set(post.order, (counts.get(post.order) ?? 0) + 1);
+			const duplicates = [...counts].filter(([, count]) => count > 1).map(([order]) => order);
+			if (duplicates.length) fail(`${displayPath(directory)}: series "${name}" repeats seriesOrder ${duplicates.join(', ')}`);
+		}
+	}
+	for (const [slug, order] of orders.ko) {
+		if (orders.en.has(slug) && orders.en.get(slug) !== order) {
+			fail(`src/content/blog: ${slug} has seriesOrder ${order ?? 'unset'} in ko but ${orders.en.get(slug) ?? 'unset'} in en`);
+		}
+	}
+}
+
 async function verifyRedirects() {
 	// public/_redirects의 목적지가 실제로 빌드됐는지 확인한다. slug를 바꾸면 이 파일도 따라가야 한다.
 	const source = await readFile(join(root, 'public/_redirects'), 'utf8');
@@ -273,6 +310,7 @@ async function verifyFontCss() {
 
 await verifyMarkdownLinks();
 const postNames = await verifyPostNames();
+await verifySeriesOrder();
 await verifyRequiredOutput();
 const { htmlCount, canonicalUrls } = await verifyHtml();
 await verifySitemap(canonicalUrls);
