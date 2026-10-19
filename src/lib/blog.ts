@@ -37,8 +37,12 @@ export async function getPostNav(post: CollectionEntry<'blog'>): Promise<PostNav
 	const lang = post.id.startsWith('ko/') ? 'ko' : 'en';
 	const posts = await getBlogPosts(lang); // newest first
 	const seriesName = post.data.series;
+	// seriesOrder가 있으면 그 순서를, 없으면 pubDate 순서를 따른다. sort는 안정 정렬이라 번호가 없으면 순서가 그대로다.
 	const seriesPosts = seriesName
-		? posts.filter((p) => p.data.series === seriesName).reverse() // oldest first
+		? posts
+				.filter((p) => p.data.series === seriesName)
+				.reverse() // oldest first
+				.sort((a, b) => (a.data.seriesOrder ?? 0) - (b.data.seriesOrder ?? 0))
 		: [];
 
 	// 시리즈 글은 시리즈 안에서, 나머지 글은 전체에서 이전/다음을 찾는다.
