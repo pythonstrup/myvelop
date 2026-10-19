@@ -1,6 +1,6 @@
 ---
 title: "LLM 게이트웨이 - OpenRouter, LiteLLM, Cloudflare AI Gateway 중 무엇을 고를까"
-description: "OpenAI, Anthropic, Gemini API를 서비스 코드에서 직접 부르면 형식 차이, 장애 대응, 키와 비용 관리가 서비스마다 반복된다. LLM 게이트웨이가 이 반복을 어떻게 한곳으로 모으는지, 그 대가로 무엇을 내주는지 짚고 OpenRouter, LiteLLM, Cloudflare AI Gateway의 지연, fallback, 응답 캐시, 팀별 예산을 공식 문서와 공개된 측정으로 비교했다. 첫 토큰 지연은 Cloudflare가 26~37ms, OpenRouter가 200ms 남짓 더 걸렸다."
+description: "OpenAI, Anthropic, Gemini API를 서비스 코드에서 직접 부르면 형식 차이, 장애 대응, 키와 비용 관리가 서비스마다 반복된다. LLM 게이트웨이가 이 반복을 어떻게 한곳으로 모으는지, 그 대가로 무엇을 내주는지 짚고 OpenRouter, LiteLLM, Cloudflare AI Gateway의 지연, fallback, 응답 캐시, 팀별 예산을 공식 문서와 공개된 측정으로 비교했다. 첫 토큰까지는 Cloudflare가 26~37ms, OpenRouter가 200ms 남짓 더 걸렸다."
 pubDate: "2026-10-19T20:15:00+09:00"
 tags: ["llm", "llm-gateway", "openrouter", "litellm", "cloudflare"]
 series: "LLM API 운영"
@@ -215,7 +215,7 @@ gpt-5.4 측정값으로 경로마다 첫 토큰이 도착하는 순간을 겹쳐
 | OpenRouter | 1,020ms | +246ms | 1,321ms | +207ms |
 | Kong | 1,718ms | +944ms | 5,101ms | +3,987ms |
 
-Cloudflare는 직접 호출보다 2\~5% 늦었고, OpenRouter는 19\~32% 늦었다. 읽을 때 걸러야 할 점도 있다. Edgee는 비교 대상과 경쟁하는 회사이고, 짧은 프롬프트와 짧은 답만 쟀다. Kong은 측정 환경에서 Anthropic 경로가 스트리밍되지 않아 그쪽 수치가 크게 튀었다.
+Cloudflare는 직접 호출보다 2\~5% 늦었고, OpenRouter는 19\~32% 늦었다. 걸러 읽어야 할 점도 있다. Edgee는 비교 대상과 경쟁하는 회사이고, 짧은 프롬프트와 짧은 답만 쟀다. Kong은 측정 환경에서 Anthropic 경로가 스트리밍되지 않아 그쪽 수치가 크게 튀었다.
 
 ### LiteLLM은 몇 대를 띄우느냐에 달렸다
 
@@ -325,7 +325,7 @@ Cloudflare는 Dynamic Routing 경로를 만든다. 대시보드의 흐름도 편
 | Cloudflare | 기본은 꺼져 있다. 대시보드에서 켜거나 `cf-aig-cache-ttl` 헤더를 붙인다. | 60초\~1개월 | 요청 전체가 정확히 같아야 한다. 의미가 비슷한 요청을 묶는 기능은 계획 중이다. |
 | LiteLLM | 설정 파일에 `cache: True`와 저장소를 정하는 `cache_params`를 적는다. | 저장소 설정에 따른다 | 정확히 같은 요청을 기본으로 하고, `redis-semantic`, `qdrant-semantic`을 고르면 의미가 비슷한 요청도 묶는다. |
 
-정확히 같은 요청만 맞추는 캐시는 생각보다 잘 맞지 않는다. 요청 본문에 섞인 사용자 이름이나 시각이 한 글자만 달라도 다른 요청이 된다. OpenRouter는 JSON 속성의 순서까지 따진다. 그래서 응답 캐시는 같은 질문이 그대로 반복되는 곳, 예를 들어 자주 묻는 질문 답변이나 같은 문서를 여러 번 요약하는 배치에 맞는다. 대화처럼 매번 맥락이 달라지는 요청에는 기대하지 않는 편이 낫다.
+정확히 같은 요청만 맞추는 캐시는 생각보다 적중하기 어렵다. 요청 본문에 섞인 사용자 이름이나 시각이 한 글자만 달라도 다른 요청이 된다. OpenRouter는 JSON 속성의 순서까지 따진다. 그래서 응답 캐시는 같은 질문이 그대로 반복되는 곳, 예를 들어 자주 묻는 질문 답변이나 같은 문서를 여러 번 요약하는 배치에 맞는다. 대화처럼 매번 맥락이 달라지는 요청에는 기대하지 않는 편이 낫다.
 
 ## 팀이 늘면 사용량을 나눠서 관리한다
 
