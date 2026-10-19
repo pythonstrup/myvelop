@@ -3,6 +3,8 @@ title: "LLM Gateways - Choosing Between OpenRouter, LiteLLM, and Cloudflare AI G
 description: "Calling the OpenAI, Anthropic, and Gemini APIs straight from service code means every service repeats the same format handling, failover, and key and cost management. This post looks at how an LLM gateway pulls that repetition into one place and what it costs in return, then compares OpenRouter, LiteLLM, and Cloudflare AI Gateway on latency, fallbacks, response caching, and per-team budgets using official docs and published measurements. Cloudflare added 26–37 ms to the first token; OpenRouter added a little over 200 ms."
 pubDate: "2026-10-19T20:15:00+09:00"
 tags: ["llm", "llm-gateway", "openrouter", "litellm", "cloudflare"]
+series: "Running LLM APIs"
+seriesOrder: 1
 socialImage: "../../../assets/blog/llm-gateway/og.png"
 ---
 import FallbackDemo from "@/materials/llm-gateway/FallbackDemo";

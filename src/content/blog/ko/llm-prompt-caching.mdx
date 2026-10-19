@@ -3,6 +3,8 @@ title: "AI 캐시가 제값을 하려면"
 description: "AI API의 캐시 히트는 답을 돌려주는 응답 캐시가 아니라 입력 앞부분의 KV를 재사용하는 것이다. 어떤 요청이 적중하는지, 쓰기 비용을 감안하면 적중률이 얼마여야 본전인지 따지고, Claude Code 실측과 슬랙 챗봇 운영 로그로 에이전트와 챗봇을 비교했다. 에이전트 세션은 입력의 97.6%가 캐시 읽기였다."
 pubDate: "2026-09-29T22:00:00+09:00"
 tags: ["llm", "prompt-caching", "claude", "agent", "litellm", "bedrock"]
+series: "LLM API 운영"
+seriesOrder: 3
 socialImage: "../../../assets/blog/llm-prompt-caching/og.png"
 ---
 import BreakEvenDiagram from "@/materials/llm-prompt-caching/BreakEvenDiagram";
