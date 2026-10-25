@@ -1,0 +1,163 @@
+---
+import BaseHead from '../components/BaseHead.astro';
+import Footer from '../components/Footer.astro';
+import FormattedDate from '../components/FormattedDate.astro';
+import Header from '../components/Header.astro';
+import { SITE_TITLE } from '../consts';
+import { getLlmGatewayGuide } from '../lib/guide';
+
+interface Props {
+	lang: 'en' | 'ko';
+}
+
+const { lang } = Astro.props;
+const isKo = lang === 'ko';
+const guide = await getLlmGatewayGuide(lang);
+---
+
+<!doctype html>
+<html lang={lang}>
+	<head>
+		<BaseHead
+			title={`${guide.title} · ${SITE_TITLE}`}
+			description={guide.description}
+			alternatePath="/guides/llm-gateway/"
+			collection={guide.steps.map((step) => ({ name: step.title, url: step.href }))}
+		/>
+	</head>
+	<body>
+		<Header />
+		<main>
+			<article>
+				<a class="back" href={guide.homeHref}>{guide.backLabel}</a>
+				<p class="eyebrow">{isKo ? '가이드' : 'Guide'}</p>
+				<h1 data-pagefind-body>{guide.title}</h1>
+				<div class:list={['body', { 'system-prose': isKo }]} data-pagefind-body>
+					<p class="lead">{guide.lead}</p>
+					<p class="order-note">{guide.orderNote}</p>
+					<ol class="steps">
+						{
+							guide.steps.map((step, index) => (
+								<li>
+									<p class="index">{index + 1}</p>
+									<h2>
+										<a href={step.href}>{step.title}</a>
+									</h2>
+									<p class="meta">
+										<FormattedDate date={step.date} />
+									</p>
+									<p>{step.blurb}</p>
+								</li>
+							))
+						}
+					</ol>
+					<section class="related" aria-labelledby="related-title">
+						<h2 id="related-title">{guide.related.heading}</h2>
+						<p class="order-note">{guide.related.note}</p>
+						<h3>
+							<a href={guide.related.href}>{guide.related.title}</a>
+						</h3>
+						<p class="meta">
+							<FormattedDate date={guide.related.date} />
+						</p>
+						<p>{guide.related.blurb}</p>
+					</section>
+				</div>
+			</article>
+		</main>
+		<Footer />
+	</body>
+</html>
+
+<style>
+	.back {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+		margin-bottom: 1.25rem;
+		font-size: 0.9rem;
+		color: rgb(var(--gray));
+		text-decoration: none;
+	}
+	.back:hover {
+		color: var(--accent);
+	}
+	.eyebrow {
+		margin: 0 0 0.55rem;
+		font-size: 0.85rem;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--accent);
+	}
+	h1 {
+		margin: 0 0 1.25rem;
+		font-size: clamp(2rem, 7vw, 2.6rem);
+		line-height: 1.2;
+		letter-spacing: -0.03em;
+		text-wrap: balance;
+	}
+	.system-prose {
+		font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+	}
+	.lead {
+		margin: 0 0 0.8rem;
+		font-size: 1.05rem;
+	}
+	.order-note {
+		margin: 0 0 0.5rem;
+		color: rgb(var(--gray));
+		font-size: 0.92rem;
+	}
+	.steps {
+		list-style: none;
+		margin: 1.5rem 0 0;
+		padding: 0;
+	}
+	.steps > li {
+		padding: 1.35rem 0 0.35rem;
+		border-top: 1px solid rgb(var(--gray-light));
+	}
+	.index {
+		margin: 0 0 0.35rem;
+		font-size: 0.82rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		color: var(--accent);
+	}
+	.steps h2,
+	.related h3 {
+		margin: 0 0 0.35rem;
+		font-size: 1.25rem;
+		line-height: 1.35;
+	}
+	.steps h2 a,
+	.related h3 a {
+		color: rgb(var(--black));
+		text-decoration: none;
+	}
+	.steps h2 a:hover,
+	.related h3 a:hover {
+		color: var(--accent);
+	}
+	.meta {
+		margin: 0 0 0.7rem;
+		font-size: 0.85rem;
+		color: rgb(var(--gray));
+	}
+	.related {
+		margin-top: 0.5rem;
+		padding-top: 1.35rem;
+		border-top: 1px solid rgb(var(--gray-light));
+	}
+	.related h2 {
+		margin: 0 0 0.55rem;
+		font-size: 1.05rem;
+		color: rgb(var(--gray));
+	}
+	a:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+		border-radius: 4px;
+	}
+</style>

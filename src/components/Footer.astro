@@ -1,8 +1,13 @@
 ---
+import { notesFeedInfo } from '../lib/notes';
+
 const year = new Date().getFullYear();
 const isKo = Astro.currentLocale === 'ko';
 const tagline = isKo ? '한 걸음씩 쌓아가는 개발 기록.' : 'Development notes, one step at a time.';
 const rssHref = isKo ? '/ko/rss.xml' : '/rss.xml';
+const notesRssHref = notesFeedInfo(isKo ? 'ko' : 'en').href;
+const blogRssLabel = isKo ? '글 RSS' : 'Blog RSS';
+const notesRssLabel = isKo ? '노트 RSS' : 'Notes RSS';
 ---
 
 <footer class="site-footer">
@@ -15,7 +20,8 @@ const rssHref = isKo ? '/ko/rss.xml' : '/rss.xml';
 				target="_blank"
 				rel="noreferrer"
 			>LinkedIn</a>
-			<a href={rssHref}>RSS</a>
+			<a href={rssHref}>{blogRssLabel}</a>
+			<a href={notesRssHref}>{notesRssLabel}</a>
 		</nav>
 	</div>
 </footer>

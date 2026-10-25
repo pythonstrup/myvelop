@@ -162,6 +162,8 @@ async function verifyRequiredOutput() {
 		'ko/404/index.html',
 		'rss.xml',
 		'ko/rss.xml',
+		'notes/rss.xml',
+		'ko/notes/rss.xml',
 		'sitemap-index.xml',
 		'sitemap-0.xml',
 		'robots.txt',
@@ -265,6 +267,74 @@ async function verifySitemap(canonicalUrls) {
 	}
 }
 
+async function verifyNoteDates() {
+	// 노트에는 frontmatter가 없다. 날짜는 전체 git 이력에서 뽑아 커밋한 JSON이 단일 소스다.
+	// 얕은 checkout에서는 git log로 다시 만들지 않는다. scripts/note-dates.mjs를 본다.
+	// 노트를 넣거나 제목을 바꾸기만 해도 배포되도록, 빠진 항목과 남은 항목은 경고로만 알린다.
+	const manifest = JSON.parse(await readFile(join(root, 'src/data/note-dates.json'), 'utf8'));
+	const recorded = manifest.notes;
+	if (!recorded || typeof recorded !== 'object' || Array.isArray(recorded)) {
+		fail('src/data/note-dates.json: expected a notes object');
+		return;
+	}
+
+	const expected = new Set();
+	for (const lang of ['en', 'ko']) {
+		const directory = join(root, 'src/content/notes', lang);
+		for (const file of await readdir(directory)) {
+			if (file.endsWith('.md')) expected.add(`${lang}/${file}`.normalize('NFC'));
+		}
+	}
+
+	for (const key of expected) {
+		const entry = recorded[key];
+		if (!entry) {
+			console.warn(`Warning: src/data/note-dates.json has no entry for ${key}, so it is dated at build time. Run npm run note-dates on a full clone.`);
+			continue;
+		}
+		const published = Date.parse(entry.published);
+		const updated = Date.parse(entry.updated);
+		if (Number.isNaN(published) || Number.isNaN(updated)) {
+			fail(`src/data/note-dates.json: invalid date for ${key}`);
+		} else if (published > updated) {
+			fail(`src/data/note-dates.json: ${key} is published after it was updated`);
+		}
+	}
+	for (const key of Object.keys(recorded)) {
+		if (!expected.has(key.normalize('NFC'))) {
+			console.warn(`Warning: src/data/note-dates.json has a stale entry ${key}. Run npm run note-dates on a full clone.`);
+		}
+	}
+}
+
+function itemLinks(xml) {
+	return [...xml.matchAll(/<item>(.*?)<\/item>/gs)].map((match) => {
+		const item = match[1];
+		const raw = item.match(/<link>([^<]+)<\/link>/)?.[1];
+		let link = '';
+		if (raw) {
+			const url = new URL(decodeXml(raw));
+			link = `${url.origin}${decodeURIComponent(url.pathname)}`;
+		}
+		return {
+			link,
+			published: Date.parse(item.match(/<pubDate>([^<]+)<\/pubDate>/)?.[1] ?? ''),
+		};
+	});
+}
+
+async function notePageUrls(lang) {
+	const directory = lang === 'en' ? join(dist, 'notes') : join(dist, 'ko', 'notes');
+	const urls = [];
+	for (const entry of await readdir(directory, { withFileTypes: true })) {
+		if (!entry.isDirectory()) continue;
+		if (!(await isFile(join(directory, entry.name, 'index.html')))) continue;
+		const pathname = lang === 'en' ? `/notes/${entry.name}/` : `/ko/notes/${entry.name}/`;
+		urls.push(`https://pythonstrup.com${pathname.normalize('NFC')}`);
+	}
+	return new Set(urls);
+}
+
 async function verifyRss(postNames) {
 	for (const lang of ['en', 'ko']) {
 		const path = lang === 'en' ? join(dist, 'rss.xml') : join(dist, 'ko/rss.xml');
@@ -292,6 +362,32 @@ async function verifyRss(postNames) {
 	}
 }
 
+async function verifyNotesRss() {
+	// 노트 피드는 블로그 피드와 별도다. 항목은 그 언어의 노트 페이지와 같고, 처음 커밋된 날의 최신순이다.
+	for (const lang of ['en', 'ko']) {
+		const path = lang === 'en' ? join(dist, 'notes/rss.xml') : join(dist, 'ko/notes/rss.xml');
+		const items = itemLinks(await readFile(path, 'utf8'));
+		const expected = await notePageUrls(lang);
+		if (items.length !== expected.size) {
+			fail(`${displayPath(path)}: expected ${expected.size} items, found ${items.length}`);
+		}
+		const links = new Set(items.map((item) => item.link).filter(Boolean));
+		for (const url of expected) {
+			if (!links.has(url)) fail(`${displayPath(path)}: missing item ${url}`);
+		}
+		for (const item of items) {
+			if (item.link && !expected.has(item.link)) fail(`${displayPath(path)}: unexpected item ${item.link}`);
+		}
+		if (items.some((item) => Number.isNaN(item.published))) fail(`${displayPath(path)}: contains an invalid pubDate`);
+		for (let index = 1; index < items.length; index += 1) {
+			if (items[index].published > items[index - 1].published) {
+				fail(`${displayPath(path)}: items are not sorted newest-first`);
+				break;
+			}
+		}
+	}
+}
+
 async function verifyFontCss() {
 	const cssFiles = await walk(join(dist, '_astro'), (path) => path.endsWith('.css'));
 	let pretendardFaces = 0;
@@ -311,10 +407,12 @@ async function verifyFontCss() {
 await verifyMarkdownLinks();
 const postNames = await verifyPostNames();
 await verifySeriesOrder();
+await verifyNoteDates();
 await verifyRequiredOutput();
 const { htmlCount, canonicalUrls } = await verifyHtml();
 await verifySitemap(canonicalUrls);
 await verifyRss(postNames);
+await verifyNotesRss();
 await verifyRedirects();
 await verifyFontCss();
 

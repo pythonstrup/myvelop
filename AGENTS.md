@@ -15,7 +15,7 @@ This file is a map, not the full manual. Read the linked document before changin
 - English routes live at `/`; Korean routes live under `/ko`.
 - Posts live in `src/content/blog/{en,ko}`. Matching filenames are translation pairs.
 - Zettelkasten notes live in `src/content/notes/{en,ko}` (served under `/notes` and `/ko/notes`, no translation pairing). The filename is the title and `[[title]]` links notes within a language; usage is in `src/content/notes/README.md`.
-- Blog lists are newest-first, five posts per page; each home page shows the latest three.
+- Blog lists are newest-first, five posts per page. Each home page shows the latest three posts, a hand-picked start-here list (`src/data/home.ts`), topic hubs drawn from existing series, and recent notes.
 - Astro components and native browser APIs are the default. React, Tailwind, and shadcn are limited to search UI and interactive post demos in `src/materials` unless interactivity requires them elsewhere.
 
 ## Commands

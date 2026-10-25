@@ -1,0 +1,117 @@
+{
+	"source": "Author date of the earliest (published) and latest (updated) git commit that touches the current path, including renames. Regenerate with npm run note-dates on a full clone. See src/content/notes/README.md.",
+	"notes": {
+		"en/A draft is not written from a blank page but assembled by translating notes.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"en/A note-taking habit is built by the environment, not by willpower.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"en/Abstraction arises naturally while searching for a solution.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"en/Deep understanding comes from asking the questions the author did not ask.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"en/Feedback should come more often and be accepted more readily.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"en/Follow the eight steps in order.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"en/Information that contradicts my position is forgotten more easily, so note it down at once.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"en/Integrating notes exposes hidden contradictions and gaps in consistency.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"en/Learning is understanding, not remembering.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"en/Link notes whenever they touch, even slightly.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"en/Meaning sinks in only when a note is rewritten in my own words, not copied.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"en/The ideas you did not predict become the best ideas.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"en/Topics are not decided from the top but emerge bottom-up from the notes that pile up.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"en/Writing notes by topic can get in the way of understanding.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"ko/8단계 순서대로 써본다.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"ko/내 입장과 배치되는 정보는 더 쉽게 잊히므로 즉시 메모해야 한다.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"ko/메모 습관은 의지가 아니라 환경이 만든다.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"ko/메모 통합은 숨은 모순과 일관성 부족을 드러낸다.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"ko/메모는 베껴 쓰지 않고 내 말로 옮겨야 의미 파악이 일어난다.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"ko/메모를 주제별로 작성하는 건 이해에 방해가 될 수 있다.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"ko/연관된 지점이 조금이라도 있다면 메모를 연결하라.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"ko/예측하지 않은 아이디어가 최고의 아이디어가 된다.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"ko/원고 초안은 백지에서 쓰는 게 아니라 메모를 번역해 조립한다.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"ko/저자가 던지지 않은 질문을 스스로 던져야 깊이 이해한다.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"ko/주제는 위에서 정하는 게 아니라 모인 메모에서 상향식으로 떠오른다.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"ko/피드백은 더 자주 하고, 더 많이 수용해야 한다.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"ko/학습은 기억이 아니라 이해다.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		},
+		"ko/해결책을 찾는 과정에서 추상화가 자연스럽게 필요하다.md": {
+			"published": "2026-09-05T18:06:57+09:00",
+			"updated": "2026-09-05T18:06:57+09:00"
+		}
+	}
+}
