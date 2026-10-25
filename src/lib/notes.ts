@@ -49,15 +49,26 @@ export function noteDateKey(note: Note) {
 	return filePath.slice(index + marker.length).normalize('NFC');
 }
 
+// note-dates.json에 아직 없는 노트가 함께 쓰는 날짜. 한 빌드 안에서는 홈, RSS, 노트 페이지가 같은 값을 본다.
+const buildTime = new Date();
+const missingWarned = new Set<string>();
+
 /**
  * 발행일은 이 경로를 처음 건드린 커밋의 author date, 수정일은 마지막 커밋의 author date.
  * 값은 `npm run note-dates`가 전체 git 이력에서 읽어 src/data/note-dates.json에 둔다.
+ * 노트 파일만 넣고 아직 스크립트를 돌리지 않았다면 빌드를 막지 않고 빌드 시각을 쓴다.
  */
 export function noteDatesOf(note: Note) {
 	const key = noteDateKey(note);
 	const entry = noteDates.get(key);
 	if (!entry) {
-		throw new Error(`Missing note date for ${key}. On a full clone, run npm run note-dates.`);
+		if (!missingWarned.has(key)) {
+			missingWarned.add(key);
+			console.warn(
+				`note-dates.json has no entry for ${key}, so the build time is used. Commit the note, then run npm run note-dates.`,
+			);
+		}
+		return { published: buildTime, updated: buildTime };
 	}
 	const published = new Date(entry.published);
 	const updated = new Date(entry.updated);

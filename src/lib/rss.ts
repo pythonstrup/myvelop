@@ -1,9 +1,8 @@
 import rss from '@astrojs/rss';
 import type { APIContext } from 'astro';
 import { SITE_DESCRIPTION, SITE_DESCRIPTION_KO, SITE_TITLE } from '../consts';
-import { getBlogPosts } from './blog';
+import { getBlogPosts, postHref } from './blog';
 import { getNotesByDate, noteDescription, noteHref, notesFeedInfo, noteTitle } from './notes';
-import { postHref } from './posts';
 
 type Site = NonNullable<APIContext['site']>;
 

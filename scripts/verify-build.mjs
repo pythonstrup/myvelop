@@ -270,6 +270,7 @@ async function verifySitemap(canonicalUrls) {
 async function verifyNoteDates() {
 	// 노트에는 frontmatter가 없다. 날짜는 전체 git 이력에서 뽑아 커밋한 JSON이 단일 소스다.
 	// 얕은 checkout에서는 git log로 다시 만들지 않는다. scripts/note-dates.mjs를 본다.
+	// 노트를 넣거나 제목을 바꾸기만 해도 배포되도록, 빠진 항목과 남은 항목은 경고로만 알린다.
 	const manifest = JSON.parse(await readFile(join(root, 'src/data/note-dates.json'), 'utf8'));
 	const recorded = manifest.notes;
 	if (!recorded || typeof recorded !== 'object' || Array.isArray(recorded)) {
@@ -288,7 +289,7 @@ async function verifyNoteDates() {
 	for (const key of expected) {
 		const entry = recorded[key];
 		if (!entry) {
-			fail(`src/data/note-dates.json: missing ${key}. Run npm run note-dates on a full clone.`);
+			console.warn(`Warning: src/data/note-dates.json has no entry for ${key}, so it is dated at build time. Run npm run note-dates on a full clone.`);
 			continue;
 		}
 		const published = Date.parse(entry.published);
@@ -300,7 +301,9 @@ async function verifyNoteDates() {
 		}
 	}
 	for (const key of Object.keys(recorded)) {
-		if (!expected.has(key.normalize('NFC'))) fail(`src/data/note-dates.json: stale entry ${key}`);
+		if (!expected.has(key.normalize('NFC'))) {
+			console.warn(`Warning: src/data/note-dates.json has a stale entry ${key}. Run npm run note-dates on a full clone.`);
+		}
 	}
 }
 

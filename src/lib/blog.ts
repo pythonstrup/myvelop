@@ -27,23 +27,32 @@ export interface PostNav {
 	related: CollectionEntry<'blog'>[];
 }
 
-function toLink(post: CollectionEntry<'blog'>): PostLink {
-	const slug = post.id.replace(/^(en|ko)\//, '');
+export function postSlug(post: CollectionEntry<'blog'>) {
+	return post.id.replace(/^(en|ko)\//, '');
+}
+
+export function postHref(post: CollectionEntry<'blog'>) {
 	const base = post.id.startsWith('ko/') ? '/ko/blog' : '/blog';
-	return { title: post.data.title, href: `${base}/${slug}/` };
+	return `${base}/${postSlug(post)}/`;
+}
+
+/** 시리즈를 읽는 순서. 글 상단의 시리즈 상자와 홈의 주제가 함께 쓴다. */
+export function sortSeries(posts: CollectionEntry<'blog'>[]) {
+	// seriesOrder가 있으면 그 순서를, 없으면 pubDate 순서를 따른다. sort는 안정 정렬이라 번호가 없으면 순서가 그대로다.
+	return [...posts]
+		.sort((a, b) => a.data.pubDate.valueOf() - b.data.pubDate.valueOf())
+		.sort((a, b) => (a.data.seriesOrder ?? 0) - (b.data.seriesOrder ?? 0));
+}
+
+function toLink(post: CollectionEntry<'blog'>): PostLink {
+	return { title: post.data.title, href: postHref(post) };
 }
 
 export async function getPostNav(post: CollectionEntry<'blog'>): Promise<PostNav> {
 	const lang = post.id.startsWith('ko/') ? 'ko' : 'en';
 	const posts = await getBlogPosts(lang); // newest first
 	const seriesName = post.data.series;
-	// seriesOrder가 있으면 그 순서를, 없으면 pubDate 순서를 따른다. sort는 안정 정렬이라 번호가 없으면 순서가 그대로다.
-	const seriesPosts = seriesName
-		? posts
-				.filter((p) => p.data.series === seriesName)
-				.reverse() // oldest first
-				.sort((a, b) => (a.data.seriesOrder ?? 0) - (b.data.seriesOrder ?? 0))
-		: [];
+	const seriesPosts = seriesName ? sortSeries(posts.filter((p) => p.data.series === seriesName)) : [];
 
 	// 시리즈 글은 시리즈 안에서, 나머지 글은 전체에서 이전/다음을 찾는다.
 	const pool = seriesPosts.length > 0 ? [...seriesPosts].reverse() : posts;

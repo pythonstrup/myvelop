@@ -30,7 +30,7 @@ export const llmGatewayGuide: {
 	},
 	description: {
 		en: 'Reading order for the Running LLM APIs series: choosing an LLM gateway, monitoring a LiteLLM proxy, and when prompt caching pays off.',
-		ko: '연재 「LLM API 운영」의 읽기 순서. LLM 게이트웨이를 고르고, LiteLLM 프록시를 모니터링하고, 프롬프트 캐시가 언제 이득인지.',
+		ko: '연재 「LLM API 운영」을 읽는 순서다. LLM 게이트웨이를 고르고, LiteLLM 프록시를 모니터링하고, 프롬프트 캐시가 언제 이득인지 따진다.',
 	},
 	lead: {
 		en: 'Three posts from the series Running LLM APIs. The first asks what an LLM gateway takes on when service code stops calling providers itself. The second runs a LiteLLM proxy and records what the Admin UI shows, and what shows up only with Grafana and Langfuse. The third separates prompt caching from a response cache and asks when the cache pays for itself.',

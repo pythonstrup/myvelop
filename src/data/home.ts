@@ -16,11 +16,9 @@ export interface TopicHub {
 	summary: Record<Lang, string>;
 	/** Series frontmatter value, per language. */
 	series: Record<Lang, string>;
-	/** Locale-less path of a guide page. Omit when the series list itself is the entry. */
+	/** Locale-less path of a guide page. Without one, the entry link opens the first post of the series. */
 	href?: string;
 	hrefLabel?: Record<Lang, string>;
-	/** Posts that share the theme and are not in the series. */
-	related?: string[];
 }
 
 export const topicHubs: TopicHub[] = [
@@ -37,11 +35,10 @@ export const topicHubs: TopicHub[] = [
 	{
 		title: { en: 'Concurrency control and database locking', ko: '동시성 제어와 DB 락' },
 		summary: {
-			en: 'The series runs from a single UPDATE through pessimistic locks, Lettuce distributed locks, AOP, and a ticketing system. A post on blocking overlapping bookings with a PostgreSQL exclusion constraint sits beside it.',
-			ko: 'UPDATE 한 줄부터 비관적 락, Lettuce 분산 락, AOP, 티켓팅까지 이어지는 연재입니다. 겹치는 예약을 PostgreSQL EXCLUDE 제약으로 막는 글은 연재 밖에 있어서 옆에 두었습니다.',
+			en: 'The series runs from a single UPDATE through pessimistic locks, Lettuce distributed locks, AOP, and a ticketing system.',
+			ko: 'UPDATE 한 줄부터 비관적 락, Lettuce 분산 락, AOP, 티켓팅까지 이어지는 연재입니다.',
 		},
 		series: { en: 'Concurrency Control', ko: '동시성 제어' },
-		related: ['exclusion-constraint-booking'],
 	},
 	{
 		title: { en: 'Notifications with BullMQ', ko: 'BullMQ로 알림 시스템 운영하기' },
@@ -94,7 +91,7 @@ export const homeCopy = {
 		startLead: 'A short list I keep by hand for a first visit.',
 		topicsTitle: 'Topics',
 		topicsLead: 'Series already on the site, grouped as places to start.',
-		related: 'Alongside',
+		startSeries: 'Start with part 1',
 		postsTitle: 'Recent posts',
 		postsAll: 'View all posts',
 		notesTitle: 'Recent notes',
@@ -113,7 +110,7 @@ export const homeCopy = {
 		startLead: '처음 온 분을 위해 직접 골라 둔 글입니다.',
 		topicsTitle: '주제',
 		topicsLead: '이미 연재로 묶여 있는 글들입니다. 어디서 들어갈지 고르게 모아 두었습니다.',
-		related: '옆에 둔 글',
+		startSeries: '1편부터 읽기',
 		postsTitle: '최근 글',
 		postsAll: '글 전체 보기',
 		notesTitle: '최근 노트',

@@ -1,6 +1,5 @@
 import { llmGatewayGuide } from '../data/llm-gateway-guide';
-import { getBlogPosts } from './blog';
-import { localePath, postHref, postSlug, type Lang } from './posts';
+import { getBlogPosts, postHref, postSlug } from './blog';
 
 export interface GuideEntry {
 	title: string;
@@ -9,7 +8,7 @@ export interface GuideEntry {
 	blurb: string;
 }
 
-export async function getLlmGatewayGuide(lang: Lang) {
+export async function getLlmGatewayGuide(lang: 'en' | 'ko') {
 	const guide = llmGatewayGuide;
 	const posts = await getBlogPosts(lang);
 	const bySlug = new Map(posts.map((post) => [postSlug(post), post]));
@@ -58,7 +57,6 @@ export async function getLlmGatewayGuide(lang: Lang) {
 		description: guide.description[lang],
 		lead: guide.lead[lang],
 		orderNote: guide.orderNote[lang],
-		path: localePath(lang, guide.path),
 		homeHref: lang === 'ko' ? '/ko/#topics' : '/#topics',
 		backLabel: lang === 'ko' ? '← 홈' : '← Home',
 		steps,

@@ -74,38 +74,10 @@ const { copy } = page;
 								<section class="topic">
 									<h3>{topic.title}</h3>
 									<p>{topic.summary}</p>
-									{
-										topic.href && topic.hrefLabel && (
-											<p class="topic-path">
-												<a href={topic.href}>{topic.hrefLabel}</a>
-											</p>
-										)
-									}
-									<ol>
-										{topic.posts.map((post) => (
-											<li>
-												<a href={post.href}>
-													<span class="t">{post.title}</span>
-												</a>
-											</li>
-										))}
-									</ol>
-									{
-										topic.related.length > 0 && (
-											<div class="alongside">
-												<h4>{copy.related}</h4>
-												<ul>
-													{topic.related.map((post) => (
-														<li>
-															<a href={post.href}>
-																<span class="t">{post.title}</span>
-															</a>
-														</li>
-													))}
-												</ul>
-											</div>
-										)
-									}
+									<p class="topic-path">
+										<span class="count">{topic.countLabel}</span>
+										<a href={topic.entry.href}>{topic.entry.label}</a>
+									</p>
 								</section>
 							))
 						}
@@ -186,6 +158,8 @@ const { copy } = page;
 		line-height: 1.15;
 		letter-spacing: -0.03em;
 		text-wrap: balance;
+		/* 한국어 제목이 "개 / 발"처럼 단어 중간에서 끊기지 않게 한다. */
+		word-break: keep-all;
 	}
 	.hero p {
 		margin: 0 0 1.4rem;
@@ -257,15 +231,12 @@ const { copy } = page;
 		font-size: 0.98rem;
 	}
 
-	.rows,
-	.topic ol,
-	.topic ul {
+	.rows {
 		list-style: none;
 		margin: 0;
 		padding: 0;
 	}
-	.rows li a,
-	.topic li a {
+	.rows li a {
 		display: flex;
 		align-items: baseline;
 		justify-content: space-between;
@@ -274,39 +245,14 @@ const { copy } = page;
 		border-bottom: 1px solid rgb(var(--gray-light));
 		text-decoration: none;
 	}
-	.topic li a {
-		justify-content: flex-start;
-		gap: 0.7rem;
-	}
-	.topic ol {
-		counter-reset: step;
-	}
-	.topic ol li a::before {
-		counter-increment: step;
-		content: counter(step);
-		flex: none;
-		width: 1.4rem;
-		font-size: 0.82rem;
-		font-weight: 600;
-		color: rgb(var(--gray));
-	}
-	.rows li .t,
-	.topic li a {
+	.rows li .t {
+		min-width: 0;
 		color: rgb(var(--black));
 		font-weight: 500;
 		line-height: 1.45;
-	}
-	.rows li .t,
-	.topic li .t {
-		min-width: 0;
 		transition: color 0.2s ease;
 	}
-	.topic li a {
-		font-weight: 500;
-		transition: color 0.2s ease;
-	}
-	.rows li a:hover .t,
-	.topic li a:hover .t {
+	.rows li a:hover .t {
 		color: var(--accent);
 	}
 	.rows li .d {
@@ -315,9 +261,10 @@ const { copy } = page;
 		color: rgb(var(--gray));
 	}
 
-	.topic + .topic {
-		margin-top: 1.75rem;
-		padding-top: 0.25rem;
+	/* 주제는 연재 글을 펼치지 않는다. 글 순서는 각 글 상단의 시리즈 상자가 보여 준다. */
+	.topic {
+		padding: 0.6rem 0 0.2rem;
+		border-bottom: 1px solid rgb(var(--gray-light));
 	}
 	.topic h3 {
 		margin: 0.4rem 0 0.45rem;
@@ -329,7 +276,15 @@ const { copy } = page;
 		font-size: 0.95rem;
 	}
 	.topic-path {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0 1rem;
 		margin: 0.15rem 0 0.2rem;
+	}
+	.topic-path .count {
+		font-size: 0.85rem;
+		color: rgb(var(--gray));
 	}
 	.topic-path a {
 		display: inline-flex;
@@ -341,16 +296,6 @@ const { copy } = page;
 	}
 	.topic-path a::after {
 		content: ' →';
-		color: rgb(var(--gray));
-	}
-	.alongside {
-		margin-top: 0.85rem;
-	}
-	.alongside h4 {
-		margin: 0;
-		font-size: 0.82rem;
-		font-weight: 600;
-		letter-spacing: 0.02em;
 		color: rgb(var(--gray));
 	}
 
@@ -370,16 +315,11 @@ const { copy } = page;
 		.block {
 			margin-top: 2rem;
 		}
-		.rows li a,
-		.topic li a {
+		.rows li a {
 			flex-direction: column;
 			align-items: flex-start;
 			gap: 0.15rem;
 			padding: 1rem 0;
-		}
-		.topic ol li a {
-			flex-direction: row;
-			align-items: baseline;
 		}
 	}
 </style>
