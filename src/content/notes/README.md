@@ -45,8 +45,18 @@
 
 이 폴더 `src/content/notes`를 vault로 열면 위키링크 자동 완성과 그래프를 그대로 쓸 수 있다. 설정 폴더 `.obsidian`은 git에서 무시한다. Obsidian의 링크 자동 갱신을 켜 두면 제목을 바꿀 때 다른 노트의 링크도 함께 바뀐다.
 
+## 날짜와 RSS
+
+frontmatter가 없으므로 날짜는 파일에 적지 않는다. 발행일은 이 경로를 처음 건드린 커밋의 author date이고, 수정일은 마지막 커밋의 author date다. 파일 이름을 바꿔도 `git log --follow`가 앞선 커밋을 따라간다.
+
+그 값은 [`src/data/note-dates.json`](../../data/note-dates.json)에 커밋해 둔다. 사이트 빌드는 git을 읽지 않는다. GitHub Actions와 Cloudflare Pages는 이력을 얕게 받으므로, 빌드 때 git log를 치면 옛 노트의 날짜를 알 수 없기 때문이다.
+
+노트를 추가하거나 본문을 고친 뒤에는 전체 클론에서 `npm run note-dates`를 실행하고 JSON을 함께 커밋한다. 얕은 클론에서는 이 명령이 거절된다. 한 커밋에 여러 노트가 함께 들어오면 발행일이 같다. 그때 홈과 RSS는 제목순으로 가른다.
+
+RSS는 언어마다 따로 있다. 영어는 `/notes/rss.xml`, 한국어는 `/ko/notes/rss.xml`이다. 블로그 피드에는 넣지 않는다. 노트는 글이 아니고, 구독 중인 글 목록의 의미도 다르기 때문이다. 색인은 지금까지와 같이 키워드 색인이다. 시간순 목록은 홈의 최근 노트와 RSS가 맡는다.
+
 ## 확인
 
-`npm run check`가 빌드하면서 노트 페이지의 내부 링크까지 검사한다. 미리보기는 `npm run preview` 뒤 `/ko/notes/`에서 본다.
+`npm run check`가 빌드하면서 노트 페이지의 내부 링크까지 검사한다. `note-dates.json`에 없는 노트, 지운 노트 뒤에 남은 항목, 노트 RSS의 누락도 여기서 실패한다. 미리보기는 `npm run preview` 뒤 `/ko/notes/`에서 본다.
 
 언어 폴더(`ko/` 또는 `en/`)의 노트를 전부 지워 폴더가 비면 Astro가 이전 빌드 캐시의 노트를 지우지 않고 그대로 다시 만든다. 그때만 `npx astro build --force`로 캐시를 한 번 비운다. 노트가 하나라도 남아 있으면 삭제와 제목 변경은 다음 빌드에 바로 반영된다.

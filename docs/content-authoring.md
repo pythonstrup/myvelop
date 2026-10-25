@@ -71,3 +71,9 @@ import PasswordlessAuthDemo from "@/materials/passwordless-db-access-least-privi
 ## 노트 (제텔카스텐)
 
 블로그 글과 별개로 `src/content/notes/{en,ko}`에 두는 짧은 노트다. frontmatter 없이 파일명이 제목이고 `[[제목]]`으로 서로 연결한다. 규칙과 위키링크 사용법은 [노트 README](../src/content/notes/README.md)에 있다.
+
+날짜도 frontmatter에 쓰지 않는다. `src/data/note-dates.json`이 노트마다 처음 커밋과 마지막 커밋의 author date를 담는다. 노트를 추가하거나 고친 뒤에는 전체 git 이력이 있는 클론에서 `npm run note-dates`를 실행하고, 바뀐 JSON을 함께 커밋한다. 홈의 최근 노트와 `/notes/rss.xml`, `/ko/notes/rss.xml`은 그 발행일 내림차순이다. 글 피드에는 노트를 넣지 않는다.
+
+## 홈과 가이드
+
+홈의 시작 글은 `src/data/home.ts`의 `startHereSlugs`를 고쳐서 바꾼다. 주제는 이미 있는 `series`에서 가져오고, 새 주제를 지어 붙이지 않는다. LLM 게이트웨이 읽기 순서의 문장은 `src/data/llm-gateway-guide.ts`에 있다. 시리즈에 글을 추가하면 그 글의 소개를 이 파일에 적기 전까지 빌드가 실패한다.

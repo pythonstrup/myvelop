@@ -22,6 +22,8 @@ npm run preview
 
 `npm run check`는 Astro 타입 검사, 정적 빌드, Pagefind 검색 색인 생성, 저장소·산출물 검증을 차례로 실행한다. Cloudflare Pages의 빌드 명령은 `npm run build`, 출력 디렉터리는 `dist`다.
 
+노트를 추가하거나 고친 뒤에는 전체 git 이력이 있는 클론에서 `npm run note-dates`를 실행한다. 날짜의 의미는 [노트 README](src/content/notes/README.md)에 있다.
+
 ## 문서
 
 - [아키텍처와 변경 경계](docs/architecture.md)
