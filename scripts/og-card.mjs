@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
@@ -76,14 +76,19 @@ const exited = new Promise((r) => {
 });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-try {
-	let port;
-	for (let i = 0; i < 100 && !port; i++) {
+// Chrome이 응답하지 않으면 finally에 닿지 못해 프로세스와 프로필이 남으므로 전체에 시간 제한을 건다.
+const deadline = (ms) =>
+	new Promise((_, reject) => setTimeout(() => reject(new Error(`Rendering timed out after ${ms / 1000}s`)), ms).unref());
+
+async function render() {
+	// 포트 파일이 먼저 생기고 about:blank 페이지는 조금 늦게 등록될 수 있어서 둘 다 기다린다.
+	let page;
+	for (let i = 0; i < 100 && !page; i++) {
 		await sleep(100);
-		port = await readFile(join(profile, 'DevToolsActivePort'), 'utf8').then((s) => s.split('\n')[0], () => undefined);
+		const port = await readFile(join(profile, 'DevToolsActivePort'), 'utf8').then((s) => s.split('\n')[0], () => undefined);
+		if (port) page = await fetch(`http://127.0.0.1:${port}/json`).then((res) => res.json()).then((targets) => targets.find((t) => t.type === 'page'), () => undefined);
 	}
-	if (!port) throw new Error(`Chrome did not start: ${chrome}`);
-	const page = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find((t) => t.type === 'page');
+	if (!page) throw new Error(`Chrome did not start: ${chrome}`);
 
 	const ws = new WebSocket(page.webSocketDebuggerUrl);
 	await new Promise((r, reject) => {
@@ -95,8 +100,13 @@ try {
 	const listeners = new Map();
 	ws.addEventListener('message', (event) => {
 		const message = JSON.parse(event.data);
-		if (message.id) pending.get(message.id)?.(message);
-		else listeners.get(message.method)?.(message.params);
+		if (message.id) {
+			pending.get(message.id)?.(message);
+			pending.delete(message.id);
+		} else listeners.get(message.method)?.(message.params);
+	});
+	ws.addEventListener('close', () => {
+		for (const settle of pending.values()) settle({ error: { message: 'DevTools connection closed' } });
 	});
 	const send = (method, params = {}) =>
 		new Promise((r, reject) => {
@@ -108,9 +118,13 @@ try {
 	await send('Page.enable');
 	await send('Emulation.setDeviceMetricsOverride', { width: 1200, height: 630, deviceScaleFactor: 1, mobile: false });
 	const loaded = new Promise((r) => listeners.set('Page.loadEventFired', r));
-	await send('Page.navigate', { url: 'data:text/html;base64,' + Buffer.from(html).toString('base64') });
+	// 탐색 실패와 페이지 안의 예외는 프로토콜 오류가 아니라 결과 필드로 온다.
+	const navigation = await send('Page.navigate', { url: 'data:text/html;base64,' + Buffer.from(html).toString('base64') });
+	if (navigation.errorText) throw new Error(`Page.navigate: ${navigation.errorText}`);
 	await loaded;
-	const sizes = (await send('Runtime.evaluate', { expression: fit, returnByValue: true, awaitPromise: true })).result.value;
+	const evaluated = await send('Runtime.evaluate', { expression: fit, returnByValue: true, awaitPromise: true });
+	if (evaluated.exceptionDetails) throw new Error(`fit script: ${evaluated.exceptionDetails.exception?.description ?? evaluated.exceptionDetails.text}`);
+	const sizes = evaluated.result.value;
 	for (const [name, size] of Object.entries(sizes)) {
 		if (size === null) throw new Error(`${name} is too long for one line. Shorten it.`);
 	}
@@ -118,8 +132,13 @@ try {
 	ws.close();
 
 	const out = resolve(values.out);
+	await mkdir(dirname(out), { recursive: true });
 	await writeFile(out, Buffer.from(shot.data, 'base64'));
 	console.log(`${out} (title ${sizes.title}px, keywords ${sizes.keywords}px)`);
+}
+
+try {
+	await Promise.race([render(), deadline(30_000)]);
 } finally {
 	proc.kill();
 	await exited;

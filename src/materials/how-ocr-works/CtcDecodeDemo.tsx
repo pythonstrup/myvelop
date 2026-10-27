@@ -12,7 +12,7 @@ const BLANK = "-";
 const LINES = {
 	// "계약을" = 0~63열, "agree" = 159~224열
 	ko: { ...BINARIZED_LINES.ko, from: 0, to: 63, tokens: ["계", "계", BLANK, "약", "약", BLANK, "을", "을"] },
-	en: { ...BINARIZED_LINES.en, from: 159, to: 224, tokens: ["a", "a", "g", BLANK, "r", "e", BLANK, "e", "e"] },
+	en: { ...BINARIZED_LINES.en, from: 159, to: 224, tokens: ["a", "a", "g", BLANK, "r", "e", "e", BLANK, "e"] },
 } as const;
 
 const LABELS = {
@@ -22,10 +22,10 @@ const LABELS = {
 			"② 칸마다 글자 하나 또는 빈칸(-)을 고른다",
 			"③ 같은 글자가 연달아 나오면 하나로 합친다",
 			"④ 빈칸을 지운다",
-			"⑤ 글자 경계를 몰라도 한 줄을 읽어 냈다",
+			"⑤ 글자 경계를 몰라도 단어를 읽어 냈다",
 		],
 		rows: ["줄 이미지", "칸마다 고른 글자", "같은 글자 합치기", "빈칸 지우기"],
-		aria: "CTC가 줄 하나를 읽는 과정을 반복 재생하는 애니메이션. '계약을' 줄 이미지를 여덟 개의 세로 칸으로 나누고, 칸마다 계, 계, 빈칸, 약, 약, 빈칸, 을, 을을 고른다. 연달아 나온 같은 글자를 합치면 계, 빈칸, 약, 빈칸, 을이 되고, 빈칸을 지우면 '계약을'이 된다.",
+		aria: "CTC가 줄 이미지에서 잘라 낸 단어 하나를 읽는 과정을 반복 재생하는 애니메이션. '계약을' 이미지를 여덟 개의 세로 칸으로 나누고, 칸마다 계, 계, 빈칸, 약, 약, 빈칸, 을, 을을 고른다. 연달아 나온 같은 글자를 합치면 계, 빈칸, 약, 빈칸, 을이 되고, 빈칸을 지우면 '계약을'이 된다.",
 	},
 	en: {
 		captions: [
@@ -33,10 +33,10 @@ const LABELS = {
 			"② Each column picks a letter or a blank (-)",
 			"③ Merge runs of the same letter",
 			"④ Drop the blanks",
-			"⑤ The line is read without knowing letter edges",
+			"⑤ The word is read without knowing letter edges",
 		],
 		rows: ["line image", "picked per column", "merge repeats", "drop blanks"],
-		aria: "Looping animation of CTC reading one line. The line image 'agree' is split into nine columns, which pick a, a, g, blank, r, e, blank, e, e. Merging repeated letters gives a, g, blank, r, e, blank, e, and dropping the blanks gives 'agree' — the blank kept the two e's apart.",
+		aria: "Looping animation of CTC reading one word cropped from a line image. The image 'agree' is split into nine columns, which pick a, a, g, blank, r, e, e, blank, e. Merging repeated letters gives a, g, blank, r, e, blank, e, and dropping the blanks gives 'agree' — the blank kept the two e's apart.",
 	},
 } as const;
 type Lang = keyof typeof LABELS;

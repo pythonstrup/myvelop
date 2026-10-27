@@ -75,7 +75,7 @@ This approach has a weakness: classification can only succeed if segmentation su
 
 - <strong>Seals</strong> — when a seal is stamped over the text in the signature block, the text and the seal merge into one blob.
 - <strong>Table lines</strong> — when text touches the border of the party table, the line gets cut out as part of a character.
-- <strong>Hangul structure</strong> — in the English line above, each of the 16 letters came out as its own piece. Korean is different. Hangul builds each syllable from consonant and vowel parts, so a syllable like 계 or 다, whose parts sit side by side with a gap, splits into two pieces. Run the same profile on the Korean line 계약을 체결한다, and its seven syllables split into ten pieces. Modern Hangul can form 11,172 syllables, which also makes it hard to prepare a reference shape for each one.
+- <strong>Hangul structure</strong> — in the English line above, each of the 16 letters came out as its own piece. Korean is different. Hangul builds each syllable from consonant and vowel parts, and wherever those parts leave an empty column between them, the syllable splits into two pieces. Run the same profile on the Korean line 계약을 체결한다, and its seven syllables split into ten pieces: 다 splits between its consonant and vowel, and 계 and 체 split between the two vertical strokes of their vowels. Modern Hangul can form 11,172 syllables, which also makes it hard to prepare a reference shape for each one.
 
 In the end, the problem was the premise that characters had to be separated one by one. As long as people defined the character boundaries and the features to compare, results fell apart as soon as a document got a little messy. Deep learning OCR starts by dropping this premise.
 
@@ -104,7 +104,7 @@ The key here is CTC. Column widths do not line up with character widths. Several
 1. Merge runs of the same character into one.
 2. Drop the blanks.
 
-Say the columns picked `a a g - r e - e e`. Merging repeats gives `a g - r e - e`, and dropping the blanks gives `agree`.
+Say the columns picked `a a g - r e e - e`. Merging repeats gives `a g - r e - e`, and dropping the blanks gives `agree`.
 
 The demo below crops "agree" from the same pixels as the figure above and walks through the process step by step.
 
@@ -112,7 +112,7 @@ The demo below crops "agree" from the same pixels as the figure above and walks 
 
 When the same character really does repeat, like the two e's in "agree" or the zeros in a resident registration number, a blank has to sit between them. `0 0 - 0` reads as `00`; to get `000`, the model has to output `0 - 0 - 0`.
 
-Compare this with the projection profile. In classic OCR, the Korean syllable 계 split in two at a zero column. To a CRNN, that zero column is just one more column. The model looks at the neighboring columns and picks 계, so it never needs to know the character boundaries in advance. Tesseract also switched to an LSTM-based recognizer in version 4.0 in 2018, moving from matching one character at a time to reading a whole line at once.
+Think back to the Hangul case in classic OCR, where the syllable 계 split in two at a zero column. To a CRNN, that zero column is just one more column. The model looks at the neighboring columns and picks 계, so it never needs to know the character boundaries in advance. Tesseract also switched to an LSTM-based recognizer in version 4.0 in 2018, moving from matching one character at a time to reading a whole line at once.
 
 This is also where confidence comes from. For each column, the model outputs a probability for each candidate character. Combine the probabilities of the characters that survive in the final string, and you can tell how sure the model is about that string. PaddleOCR, for example, averages the probabilities of the columns that remain after merging repeats and dropping blanks, and returns that as the score. The confidence in the JSON from the introduction is this kind of value. NAVER has not published exactly how CLOVA OCR computes it.
 
@@ -128,7 +128,7 @@ With these principles in hand, let's use a real OCR API.
 
 Say you pick CLOVA OCR for the masking step, for two reasons.
 
-1. <strong>It runs in Korean regions</strong> — CLOVA OCR is offered in KR-1 and KR-2, NAVER Cloud's Korean regions.
+1. <strong>It runs in the Korea region</strong> — CLOVA OCR is offered in the KR-1 and KR-2 zones of NAVER Cloud's Korea region.
 2. <strong>It does not store what you send</strong> — the [CLOVA OCR FAQ](https://guide.ncloud-docs.com/docs/clovaocr-faq) (in Korean) states that images and documents sent by users are not stored in the cloud and are not used to improve engine performance or for pattern analysis of the data. Recognition results are not logged either; only the call history for billing is kept.
 
 There is one caveat. According to the [setup guide](https://guide.ncloud-docs.com/docs/clovaocr-spec) (in Korean), when a more detailed analysis of recognition results is wanted, there is a procedure for analyzing the data internally with the user's consent. In other words, it does not happen without consent.
@@ -155,7 +155,7 @@ The `fields` in the response hold `inferText`, the string read for each word, an
 Now let's mask the resident registration number in the fictional contract from the figure. The flow has four steps.
 
 1. <strong>Find by format</strong> — find words whose `inferText` matches the resident registration number format `\d{6}-?\d{7}` or the business registration number format `\d{3}-?\d{2}-?\d{5}`.
-2. <strong>Find by label</strong> — find the label word, such as 주민등록번호 ("Resident No." in the figure), and treat the word to its right on the same line as the value. If the value sits in a table, turning on `enableTableDetection` in the request and reading the next cell in the same row is more accurate.
+2. <strong>Find by label</strong> — find the label word, such as 주민등록번호 ("Resident No." in the figure), and treat the word to its right on the same line as the value. If the value sits in a table, turning on `enableTableDetection` in the request and reading the next cell in the same row is more accurate. This option only works after you turn on table extraction ('표 추출 여부') in the domain settings in the console.
 3. <strong>Cover</strong> — on the original image, paint over each word found with a black rectangle that encloses its `boundingPoly`.
 4. <strong>Hand off</strong> — send the masked image to a VLM to read the contract.
 
@@ -165,7 +165,7 @@ Applying this flow to the fictional contract from the first section gives the re
 
 *The contract and numbers in the figure are fictional values made up for this post.*
 
-Using steps 1 and 2 together lets each fill the other's gaps. Matching by format also catches numbers written in the body without a label, but misses them if OCR reads the hyphen as another symbol or misreads a digit. Matching by label also catches values whose format is broken, but misses numbers written without a label.
+Using steps 1 and 2 together lets each fill the other's gaps. Matching by format also catches numbers written in the body without a label, but misses them if OCR reads the hyphen as another symbol or misreads a digit. Matching by label also catches values whose format is broken, but misses numbers written without a label. To catch values that slip past both, cover any word near a label whose confidence, `inferConfidence`, is low, even if its format does not match, or have a person check it.
 
 How does a VLM read this masked image? From here on, reading works completely differently from OCR.
 
@@ -185,7 +185,7 @@ There is no detection or recognition here. No step finds where the text is or cr
 
 Something is lost in exchange, though. Here are the limits the three providers state in their own docs.
 
-- <strong>Coordinates</strong> — a VLM's output is text. Some models return coordinates, but the providers themselves call them approximate. That makes them hard to rely on for a job like masking, where missing even one is not acceptable.
+- <strong>Coordinates</strong> — a VLM's output is text. Some models return coordinates, but Claude's docs call them approximate, and OpenAI's docs say the model struggles with precise localization. That makes them hard to rely on for a job like masking, where missing even one is not acceptable.
 - <strong>Confidence</strong> — there is no per-word confidence. Faced with a blurry digit, the model can make up a plausible one.
 - <strong>Resolution</strong> — large images are downscaled or split before reading, so small text can blur.
 - <strong>Korean</strong> — the provider docs say performance can drop for non-Latin scripts.
