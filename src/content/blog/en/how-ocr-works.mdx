@@ -1,0 +1,268 @@
+---
+title: "What Happens Inside an OCR API Call - OCR Fundamentals for Backend Developers"
+description: "OCR splits into two stages: detection, which finds text, and recognition, which reads it. This post traces the principles from classic OCR to deep learning OCR, masks the sensitive data in a contract with CLOVA OCR before handing it to a VLM, and looks at how a VLM differs from OCR."
+pubDate: "2026-10-27T21:00:00+09:00"
+tags: ["ocr", "clova", "vlm", "llm"]
+socialImage: "../../../assets/blog/how-ocr-works/og.png"
+---
+import DetectRecognizeDiagram from "@/materials/how-ocr-works/DetectRecognizeDiagram";
+import ProjectionProfileDiagram from "@/materials/how-ocr-works/ProjectionProfileDiagram";
+import CtcDecodeDemo from "@/materials/how-ocr-works/CtcDecodeDemo";
+import MaskingDiagram from "@/materials/how-ocr-works/MaskingDiagram";
+import VlmPatchDiagram from "@/materials/how-ocr-works/VlmPatchDiagram";
+
+## Introduction
+
+Say you need to read contracts with OCR. The contracts contain sensitive data such as resident registration numbers and business registration numbers, so you have to mask those values and read only the rest.
+
+There are two options. You can call an external OCR API, or you can run an OCR model locally. But once you actually try to choose, neither choice is easy. The API docs tell you that you send an image and get JSON back, but not where the coordinates and confidence scores in that JSON come from. A local model is even more opaque. You hear that you can fine-tune a pretrained model on your own documents, but it is hard to picture what exactly gets trained.
+
+First, you need to know what OCR actually is. There are three things to understand.
+
+1. How OCR finds and reads text in an image.
+2. What happens inside when you call an OCR API.
+3. Whether OCR is the only way to read text in an image.
+
+Let's follow the principles in order, from classic OCR to deep learning OCR. Then we'll mask the sensitive data in a fictional contract with CLOVA OCR and look at how a VLM, which reads the masked image, differs from OCR. Fine-tuning a local model is covered in the next part.
+
+<strong>The contract in this post is a fictional document made up for illustration.</strong> All company names, people's names, resident registration numbers, and business registration numbers in it are made up and have no connection to any real person or company.
+
+## Finding text and reading text
+
+Think about how a person reads a contract. When you pick up the page, you first scan for where the text is. The title is at the top, the party details are in a table, and the signature block is at the bottom. Only once you know where things are do you read it line by line.
+
+People do both at once without thinking of them as separate jobs. For a machine, though, they are entirely different problems, so OCR splits the process into two stages.
+
+1. <strong>Detection</strong> — find the regions of the image that contain text. The output is coordinates.
+2. <strong>Recognition</strong> — crop each region and read the text in it. The output is a string and a confidence score.
+
+The figure below shows what a fictional contract turns into as it goes through the two stages.
+
+<DetectRecognizeDiagram lang="en" />
+
+*The contract and numbers in the figure are fictional values made up for this post.*
+
+Detection only says "there is text here." It does not know whether that text says "Party A" or "Party B." Recognition is the opposite. It can read the crop it is handed, but it does not know where that crop was in the original document. Only by combining the two do you get "the words 'Resident No.' appear in the contract's table."
+
+The JSON from the introduction starts to make sense once you split it this way. The coordinates come from detection, and the string and confidence come from recognition.
+
+This split matters most when masking sensitive data. To mask a resident registration number, you need to know both <strong>what</strong> it is and <strong>where</strong> it is. With recognition alone, you can find the number but not where to cover it in the image. With detection alone, you do not know which box is the resident registration number.
+
+The same applies when a result is wrong. Either the text was never found, or it was found and misread. What you fix depends on which stage failed. This is also why the next part fine-tunes the detection model and the recognition model separately.
+
+Real OCR engines add more stages before and after. Before detection they straighten a skewed scan, and after recognition they group word fragments into lines and decide the reading order. Still, the skeleton is always the same two stages, finding and reading. Now let's follow, in historical order, how machines have handled them.
+
+## Classic OCR — matching one character at a time
+
+Before deep learning, OCR literally matched text one character at a time. Say a scanned contract comes in. Classic OCR processes the image in this order.
+
+1. <strong>Binarization</strong> — split the grayscale image into two values, black text and white background.
+2. <strong>Deskewing</strong> — straighten a document that was scanned at an angle.
+3. <strong>Line and character segmentation</strong> — find where black pixels cluster to split the lines, then cut each line into individual characters.
+4. <strong>Character classification</strong> — compare each cut-out character image with known character shapes and pick the closest one.
+
+Steps 1 and 2 are preparation. Mapped onto the two stages from the previous section, step 3 is detection and step 4 is recognition.
+
+Finding text is simpler than you might think. Count the black pixels in each pixel row of the binarized image. Rows that pass through text have large counts, and the margins between lines are close to zero. Cut wherever the count drops to zero, and the lines separate. Do the same count vertically within a line, and the gaps between characters show up. This method is called a projection profile. Another method, connected components, treats each blob of touching black pixels as one character candidate, and the two are often used together.
+
+Below is the line "Both parties agree," actually binarized, with the black pixels in each column counted.
+
+<ProjectionProfileDiagram lang="en" />
+
+The simplest way to classify characters is template matching. You store a reference image for each character, lay each cut-out character over them one by one, and pick the character with the most matching pixels. But when the font changes, the same "a" takes a different shape and no longer matches. So methods appeared that extract features, such as stroke directions or the number of endpoints and crossings, and compare those instead of raw pixels. Even then, people still decided which features to look at. Tesseract, which started at HP in the 1980s and is now open source, belonged to this family up to version 3.x.
+
+This approach has a weakness: classification can only succeed if segmentation succeeds first. A later stage has no way to undo a mistake from an earlier one. Contracts expose this weakness often.
+
+- <strong>Seals</strong> — when a seal is stamped over the text in the signature block, the text and the seal merge into one blob.
+- <strong>Table lines</strong> — when text touches the border of the party table, the line gets cut out as part of a character.
+- <strong>Hangul structure</strong> — in the English line above, each of the 16 letters came out as its own piece. Korean is different. Hangul builds each syllable from consonant and vowel parts, and wherever those parts leave an empty column between them, the syllable splits into two pieces. Run the same profile on the Korean line 계약을 체결한다, and its seven syllables split into ten pieces: 다 splits between its consonant and vowel, and 계 and 체 split between the two vertical strokes of their vowels. Modern Hangul can form 11,172 syllables, which also makes it hard to prepare a reference shape for each one.
+
+In the end, the problem was the premise that characters had to be separated one by one. As long as people defined the character boundaries and the features to compare, results fell apart as soon as a document got a little messy. Deep learning OCR starts by dropping this premise.
+
+## Deep learning OCR — reading a whole line at once
+
+Deep learning OCR keeps the two stages of detection and recognition, but in each stage the model learns from data the rules people used to write by hand.
+
+### Scoring each pixel for text
+
+A deep learning detection model takes an image and computes, for each pixel, "the probability that this pixel is part of a text region." The result is a grayscale map the same size as the original. Text areas are bright and the background is dark. Group the bright areas of this map and trace their outlines, and you get detection boxes. The outline does not have to be a rectangle, which is why OCR APIs sometimes return coordinates as a list of vertices.
+
+The unit of detection changed too. Instead of single characters, the model finds words or lines. Deciding where characters begin and end is left to the next stage, the recognition model.
+
+The best-known models are CRAFT and DBNet. CRAFT, published by NAVER Clova researchers in 2019, predicts the center of each character together with the links between characters. That said, NAVER has not disclosed which model the CLOVA OCR service uses internally. PaddleOCR's PP-OCRv5 detector is based on the DB algorithm. The DB in DBNet stands for Differentiable Binarization. Where classic OCR had people set the binarization threshold, this model learns a threshold for each pixel.
+
+### Reading a line in narrow slices
+
+The recognition model receives the line image cropped to the detection box. A typical architecture is CRNN, which, as the name says, chains a CNN and an RNN.
+
+1. <strong>CNN</strong> — splits the line image, from left to right, into narrow vertical columns and extracts shape features from each.
+2. <strong>RNN</strong> — reads the columns in order, taking the context of neighboring columns into account.
+3. <strong>CTC</strong> — turns the character candidates from each column into a single string.
+
+The key here is CTC. Column widths do not line up with character widths. Several columns can fall on a single character, and some columns fall on the gaps between characters. So for each column the model picks either a character or `-`, which stands for blank, and CTC cleans up the result with two rules.
+
+1. Merge runs of the same character into one.
+2. Drop the blanks.
+
+Say the columns picked `a a g - r e e - e`. Merging repeats gives `a g - r e - e`, and dropping the blanks gives `agree`.
+
+The demo below crops "agree" from the same pixels as the figure above and walks through the process step by step.
+
+<CtcDecodeDemo client:visible lang="en" />
+
+When the same character really does repeat, like the two e's in "agree" or the zeros in a resident registration number, a blank has to sit between them. `0 0 - 0` reads as `00`; to get `000`, the model has to output `0 - 0 - 0`.
+
+Think back to the Hangul case in classic OCR, where the syllable 계 split in two at a zero column. To a CRNN, that zero column is just one more column. The model looks at the neighboring columns and picks 계, so it never needs to know the character boundaries in advance. Tesseract also switched to an LSTM-based recognizer in version 4.0 in 2018, moving from matching one character at a time to reading a whole line at once.
+
+This is also where confidence comes from. For each column, the model outputs a probability for each candidate character. Combine the probabilities of the characters that survive in the final string, and you can tell how sure the model is about that string. PaddleOCR, for example, averages the probabilities of the columns that remain after merging repeats and dropping blanks, and returns that as the score. The confidence in the JSON from the introduction is this kind of value. NAVER has not published exactly how CLOVA OCR computes it.
+
+### Rules learned from data, not written by hand
+
+Deep learning OCR beats classic OCR less because of its architecture than because of how it learns. If the training data has enough characters under seals or touching table lines, the model learns to tell them apart on its own. Nobody has to add exception rules one by one.
+
+The shape of the training data is simple too. Give the detection model images with the vertex coordinates of the text regions, and give the recognition model line images with the correct string for each. Thanks to CTC, you do not need to mark where each character is. That answers the question from the introduction of what exactly gets trained. These two are also what we will prepare when fine-tuning for contracts in the next part.
+
+With these principles in hand, let's use a real OCR API.
+
+## Masking sensitive data with CLOVA OCR
+
+Say you pick CLOVA OCR for the masking step, for two reasons.
+
+1. <strong>It runs in the Korea region</strong> — CLOVA OCR is offered in the KR-1 and KR-2 zones of NAVER Cloud's Korea region.
+2. <strong>It does not store what you send</strong> — the [CLOVA OCR FAQ](https://guide.ncloud-docs.com/docs/clovaocr-faq) (in Korean) states that images and documents sent by users are not stored in the cloud and are not used to improve engine performance or for pattern analysis of the data. Recognition results are not logged either; only the call history for billing is kept.
+
+There is one caveat. According to the [setup guide](https://guide.ncloud-docs.com/docs/clovaocr-spec) (in Korean), when a more detailed analysis of recognition results is wanted, there is a procedure for analyzing the data internally with the user's consent. In other words, it does not happen without consent.
+
+Calling it is simple. Create a domain in the console and link it to API Gateway, and you get an invoke URL and a Secret Key. Send the image to `/general` under that URL.
+
+```sh
+curl -X POST '{invoke URL}/general' \
+  -H 'Content-Type: application/json' \
+  -H 'X-OCR-SECRET: {Secret Key}' \
+  -d '{
+    "version": "V2",
+    "requestId": "1234",
+    "timestamp": 1722225600000,
+    "lang": "ko",
+    "images": [{ "format": "png", "name": "contract", "data": "{Base64-encoded image}" }]
+  }'
+```
+
+There are two things to remember. To get coordinates you need `version` set to `V2`, and for sensitive documents like contracts, send the image inline as Base64 in `data` instead of passing a public URL in `url`. The other options are in the [API docs](https://api.ncloud-docs.com/docs/ai-application-service-ocr-ocr).
+
+The `fields` in the response hold `inferText`, the string read for each word, and `boundingPoly`, the four vertices around that word. The results of recognition and detection from the first section are right there. These two values are exactly the "what" and "where" that masking needs.
+
+Now let's mask the resident registration number in the fictional contract from the figure. The flow has four steps.
+
+1. <strong>Find by format</strong> — find words whose `inferText` matches the resident registration number format `\d{6}-?\d{7}` or the business registration number format `\d{3}-?\d{2}-?\d{5}`.
+2. <strong>Find by label</strong> — find the label word, such as 주민등록번호 ("Resident No." in the figure), and treat the word to its right on the same line as the value. If the value sits in a table, turning on `enableTableDetection` in the request and reading the next cell in the same row is more accurate. This option only works after you turn on table extraction ('표 추출 여부') in the domain settings in the console.
+3. <strong>Cover</strong> — on the original image, paint over each word found with a black rectangle that encloses its `boundingPoly`.
+4. <strong>Hand off</strong> — send the masked image to a VLM to read the contract.
+
+Applying this flow to the fictional contract from the first section gives the result below. The detection boxes become exactly the areas to cover.
+
+<MaskingDiagram lang="en" />
+
+*The contract and numbers in the figure are fictional values made up for this post.*
+
+Using steps 1 and 2 together lets each fill the other's gaps. Matching by format also catches numbers written in the body without a label, but misses them if OCR reads the hyphen as another symbol or misreads a digit. Matching by label also catches values whose format is broken, but misses numbers written without a label. To catch values that slip past both, cover any word near a label whose confidence, `inferConfidence`, is low, even if its format does not match, or have a person check it.
+
+How does a VLM read this masked image? From here on, reading works completely differently from OCR.
+
+## VLMs — a different way of reading
+
+Back to the third question from the introduction. Is OCR the only way to read text in an image? No. VLMs (Vision Language Models) such as GPT, Claude, and Gemini take an image, read the text in it, and even explain what it says.
+
+A VLM first cuts the image into a grid of small patches. Patch size varies by model but is around 30 pixels on a side. A vision encoder turns the shape in each patch into a numeric vector, and to the LLM these vectors are inputs just like word tokens. The LLM reads the image tokens together with the question and writes its answer one token at a time, the same way it writes any text.
+
+The figure below shows the steps the masked contract goes through inside a VLM, in the same layout as the first figure.
+
+<VlmPatchDiagram lang="en" />
+
+*The contract and numbers in the figure are fictional values made up for this post.*
+
+There is no detection or recognition here. No step finds where the text is or crops boxes to read them; the model looks at the whole image and writes the answer directly. That is why a VLM can do what OCR cannot. It answers questions about meaning beyond the characters, such as who Party A is or when the contract term starts and ends.
+
+Something is lost in exchange, though. Here are the limits the three providers state in their own docs.
+
+- <strong>Coordinates</strong> — a VLM's output is text. Some models return coordinates, but Claude's docs call them approximate, and OpenAI's docs say the model struggles with precise localization. That makes them hard to rely on for a job like masking, where missing even one is not acceptable.
+- <strong>Confidence</strong> — there is no per-word confidence. Faced with a blurry digit, the model can make up a plausible one.
+- <strong>Resolution</strong> — large images are downscaled or split before reading, so small text can blur.
+- <strong>Korean</strong> — the provider docs say performance can drop for non-Latin scripts.
+
+Benchmarks of late-2024 models tell the same story. Korean scores varied widely between models, and extracting key information from documents was judged not yet good enough for practical use. Rankings shift with every new model, so for Korean contracts you have to measure on your own documents.
+
+<details>
+<summary>Provider docs and benchmarks in detail</summary>
+
+| | Claude | GPT | Gemini |
+| --- | --- | --- | --- |
+| Image patches | Counts one 28×28 pixel patch as one token | Some models cover the image in 32×32 pixel patches | Images up to 384 pixels on each side take 258 tokens; larger images take 258 tokens per 768×768 tile |
+| Large images | Downscales when the long side exceeds 1568 pixels, or 2576 pixels on Claude 4.7 and later | GPT-4o and GPT-4.1 models fit the image in a 2048 pixel square, then shrink the short side to 768 pixels | Higher resolution reads small text better but adds tokens and latency |
+| Coordinates | Returns pixel coordinates relative to the downscaled image, and the docs call them approximate | The docs say it struggles with tasks that need precise localization | Returns `[ymin, xmin, ymax, xmax]` normalized to 0–1000 |
+| Stated limits | May hallucinate or make mistakes on low-quality, rotated, or sub-200-pixel images | May misread rotated text and may not be optimal for non-Latin scripts such as Korean and Japanese | Recommends correcting rotation and using images that are not blurry |
+
+- In the multilingual OCR table of [CC-OCR](https://arxiv.org/abs/2412.02210), the Korean scores were Gemini-1.5-Pro 80.01, GPT-4o 74.2, and Claude-3.5-Sonnet 58.72. The versions compared were Gemini-1.5-Pro-002, GPT-4o-2024-08-06, and Claude-3.5-Sonnet-20241022. In key information extraction, even the best model scored 71.76% F1.
+- In [OCRBench v2](https://arxiv.org/abs/2501.00321), most models scored below 50 out of 100, and the paper names five weaknesses, including less frequently seen text, fine-grained recognition, and layout understanding.
+- The table draws on the official docs of [Claude](https://platform.claude.com/docs/en/build-with-claude/vision), [OpenAI](https://developers.openai.com/api/docs/guides/images-vision), and [Gemini](https://ai.google.dev/gemini-api/docs/image-understanding), checked in October 2026.
+
+</details>
+
+Now it is clear why the previous section split the work the way it did. Masking needs an exact "where," so OCR, which gives coordinates and confidence, is the right fit. Understanding the contract is a job for a VLM, which reads meaning.
+
+The retention policies also show why the order matters. All three providers say they do not use paid API inputs to train their models, but they do keep them for a while. If you mask the sensitive data before sending it to a VLM, a resident registration number never ends up in the provider's records at all.
+
+<details>
+<summary>Retention policies by provider</summary>
+
+| Provider | Used for training | Retention |
+| --- | --- | --- |
+| [OpenAI](https://developers.openai.com/api/docs/guides/your-data) | Not unless you opt in | Keeps abuse monitoring logs for up to 30 days. With approval, you can be excluded from these logs |
+| [Anthropic](https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data) | Uploaded images are not used for training | Deletes API inputs and outputs within 30 days. Keeps them for up to 2 years if flagged for a usage policy violation |
+| [Google](https://ai.google.dev/gemini-api/terms) paid | Not used | Logs prompts and responses for a limited period to detect prohibited use |
+| Google free | Used to improve products | Humans may read and annotate inputs and outputs |
+
+These were checked in October 2026. Terms change, so recheck the originals before you adopt one.
+
+</details>
+
+When you send the masked contract, ask for only the fields you need, as JSON. Include an instruction not to make up values the model cannot read, and a rule for marking the masked cells.
+
+```text
+Extract the fields below from the attached contract image as JSON.
+Do not make up values that are missing or unreadable; set them to null.
+Write "[MASKED]" for any cell that is blacked out.
+
+{ "title": string, "name": string | null, "residentNumber": string | null,
+  "businessNumber": string | null, "startDate": string | null, "amount": string | null }
+```
+
+For the fictional contract in the figure, you can expect an answer like the one below. It is not the result of a real call; it only shows the shape.
+
+```json
+{
+  "title": "Service Agreement",
+  "name": "Jane Doe",
+  "residentNumber": "[MASKED]",
+  "businessNumber": "[MASKED]",
+  "startDate": null,
+  "amount": null
+}
+```
+
+## So what should you use
+
+Back to the question from the introduction. The original dilemma was whether to call an external OCR API or run a local OCR model. Now that we have followed the principles, the question needs to change a little. What you choose is not one tool but a tool for each stage.
+
+1. <strong>Masking sensitive data</strong> — CLOVA OCR handles it. Knowing exactly where to cover takes coordinates and confidence, and the service must not store the originals.
+2. <strong>Reading the content</strong> — a VLM handles it. It takes the masked image and extracts meaning such as the parties, the term, and the amount as JSON.
+
+So when do you need local OCR? A local model fits in these cases.
+
+- When internal policy forbids sending even one original page to an external service
+- When the document volume makes call costs a burden
+- When forms or fonts unique to your documents drag down the API's recognition rate
+
+This is where the fine-tuning from the deep learning section comes in. Give the detection model images and vertex coordinates, and give the recognition model line images and correct strings. The next part fine-tunes PaddleOCR on the fictional contract and compares the result side by side with CLOVA OCR.
+
+Once you know the principles, an OCR API is no longer a black box. Detection produces the coordinates, and recognition produces the string and confidence. A VLM skips both stages and reads meaning, but loses the coordinates. Keep this difference in mind, and you can decide for yourself what to hand to each stage.

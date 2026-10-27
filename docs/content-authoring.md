@@ -21,6 +21,8 @@ socialImage: "../../../assets/blog/bullmq-notification-part-4-reading-history/og
 
 `socialImage`는 필수다. 스키마가 강제하므로 빠뜨리면 `npm run check`가 실패한다. 1200×630 PNG로 만들고 `src/assets/blog/<slug>/og.png`에 둔다. 번역쌍은 같은 파일을 함께 가리킨다.
 
+OG 카드는 `node scripts/og-card.mjs --title "How OCR Works" --keywords "detection · recognition · masking · vlm" --out src/assets/blog/<slug>/og.png`로 만든다. 제목은 짧은 영어 주제명, 키워드는 소문자 서너 개를 ` · `로 잇는다. 한 줄에 들어가지 않으면 글자를 줄이고, 그래도 넘치면 실패한다. macOS의 Chrome과 시스템 글꼴 기준으로 맞춘 틀이라 다른 환경에서는 `--chrome`이나 `CHROME_PATH`로 경로를 넘겨도 글꼴이 달라진다.
+
 선택 필드는 `updatedDate`, `heroImage`, `tags`, `series`, `seriesOrder`다. 스키마의 기준은 `src/content.config.ts`다. `series`에 같은 문자열을 넣은 글들은 연재로 묶여 글 상단에 시리즈 박스가 뜨고, 하단 이전/다음 링크가 시리즈 순서를 따른다. 시리즈 순서는 기본이 `pubDate` 오름차순이고, 발행일과 다른 순서로 읽히고 싶으면 `seriesOrder: 1`처럼 1부터 번호를 매긴다. 번호는 그 시리즈의 글 전부에 넣거나 전부 빼고, 번역쌍에는 같은 번호를 쓴다. `npm run check`가 일부만 매긴 시리즈, 겹치는 번호, 번역쌍끼리 다른 번호를 잡아낸다. 번역쌍은 언어별 시리즈명을 각각 쓴다(예: 한국어 "BullMQ로 알림 시스템 운영하기", 영어 "Running a Notification System with BullMQ"). `heroImage`를 넣으면 글 상단에 `priority`가 붙은 LCP 이미지로 렌더되므로, 성능을 감안해 필요한 글에만 쓴다.
 
 소셜 이미지는 `socialImage`, `heroImage`, `src/assets/og-default.png` 순서로 대체된다. 본문과 대표 이미지는 `src/assets/blog/<slug>/01.png`처럼 보관하고 Markdown에서는 글 파일을 기준으로 상대 경로를 쓴다.

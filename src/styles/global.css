@@ -260,6 +260,40 @@ html.dark .code-block .copy-btn {
 .prose blockquote > :last-child {
   margin-bottom: 0;
 }
+/* 본문 흐름에서 뺀 근거(수치, 출처)를 접어 두는 상자. 표와 같은 테두리를 쓴다.
+   안쪽 여백은 상자에 주고 summary만 음수 여백으로 끝까지 펼친다. 자식마다 여백을 걸면
+   .prose .table-wrap이나 페이지 스코프의 ul 규칙이 우선해서 먹히지 않는다. */
+.prose details {
+  margin: 2rem 0;
+  padding: 0 1rem 0.25rem;
+  border: 1px solid rgb(var(--gray-light));
+  border-radius: 10px;
+}
+.prose summary {
+  margin: 0 -1rem;
+  padding: 0.8em 1rem;
+  color: rgb(var(--gray));
+  font-size: 0.95em;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 10px;
+}
+.prose summary:hover {
+  color: var(--accent);
+}
+.prose summary:focus-visible {
+  color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.prose details[open] > summary {
+  margin-bottom: 1rem;
+  border-bottom: 1px solid rgb(var(--gray-light));
+  border-radius: 10px 10px 0 0;
+}
+.prose details .table-wrap {
+  margin: 0 0 1.5rem;
+}
 hr {
   border: none;
   border-top: 1px solid rgb(var(--gray-light));
