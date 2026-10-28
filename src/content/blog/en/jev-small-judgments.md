@@ -1,0 +1,430 @@
+---
+title: "Deciding Without a Generative Model - Jev"
+description: "Handing an AI agent's small judgments to Haiku is still expensive, and the reason is not the unit price. The model writes its answers out as text. I gave the same 20 judgments to Jev, a System One model that returns probabilities instead of text, and it finished 61 times faster and 14 times cheaper than Haiku with thinking. This post covers splitting the questions, reading the probabilities, routing answers by confidence bands, and calling Jev through LiteLLM."
+pubDate: "2026-10-28T21:00:00+09:00"
+tags: ["llm", "jev", "typesafe", "agent", "litellm"]
+series: "Running LLM APIs"
+seriesOrder: 4
+socialImage: "../../../assets/blog/jev-small-judgments/og.png"
+---
+
+## Introduction
+
+Build an AI agent and cost is the first thing that gets in the way. An agent calls a model many times to finish one task, and only a few of those calls need careful reasoning. The rest are small judgments that a yes or no, or a single option, can answer: does this resume meet the requirement, is this post about our service.
+
+Small judgments look like a job for a small model. But a small model like Haiku is still an LLM, so it writes out an answer as text for every judgment. Each one is cheap, but dozens of them change the bill, and the time spent waiting for the model to finish writing adds up too. Nothing was on fire yet, but if the cost could be cut, I wanted to cut it.
+
+AI agents cost too much. Can they be made cheaper?
+
+Following that question led me to Jev from TypeSafe. Jev is a model that judges without writing. I gave it the same 20 judgments on one made-up resume. It was 61 times faster and 14 times cheaper than Haiku with thinking, and 16 times faster and 6 times cheaper than Haiku without thinking.
+
+This post follows three questions.
+
+1. Why is it still expensive to hand small judgments to Haiku?
+2. What makes Jev different, and how should its answers be read?
+3. When should Jev be used, and when should it not?
+
+## Why Haiku is still expensive
+
+Start with the unit prices side by side. They are per million tokens, checked in October 2026 on the [TypeSafe models page](https://docs.typesafe.ai/models) and the [Anthropic pricing page](https://platform.claude.com/docs/en/about-claude/pricing).
+
+| Model | Input | Output |
+| --- | --- | --- |
+| Jev 1.14 | $0.042 | Free |
+| Claude Haiku 5.5 | $0.10 | $0.50 |
+| Claude Haiku 4.5 | $1.00 | $5.00 |
+| Claude Sonnet 5.5 | $2.00 | $10.00 |
+| Claude Opus 5.5 | $4.00 | $20.00 |
+
+On the table alone, Haiku 5.5's input price is only 2.4 times Jev's. At that gap Haiku seems good enough. When I measured, though, the difference came from three places other than the unit price.
+
+The first is output. A generative model writes its answer as text and charges for that text, and Haiku 5.5's output price is five times its input price. Asking for 20 judgments as JSON produced about 500 tokens of answer alone, and when Haiku thought first, about 2,000 more tokens came on top. Jev writes no text, so output costs nothing.
+
+The second is the quality of the answer. On the same resume, I asked how deeply the candidate had handled high-volume traffic. Haiku answered with something like `{"answer": "Deep", "p": 0.85}`. That 0.85 is characters the model wrote, and over ten identical requests it moved between 0.55 and 0.85. Of the 200 probabilities from those ten runs, all but 8 fell on multiples of 0.05, and a third of them were 0.6. Jev also picked Deep, but it returned a probability for each option, such as Deep 0.85 and Moderate 0.15, and over five runs Deep stayed within 0.82–0.89. Drawing the line between handling an answer automatically and passing it to a person needs this kind of distribution.
+
+The third is independence between questions. Ask a generative model 20 questions at once and it writes the answers one after another, so earlier answers can sway later ones. Keeping the judgments from bleeding into each other means calling it once per question, which sends the same resume 20 times. Jev processes the questions bundled in one request side by side, and none of them sees the others' answers.
+
+So the difference comes from the shape of the answer, not the price table. A model that answers in text spends money and time on everything it writes, and it can give probabilities only as written characters.
+
+## Cheaper judgments change the questions
+
+In 1865 the English economist William Stanley Jevons recorded that as steam engines grew more efficient and a ton of coal did more work, coal consumption did not fall. It rose. Cheaper coal was put to use in more places. This is called the Jevons paradox.
+
+Sequoia, an investor in TypeSafe, applies this paradox to judgment in its [investment announcement](https://sequoiacap.com/article/typesafe-the-jevolution). When judgment is expensive, teams compromise. They check a sample instead of everything, write brittle rules, or ask one broad question instead of several specific ones. Once judgment is nearly free, there is no reason left to compromise.
+
+Take reading resumes. When judgment is expensive, you end up asking one thing: what score does this person get. That single answer hides several judgments, such as whether the requirements are met, how much of the work the person led, and how concretely the experience is written. If the answer looks wrong, you cannot tell which judgment failed, and it is hard to find what to fix.
+
+When judgment is cheap, the question can be split. One question per requirement, per preferred qualification, and per facet of the career comes to about twenty. Asking those twenty with Jev cost $0.000116, so ten thousand runs come to $1.16. Then each answer can be inspected on its own, thresholds can be tuned separately, and code can combine the results.
+
+So how does Jev take these questions, and what does it return?
+
+## What makes Jev different
+
+TypeSafe calls Jev a [System One model](https://docs.typesafe.ai/concepts/system-one). The name comes from the two systems in Daniel Kahneman's book Thinking, Fast and Slow. If today's generative models are System 2, the slow and deliberate kind, TypeSafe set out to build a separate System 1 that judges quickly.
+
+### Answers meant for programs, not people
+
+The [TypeSafe homepage](https://typesafe.ai) starts with the limits of chat models. Models tuned to talk with people follow instructions well, but they are overconfident and can give different answers to the same question, so in the end a person has to watch over them.
+
+So TypeSafe built a model whose answers are meant to be read by programs, not people. The answer is not a conversation but a judgment in a fixed shape, and every judgment comes with a confidence. The goal is a model as dependable as code, fast, and giving the same answer to the same input.
+
+### The model judges, and code does the rest
+
+[TypeSafe's docs](https://docs.typesafe.ai/concepts/how-to-build-with-system-one) say plainly that Jev is not a model for building agents. Jev does not choose what to do next. Code owns the rules, thresholds, branches, and actions, and Jev fills in only the one fuzzy judgment that code cannot express.
+
+So using Jev starts from code as well. Write the ordinary flow first, then put Jev only where the meaning of text has to be read.
+
+### How to ask Jev
+
+There are three kinds of questions.
+
+| Type | Asks | Returns |
+| --- | --- | --- |
+| noul | Does the condition hold? | One probability of yes |
+| choice | Which of the options is it? | The chosen option, a probability per option, a confidence |
+| score | Where on an ordered scale is it? | A probability-weighted position, a probability per level, a confidence |
+
+A request has two parts: `state`, the material to judge, and `questions`, the set of questions. Here are three of the questions sent in the resume experiment. I ran the experiment in Korean, so the strings here are translations.
+
+```bash
+curl https://api.typesafe.ai/v1/systemone \
+  -H "Authorization: Bearer $TYPESAFE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "jev-latest",
+    "state": {
+      "resume": "...the candidate's resume text...",
+      "job": {
+        "title": "Backend Engineer (Payments Platform)",
+        "must": ["API design", "High-volume traffic", "Database design", "Incident response"],
+        "preferred": ["Leading a team", "Payments and settlement domain", "Running Kubernetes"],
+        "stack": ["Kotlin", "Spring Boot", "Kafka", "AWS"]
+      }
+    },
+    "questions": {
+      "must_db": {
+        "type": "choice",
+        "instructions": "Required skill \"Database design\": how deeply does `resume` show this handled in real work?",
+        "criteria": {
+          "Shallow": "Only mentioned, or a supporting role",
+          "Moderate": "Owned and ran it directly",
+          "Deep": "Led the design, with concrete results written down"
+        }
+      },
+      "scope": {
+        "type": "score",
+        "instructions": "In `resume`, how far does the scope of the work this person led reach?",
+        "criteria": ["A feature owned alone", "A team-level project", "A project spanning several teams"]
+      },
+      "stack_kafka": {
+        "type": "noul",
+        "instructions": "Does `resume` describe using Kafka in real work?"
+      }
+    }
+  }'
+```
+
+I kept to four rules when writing the questions.
+
+- <strong>Split the state into fields.</strong> Named fields such as `resume` and `job.title` let each question point to where it should look.
+- <strong>Make each question readable on its own.</strong> A question name like `must_db` is for code to find the answer, and the model does not see it.
+- <strong>Describe every option.</strong> Give only the word Deep and people and the model will draw the line in different places. The option descriptions are the judging criteria.
+- <strong>Bundle questions about the same state into one request.</strong> Bundled questions run side by side, so round trips do not grow. Twenty questions on one resume came to 2,768 input tokens.
+
+### Act when sure, pass it on when unsure
+
+The probabilities Jev returns become branch conditions directly. Instead of one threshold that splits yes from no, split the range into bands. Code handles sure answers right away, and unsure ones go to a person or a more expensive model.
+
+Where to draw the bands depends on the harm a wrong answer does. TypeSafe's [confidence docs](https://docs.typesafe.ai/confidence) suggest starting a noul at 0.7 for yes and 0.3 for no and tuning from your own data, and they give the example of running an irreversible action without confirmation only above 0.9. For the resume reader later in this post, the bands could look like this.
+
+| Item | Question | Handled right away when | Why |
+| --- | --- | --- | --- |
+| Tech stack in the resume | One noul per technology | 0.7 or higher adds a tag | A wrong tag can be fixed by the person reading |
+| Is the resume relevant to the job? | noul | 0.9 or higher moves on, and 0.1 or lower is set aside as unrelated. A person looks at everything in between | Wrongly setting aside a resume as unrelated loses a good candidate |
+| How deeply were the required skills handled? | One choice per requirement | Confidence 0.9 or higher | It feeds the reading order, so a mistake pushes a resume far down |
+| Are the preferred qualifications met? | One choice per qualification | Confidence 0.7 or higher, otherwise left as unknown | It only adds a little, so a mistake does little harm |
+
+The easier an item is to undo when wrong, the lower the threshold. The harder it is to undo when missed, the higher. These numbers are only a starting point too, and they need to be measured again on your own data.
+
+Two points are easy to confuse. A noul of 0.5 does not mean half right. It means Jev does not know. And when Jev's probabilities are said to be calibrated against outcomes, that holds across many predictions taken together. It is not a promise that each answer is right.
+
+The answers that actually came back make this clearer.
+
+## Reading Jev's answers
+
+Here are the answers to those three questions, trimmed to the fields that matter.
+
+```json
+{
+  "must_db": {
+    "choice": "Shallow",
+    "probabilities": { "Shallow": 0.81, "Moderate": 0.17, "Deep": 0.02 },
+    "confidence": 0.72
+  },
+  "scope": {
+    "score": 0.99,
+    "probabilities": { "0": 0.14, "1": 0.73, "2": 0.13 },
+    "confidence": 0.59
+  },
+  "stack_kafka": { "noul": 0.53 }
+}
+```
+
+### Can you trust just the top choice?
+
+`must_db` chose Shallow with a probability of 0.81. The resume only mentions moving database reads to a cache and says nothing about owning the design, so the judgment is right.
+
+The confidence of 0.72 expresses, from 0 to 1, how far the top choice is ahead of the others. With three options, an even split gives each one 0.33. Measuring where the top choice sits on the way from 0.33 to 1 gives (0.81 − 0.33) ÷ (1 − 0.33), about 0.72.
+
+Looking only at the top choice misses some answers. When I asked how deeply the same resume handled incident response, Deep came first, but at 0.55 against 0.45 for Moderate it was close to a coin flip, and the confidence was 0.33. Store only Deep and the fact that Jev hesitated is lost. By the bands above, this answer should not be handled right away. It goes to review.
+
+### What does 0.99 mean in a score?
+
+Score levels are numbered 0, 1, 2 in the order they were sent. The 0.99 for `scope` is not one chosen level but a position: each level times its probability, added up. 0 × 0.14 + 1 × 0.73 + 2 × 0.13 = 0.99, so the answer sits in the middle of a team-level project with a little spread evenly to either side.
+
+The confidence of 0.59 says the probability is not all on one level and some of it rests on the neighbors. Score confidence drops further the farther from the most likely level the probability lands. The position can be combined with other scores as it is. When rounding it to a level, look at the confidence as well.
+
+### How sure is 0.53 in a noul?
+
+The 0.53 for `stack_kafka` is the probability that the resume describes using Kafka in real work. Sitting right next to 0.5, it amounts to Jev saying it does not know. The resume does list Kafka under skills, but the experience section only says a message queue was introduced, so whether Kafka was used in real work cannot be told from the resume alone.
+
+On the same resume, Kotlin came out at 0.97, because the summary says plainly that the candidate mainly uses Kotlin. A noul has no separate confidence. The farther the probability is from 0.5, the surer the answer. Following the table above, the reader tags Kotlin and leaves Kafka untagged as a point to check.
+
+### Do you get the same answer twice?
+
+I sent the same request five times. None of the seven choice questions changed its top choice, but the probabilities wobbled a little in the second decimal place. Deep for incident response moved between 0.54 and 0.58, and the Kafka question went 0.53, 0.44, 0.51, 0.51, 0.58, crossing back and forth over 0.5.
+
+For comparison I sent the same request to Haiku ten times. On the database design question it chose Shallow twice and Moderate eight times. Jev chose Shallow all five times, with the probability within 0.78–0.81.
+
+Because of this wobble, an answer sitting just above or below a threshold can land on a different side each time it is sent. In those spots, send the same request a few times and take the average.
+
+## Same judgments, different cost and time
+
+Now for where the numbers in the introduction came from. The setup was as follows.
+
+- One made-up resume and 20 questions in all: 7 choice, 7 score, and 6 noul. The full resume and questions are at the end of this section.
+- Jev was called as `jev-latest`, which currently points to 1.14, with all 20 questions bundled in one request, sent five times.
+- Haiku 5.5 was called through `claude -p`, the non-interactive mode of Claude Code. Its time is the API time Claude Code measured, without the time the command takes to start. Jev's time runs from sending the request to receiving the answer, so it includes the network round trip.
+- Cost uses list prices with no cache discount.
+
+| Method | Time | Output tokens | Cost | Compared with Jev |
+| --- | --- | --- | --- | --- |
+| Jev, 20 in one request | 0.19 s (0.18–0.24) | None | $0.000116 | Baseline |
+| Haiku 5.5, 20 at once, no thinking | 2.9 s (2.3–3.4) | 492–493 | $0.00070 | 16× slower, 6× more expensive |
+| Haiku 5.5, 20 at once, thinking | 11.4 s (10.6–13.7) | 2,246–2,909 | $0.00165 | 61× slower, 14× more expensive |
+| Haiku 5.5, 20 separate calls, one after another | 54.7 s | 5,188 | $0.0073 | About 290× slower, 62× more expensive |
+| Haiku 5.5, 20 separate calls, concurrent | 4.0–5.2 s | 4,292–4,720 | $0.0068–0.0070 | 21–27× slower, 59–60× more expensive |
+
+Times are medians, and the range in parentheses runs from the fastest to the slowest run. The all-at-once method ran ten times. Haiku thought in seven of them and answered without thinking in three.
+
+For the same 20 judgments, Jev was 61 times faster and 14 times cheaper than Haiku with thinking, and 16 times faster and 6 times cheaper than Haiku without thinking.
+
+### Why not just ask Haiku everything at once?
+
+Asking Haiku without thinking, all at once, costs $0.0007 per resume, and you could call that cheap enough. I still chose Jev, for three reasons.
+
+First, matching the conditions widens the gap a lot. Asking everything at once lets earlier answers sway later ones, so keeping the questions independent means asking each one separately. That puts the cost at around 60 times Jev's, and even concurrent calls take 4–5 seconds while they wait on the slowest one. Even then, the probabilities are still characters the model wrote.
+
+Second, the gap grows with scale. For 30,000 resumes, Jev costs about $3.5, Haiku without thinking about $21, Haiku with thinking about $50, and Haiku asked one question per call about $218. If an agent makes these judgments several times within one task, multiply accordingly.
+
+Last, the time is hard to predict. Haiku 5.5 decides for each request whether to think. With the default settings it thought in all five runs, and even with effort, the setting for how much it thinks, lowered to low, it thought in two of five. So the same request with the same settings sometimes finished in 2–3 seconds and sometimes took close to 11. When one step of an agent swings like this, the length of the whole task is hard to estimate. Being unpredictable is a bigger problem than being slow.
+
+### The answer format wobbles too
+
+When asked one question per call, the format of the answer wobbled as well. The prompt said to use the question name as the key, yet with only one question in the call, 7–11 of the 20 calls returned the answer without the key. Better prompting might bring that down, so the number cannot be taken as a limit of Haiku. But with a generative model, keeping to the format becomes the model's job too, and code bears the cost of calling again when the format breaks. Jev returned all 20 answers in the fixed shape in every one of the five runs.
+
+### Limits of this measurement
+
+This measurement has clear limits.
+
+- There were few runs. Jev ran 5 times. Haiku ran 10 times asked all at once, and asked one question per call it ran once in sequence and twice concurrently.
+- Haiku went through Claude Code, and extra instructions about the answer format were added to its input. So on the same resume, Haiku's input was 4,584 tokens against Jev's 2,768. The two companies' different tokenizers are mixed into that gap as well.
+- This was not an experiment that fixed correct answers and measured accuracy. The numbers in this section speak only to time and cost.
+
+### The resume and questions used
+
+The resume is made up, and every company name in it is fictional. Jev and Haiku both received the resume below in `state.resume` and the job posting from the "How to ask Jev" example in `state.job`. The experiment ran in Korean. The resume, questions, options, and prompt below are translations.
+
+```text
+Position: Backend Engineer (Payments Platform)
+
+[Summary]
+Backend engineer who has built servers in the payments and settlement domain for 7 years. Mainly uses Kotlin/Spring and TypeScript, with experience in high-volume traffic and incident response.
+
+[Experience]
+1. NovaPay (fictional fintech company) — Backend Engineer, 2021.03 – present (4 years 7 months)
+- Owned and ran the payment authorization API. Handles up to 1,200 requests per second, and cut p99 response time from 800ms to 250ms by moving DB reads to a cache and making external card network calls asynchronous.
+- Redesigned the settlement batch. Split a once-a-day batch that took 6 hours by merchant, bringing it down to 40 minutes, and made it possible to rerun only the merchants that failed.
+- Built the payment failure notification system from scratch. Says that introducing a message queue eliminated missed notifications, but gives no specific numbers.
+- Served as incident lead during a 2023 card network integration outage and restored service through a fallback route within 2 hours, then established a postmortem culture on the team.
+- Handled code review and onboarding for 3 junior developers.
+
+2. Orbit Commerce (fictional e-commerce company) — Backend Engineer, 2018.01 – 2020.12 (3 years)
+- Developed the order and cart APIs. Took part in splitting the order module out of a monolithic server.
+- Ran load tests ahead of Black Friday and found and fixed three bottlenecks.
+- Built an internal admin tool that moved work the operations team did in Excel onto screens.
+
+[Skills]
+Kotlin, Java, Spring Boot, TypeScript, Node.js, MySQL, PostgreSQL, Redis, Kafka, AWS (ECS, RDS, SQS), Docker, Kubernetes basics
+
+[Projects]
+- Side project: contributions to an open-source payment testing tool (docs translation, 2 small bug fixes)
+- Wrote "How we cut the settlement batch to 40 minutes" for the company tech blog
+
+[About me]
+I am a developer who digs into a problem until it is solved. Payments is a domain where not a single mistake is allowed, so I think about testing and monitoring first. I enjoy learning new technologies and value growing together with my team. I deeply share your company's vision and am confident my experience can contribute to your growth. I will do my best with an attitude of constant learning and taking on challenges.
+```
+
+These are the 20 questions.
+
+| Name | Type | Question |
+| --- | --- | --- |
+| `relevant` | noul | Is the experience in `resume` related to the role in `job.title`? |
+| `must_api` | choice | Required skill "API design": how deeply does `resume` show this handled in real work? |
+| `must_traffic` | choice | Required skill "High-volume traffic": how deeply does `resume` show this handled in real work? |
+| `must_db` | choice | Required skill "Database design": how deeply does `resume` show this handled in real work? |
+| `must_incident` | choice | Required skill "Incident response": how deeply does `resume` show this handled in real work? |
+| `pref_lead` | choice | Preferred qualification "Leading a team": where does this candidate stand on it? Judge from `resume` only. |
+| `pref_domain` | choice | Preferred qualification "Payments and settlement domain": where does this candidate stand on it? Judge from `resume` only. |
+| `pref_k8s` | choice | Preferred qualification "Running Kubernetes": where does this candidate stand on it? Judge from `resume` only. |
+| `scope` | score | In `resume`, how far does the scope of the work this person led reach? |
+| `depth` | score | How deep is the expertise shown in `resume`? |
+| `impact` | score | What business impact do the results in `resume` have? |
+| `scale` | score | How large are the systems handled in `resume`? |
+| `growth` | score | Has the work grown over the career in `resume`? |
+| `helping` | score | What experience of helping colleagues does `resume` show? |
+| `specific` | score | How specific is the work in `resume`? Are the situation, the person's own actions, and the results visible? |
+| `stack_kotlin` | noul | Does `resume` describe using Kotlin in real work? |
+| `stack_spring` | noul | Does `resume` describe using Spring Boot in real work? |
+| `stack_kafka` | noul | Does `resume` describe using Kafka in real work? |
+| `stack_aws` | noul | Does `resume` describe using AWS in real work? |
+| `own_role` | noul | For each project in `resume`, is what the person did written separately from what the team did? |
+
+The choice questions used two sets of options.
+
+| Used for | Option | Meaning |
+| --- | --- | --- |
+| Required skills | Shallow | Only mentioned, or a supporting role |
+| Required skills | Moderate | Owned and ran it directly |
+| Required skills | Deep | Led the design, with concrete results written down |
+| Preferred qualifications | Met | Meets the qualification |
+| Preferred qualifications | Partly | Meets only part of it |
+| Preferred qualifications | Not met | Does not meet it |
+| Preferred qualifications | Unknown | Cannot be judged from the resume |
+
+The score questions used these levels, from low to high.
+
+| Name | Levels |
+| --- | --- |
+| `scope` | A feature owned alone → A team-level project → A project spanning several teams |
+| `depth` | Uses the tools → Knows the principles and fixes things → Designs new structures |
+| `impact` | No visible impact → Team metrics improved → Service metrics improved substantially |
+| `scale` | A small internal tool → One feature of a service → The core path of a service |
+| `growth` | Repeats similar work → Grows little by little → Grows clearly |
+| `helping` | Not visible → Code review and onboarding → Led other people's growth |
+| `specific` | Barely visible → Partly visible → Mostly visible |
+
+Haiku received the same state and questions as JSON, with this system prompt setting the answer format.
+
+```text
+You are an assistant for evaluating job applications. The user gives you a resume (state) and questions.
+Answer each question in JSON only. Output a single JSON object with no explanation and no code fences.
+- If type is noul: {"p": probability of yes, 0 to 1}
+- If type is choice: {"answer": the chosen option key, "p": probability of that option, 0 to 1}
+- If type is score: {"level": the chosen level text, "p": probability of that level, 0 to 1}
+Use the question id as the key.
+```
+
+## Example: a resume reader
+
+Let's tie these methods together in one hypothetical resume reader. It compares a job posting's requirements with a resume and sets out the order in which a person should read the resumes, along with points to check. The reader does not reject resumes. Rejection is hard to undo, so a person makes that call. Items that rank people, such as school or former employer, are left out too.
+
+These are the criteria the reader judges for each resume. They are based on a hypothetical backend engineer posting, and they are the same 20 questions measured above.
+
+| Group | Judgment | Questions |
+| --- | --- | --- |
+| Job relevance | Is the resume relevant to the job? | 1 noul |
+| Required skills | How deeply were API design, high-volume traffic, database design, and incident response handled? | 4 choice |
+| Preferred qualifications | Are leading a team, payments and settlement work, and running Kubernetes met? | 3 choice |
+| Facets of the career | Scope led, depth of expertise, impact of results, scale of systems, growth in responsibility, helping colleagues | 6 score |
+| Writing | Are the situation, the person's own actions, and the results written concretely? | 1 score |
+| Tech stack | Does it describe using Kotlin, Spring Boot, Kafka, and AWS in real work? | 4 noul |
+| Writing | For each project, is what the person did written separately from what the team did? | 1 noul |
+
+### Call the expensive model only when it is unclear
+
+In the reader, one resume flows through these steps.
+
+1. Code first handles what rules can catch, such as applications after the deadline or missing documents.
+2. The criteria above go to Jev in one request.
+3. If every answer is sure, code assigns the reading order right away. If some answers have low confidence, a large model reads only that resume again and writes a short note on why it is unclear.
+4. A person reads the resumes in the set order and decides while looking at the flagged points.
+
+This way the large model is used only on unclear resumes. Rather than switching to this structure from the start, though, it is better to begin with a shadow test. Leave the current flow as it is and only compute what the judgment would have been had Jev finished it, then compare that with the large model's judgment. The more the two overlap, the less often the large model needs to be called.
+
+### Split the questions, and let code combine them
+
+The reader does not ask Jev for the reading order directly. Code owns the rules for ordering, and Jev judges only the items that feed them. The rules could look like this.
+
+- Convert the depth of each required skill to Shallow 0, Moderate 1, Deep 2, multiply each by its weight, and add them up.
+- Add a little for each preferred qualification that is Met, and add or subtract nothing for Unknown.
+- If any required skill is confidently Shallow, push the resume back regardless of the total.
+
+A condition where a single miss is disqualifying, like the last rule, belongs outside the weighted sum. In a weighted sum, a shortfall in one item gets covered by the others.
+
+Store Jev's answers along with their probabilities. Then when the weights or the filters on the screen change, there is no need to call Jev again. Only the calculation has to run again. You need to ask again only when the meaning of a question changes.
+
+### Decide by probability, not by the top choice
+
+Look again at the incident response question from earlier. Deep came first, but at 0.55 against 0.45, with a confidence of 0.33. Had the reader stored only the top choice, this resume would have been filed as one that handled incident response in depth. With the confidence in view, it is an answer to hand to a large model or a person.
+
+Set thresholds from your own data instead of borrowing someone else's numbers. Compare Jev's answers with a few dozen resumes a person has already judged, and see from what confidence onward Jev agrees with the person. Repeat this check every time a question changes, because even a small change in wording shifts the probabilities.
+
+## Calling Jev through a LiteLLM gateway
+
+In the [first post of this series](/blog/llm-gateway/), services stopped calling model providers directly and went through a single gateway. Jev can be called the same way. LiteLLM has supported Jev [since v1.103.0-rc](https://docs.litellm.ai/blog/typesafe_jev), and because Jev returns judgments rather than text, it gets its own route instead of `/chat/completions`.
+
+The simplest option is pass-through, which forwards requests under `/typesafe/` to the TypeSafe API unchanged. The TypeSafe key lives only in the proxy's environment, and services carry only a LiteLLM virtual key.
+
+```bash
+# Only on the proxy
+export TYPESAFE_API_KEY="..."
+```
+
+On the service side, only the address and key in the earlier curl change. The request body stays the same.
+
+```bash
+curl https://<gateway-host>/typesafe/v1/systemone \
+  -H "Authorization: Bearer $LITELLM_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "model": "jev-latest", "state": { ... }, "questions": { ... } }'
+```
+
+Going through the gateway puts Jev's cost and logs in the same place as the other models. Cost is computed from the token counts in the response, and even when Jev is called as `jev-latest`, the log records the name of the version that actually answered. Streaming and per-end-user usage tracking are not supported. To run several deployments with load balancing, or to fall back to another model, the [LiteLLM docs](https://docs.litellm.ai/docs/pass_through/typesafe) recommend listing Jev in `model_list` and using the unified `/v1/systemone` route instead of pass-through.
+
+LiteLLM also uses Jev for judgments inside the gateway. The auto router can use Jev as its classifier and pick which model a request goes to with a single choice question. The gateway is doing the job this post describes, putting a small judgment in front of an expensive model. [v1.104.3](https://docs.litellm.ai/release_notes/v1.104.3/v1-104-3) added a guardrail as well, which checks messages and tool arguments against yes-or-no questions an admin writes and then blocks or logs them.
+
+## When should you use Jev?
+
+Jev only judges. Settling first when not to use it makes the rest easy.
+
+- <strong>Calculating</strong> — Sums, number comparisons, date comparisons, and counting belong to code. Jev is weak with numbers, and code does not get these wrong.
+- <strong>Writing</strong> — Summaries, replies, and text that explains why a judgment was made are for generative models. In the reader, too, writing down why a resume was unclear went to the large model.
+- <strong>Extracting new values</strong> — Jev only picks among the options it is given. Pulling a value such as years of experience out of a resume is a job for code or a generative model. Once code gathers candidates, Jev can pick the one that fits.
+- <strong>Decisions that are hard to undo</strong> — Jev's probabilities are for deciding whether to hand an answer to a person or a large model. That is also why the reader does not reject resumes.
+- <strong>Input that is not text</strong> — Jev currently accepts only text. Images and audio have to be turned into text by another model first. According to the [models page](https://docs.typesafe.ai/models), one request holds up to 64k tokens of state and questions combined, and up to 32k tokens per question.
+
+On the other hand, in these places Jev is worth considering before a generative model.
+
+- Repeated judgments that give each item a yes or no, an option, or a level. Classification, tagging, and routing fall here.
+- Places that filter or route before an expensive model is called.
+- Places that check by meaning whether candidates pulled in by code or search really fit.
+- Places that check whether a large model's output matches its evidence.
+
+## Summary
+
+Handing small judgments to Haiku was expensive not because of the unit price but because of the shape of the answer. A generative model spends output and time writing its answer as text, and it can give probabilities only as written characters. Keeping questions from bleeding into each other means one call per question, which raises the cost further.
+
+Jev only judges, and code owns the flow. Split the judgment into narrow questions and bundle them in one request, then use the returned probabilities to draw bands. Code handles the sure answers, and the unsure ones go to a person or a large model. With the same 20 judgments on one made-up resume, Jev was 61 times faster and 14 times cheaper than Haiku with thinking, and 16 times faster and 6 times cheaper than Haiku without thinking.
+
+There is no need to change the structure from the start. Pick one place where you ask an LLM a yes-or-no question today, leave the existing flow alone, and ask Jev the same question as well. Put the two answers side by side and you will see where Jev can fit.
