@@ -29,12 +29,12 @@ export const llmGatewayGuide: {
 		ko: 'LLM 게이트웨이와 프록시 운영',
 	},
 	description: {
-		en: 'Reading order for the Running LLM APIs series: choosing an LLM gateway, monitoring a LiteLLM proxy, and when prompt caching pays off.',
-		ko: '연재 「LLM API 운영」을 읽는 순서다. LLM 게이트웨이를 고르고, LiteLLM 프록시를 모니터링하고, 프롬프트 캐시가 언제 이득인지 따진다.',
+		en: 'Reading order for the Running LLM APIs series: choosing an LLM gateway, monitoring a LiteLLM proxy, when prompt caching pays off, and handing small judgments to Jev.',
+		ko: '연재 「LLM API 운영」을 읽는 순서다. LLM 게이트웨이를 고르고, LiteLLM 프록시를 모니터링하고, 프롬프트 캐시가 언제 이득인지 따지고, 작은 판단을 Jev에 맡긴다.',
 	},
 	lead: {
-		en: 'Three posts from the series Running LLM APIs. The first asks what an LLM gateway takes on when service code stops calling providers itself. The second runs a LiteLLM proxy and records what the Admin UI shows, and what shows up only with Grafana and Langfuse. The third separates prompt caching from a response cache and asks when the cache pays for itself.',
-		ko: '연재 「LLM API 운영」의 글 세 편이다. 첫 글은 서비스 코드가 프로바이더를 직접 부르지 않을 때 LLM 게이트웨이가 무엇을 맡는지를 본다. 둘째는 LiteLLM 프록시를 띄워, Admin UI가 보여주는 것과 Grafana와 Langfuse가 있어야 보이는 것을 적는다. 셋째는 프롬프트 캐시와 응답 캐시를 가르고, 캐시가 언제 이득인지 따진다.',
+		en: 'Four posts from the series Running LLM APIs. The first asks what an LLM gateway takes on when service code stops calling providers itself. The second runs a LiteLLM proxy and records what the Admin UI shows, and what shows up only with Grafana and Langfuse. The third separates prompt caching from a response cache and asks when the cache pays for itself. The fourth hands an agent\'s small judgments to Jev, a model that returns probabilities instead of text, and asks when it should and should not be used.',
+		ko: '연재 「LLM API 운영」의 글 네 편이다. 첫 글은 서비스 코드가 프로바이더를 직접 부르지 않을 때 LLM 게이트웨이가 무엇을 맡는지를 본다. 둘째는 LiteLLM 프록시를 띄워, Admin UI가 보여주는 것과 Grafana와 Langfuse가 있어야 보이는 것을 적는다. 셋째는 프롬프트 캐시와 응답 캐시를 가르고, 캐시가 언제 이득인지 따진다. 넷째는 에이전트의 작은 판단을 글 대신 확률을 돌려주는 Jev에 맡기고, 언제 쓰고 언제 쓰지 말아야 하는지 따진다.',
 	},
 	orderNote: {
 		en: 'The number is the reading order. The date is only when the post was published.',
@@ -60,6 +60,13 @@ export const llmGatewayGuide: {
 			blurb: {
 				en: 'A cache hit on an AI API does not hand back a stored answer. It reuses the KV computed for the start of the input. The post works out which requests hit, how high the hit rate has to be to break even once write costs are counted, and compares an agent with a chatbot using Claude Code measurements and production logs from a Slack chatbot. In the agent sessions, 97.6% of input tokens were cache reads.',
 				ko: 'AI API의 캐시 히트는 저장해 둔 답을 돌려주는 응답 캐시가 아니다. 입력 앞부분을 계산해 둔 KV를 다시 쓴다. 어떤 요청이 적중하는지, 쓰기 비용을 감안하면 적중률이 얼마여야 본전인지 따지고, Claude Code 실측과 슬랙 챗봇 운영 로그로 에이전트와 챗봇을 비교한다. 에이전트 세션은 입력의 97.6%가 캐시 읽기였다.',
+			},
+		},
+		{
+			slug: 'jev-small-judgments',
+			blurb: {
+				en: 'Handing an agent\'s small judgments to Haiku is still expensive, not because of the unit price but because the model writes its answers as text. The post asks Jev, a System One model that returns probabilities instead of text, narrow questions bundled in one request, then draws bands on the returned probabilities so code handles the sure answers and a person or a larger model takes the unsure ones. It also shows how to call Jev through a LiteLLM gateway. With the same 20 judgments on one made-up resume, Jev was 61 times faster and 14 times cheaper than Haiku with thinking.',
+				ko: '에이전트의 작은 판단을 Haiku에 맡겨도 비싼 이유는 단가가 아니라 답을 글로 쓰기 때문이다. 글 대신 확률을 돌려주는 System One 모델 Jev에 좁은 질문을 한 요청에 묶어 묻고, 돌아온 확률로 구간을 나눠 확실한 답은 코드가, 애매한 답은 사람이나 큰 모델이 맡게 한다. LiteLLM 게이트웨이로 부르는 법도 적었다. 지어낸 이력서 한 장에 같은 판단 20개를 시키자 생각하는 Haiku보다 61배 빠르고 14배 쌌다.',
 			},
 		},
 	],
