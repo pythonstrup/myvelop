@@ -1,0 +1,544 @@
+---
+title: "What Do Embeddings and Vector DBs Each Do? - Semantic Search Fundamentals for Backend Developers"
+description: "Semantic search is split between an embedding model, which turns text into numbers, and a vector DB, which quickly finds the nearby ones among those numbers. This post follows how each works inside, down to the math, and looks at what pgvector takes over and why embeddings alone are not enough."
+pubDate: "2026-10-30T21:00:00+09:00"
+socialImage: "../../../assets/blog/embeddings-and-vector-db/og.png"
+tags: ["embedding", "vector-db", "pgvector", "search", "llm"]
+---
+import BatchMatrixDiagram from "@/materials/embeddings-and-vector-db/BatchMatrixDiagram";
+import ContrastiveDemo from "@/materials/embeddings-and-vector-db/ContrastiveDemo";
+import CosineAngleDiagram from "@/materials/embeddings-and-vector-db/CosineAngleDiagram";
+import FilterScanDemo from "@/materials/embeddings-and-vector-db/FilterScanDemo";
+import GreedyTrapDiagram from "@/materials/embeddings-and-vector-db/GreedyTrapDiagram";
+import HnswSearchDemo from "@/materials/embeddings-and-vector-db/HnswSearchDemo";
+import MeaningMapDemo from "@/materials/embeddings-and-vector-db/MeaningMapDemo";
+import RetrievalFunnelDiagram from "@/materials/embeddings-and-vector-db/RetrievalFunnelDiagram";
+import RrfMergeDiagram from "@/materials/embeddings-and-vector-db/RrfMergeDiagram";
+import SearchPipelineDiagram from "@/materials/embeddings-and-vector-db/SearchPipelineDiagram";
+import TemperatureDiagram from "@/materials/embeddings-and-vector-db/TemperatureDiagram";
+
+## Introduction
+
+Suppose a tax consultation chatbot gets the question "When is VAT due?" The article it needs is the one on final returns and payment in Korea's Value-Added Tax Act. A keyword search misses it. The question says "VAT," but the law uses the full name, "value-added tax." And "due" appears in the article as something like "within 25 days after the end of the taxable period." The question and the article share no words.
+
+A person knows that "VAT" is short for value-added tax and that "due" asks for the payment deadline, because people read for meaning, not letters. Embeddings are how you make search read for meaning too.
+
+A PR that adds embedding-based search brings a batch of unfamiliar terms at once: embedding model, vector, vector DB, pgvector, HNSW. At first they tend to look like one lump. That is where misunderstandings like "if we use pgvector, we won't need a separate embedding server" come from. pgvector only stores and compares vectors; it does not turn text into vectors.
+
+This post explains the two separately. One is the embedding model, which turns text into numbers; the other is the vector DB, which quickly finds the nearby ones among those numbers. We follow how each works inside, down to the math, and then look at which part pgvector takes over and why embeddings alone are not enough. By the end, when you meet these terms in a PR, you will be able to explain what each one does.
+
+## Turning text into numbers, and finding nearby numbers
+
+Searching with embeddings takes four steps. The first two happen once when a document is added; the last two happen every time a question comes in.
+
+| Step | What it does | When | Who does it |
+| --- | --- | --- | --- |
+| 1. Turn documents into vectors | Makes one list of numbers per article | Once, when a document is added | Embedding model |
+| 2. Store the vectors | Keeps each list of numbers with its article | Once, when a document is added | Vector DB |
+| 3. Turn the question into a vector | Makes a list of numbers for the question with the same model | Every question | Embedding model |
+| 4. Find the nearest vectors | Picks the k articles closest to the question's list of numbers | Every question | Vector DB |
+
+A list of numbers like this is called a <strong>vector</strong>. One piece of text becomes one vector.
+
+In the figure, the top row is the flow when a document is added and the bottom row is the flow when a question comes in; the border color separates the embedding model from the vector DB.
+
+<SearchPipelineDiagram lang="en" />
+
+The embedding model and the vector DB alternate in the table, but the work they do is completely different in kind.
+
+<strong>The embedding model knows meaning.</strong> It has been trained on a great deal of text to map texts with the same meaning to nearby vectors. With a well-trained model, "When is VAT due?" and the final return article also land close together.
+
+<strong>The vector DB does not know meaning.</strong> It only measures distances between the vectors it is given. It does not care which text a vector came from or what it means. What it is good at is finding the nearby ones among millions, fast.
+
+A map app makes a good analogy. The embedding model is the part that turns an address into coordinates: given the text "a café near Gangnam Station," it marks roughly where that is on the map. The vector DB is the part that holds hundreds of thousands of shop coordinates and quickly picks "the 10 places closest to this point." Marking coordinates and finding nearby coordinates are different jobs.
+
+So which of the two is essential? The embedding model. Without vectors there is nothing to compare. The vector DB, on the other hand, is optional: search works without it. You can compare the question vector with every stored vector one by one. A vector DB becomes necessary when there are so many documents that comparing them one by one gets too slow. The vector DB section works through that threshold with numbers.
+
+The misunderstanding that "with pgvector you don't need an embedding server" also clears up with this table. pgvector handles steps 2 and 4. Steps 1 and 3 still belong to the embedding model. Step 3 in particular runs on every question, so the embedding model, whether a server you run yourself or an external API, has to be callable at any time.
+
+## Embeddings — turning meaning into coordinates
+
+### Similar meanings land close together
+
+An embedding model takes one piece of text and returns one list of numbers. Read that list as coordinates and each piece of text becomes a point in space.
+
+Points are placed by meaning, not by spelling. On a flat map, it would look like this.
+
+- "When is VAT due?" and the VAT final return article land right next to each other even though they share no words.
+- The income tax final return article lands a little farther away. It also covers filing deadlines, but for a different tax.
+- "Lunch menu ideas" lands very far away.
+
+The animation shows a single question dropping onto this map and finding the nearby articles.
+
+<MeaningMapDemo client:visible lang="en" />
+
+Real models use not two coordinates but hundreds to thousands. [KURE-v1](https://huggingface.co/nlpai-lab/KURE-v1), released for Korean retrieval, turns a piece of text into 1,024 numbers; OpenAI's text-embedding-3-small uses 1,536 and text-embedding-3-large 3,072. This count is called the number of <strong>dimensions</strong>.
+
+There are many dimensions because meaning differs along many axes. "VAT final return" and "income tax final return" are close as procedures but far apart as taxes. "VAT final return" and "VAT-exempt items" are close as taxes but far apart in what they deal with. A flat plane cannot fit all these relations at once. With many dimensions, closeness and distance along many criteria can coexist.
+
+One caution. None of the 1,024 numbers has a name a person could attach. There is no separate "tax axis" or "procedure axis"; differences in meaning are spread across many numbers. So you don't read a vector number by number; you use it by comparing it with other vectors. How close two vectors are is all a vector is good for.
+
+### Closeness is measured by direction
+
+How close two vectors are is usually measured with <strong>cosine similarity</strong>. Picture each vector as an arrow from the origin; the cosine of the angle between two arrows is their cosine similarity. It is 1 when they point the same way, 0 when they are perpendicular, and -1 when they point in opposite directions.
+
+It is computed from the inner product and the lengths. The inner product of two $$n$$-dimensional vectors $$\mathbf{a} = (a_1, a_2, \dots, a_n)$$ and $$\mathbf{b} = (b_1, b_2, \dots, b_n)$$ multiplies the numbers in matching positions and adds them all up.
+
+$$
+\mathbf{a} \cdot \mathbf{b} = \sum_{i=1}^{n} a_i b_i = a_1 b_1 + a_2 b_2 + \cdots + a_n b_n
+$$
+
+The length of a vector is the square root of its inner product with itself.
+
+$$
+\lVert \mathbf{a} \rVert = \sqrt{\mathbf{a} \cdot \mathbf{a}} = \sqrt{\sum_{i=1}^{n} a_i^2}
+$$
+
+Cosine similarity is the inner product divided by the product of the two lengths.
+
+$$
+\cos\theta = \frac{\mathbf{a} \cdot \mathbf{b}}{\lVert \mathbf{a} \rVert \, \lVert \mathbf{b} \rVert}
+$$
+
+Let's compute it with three 3-dimensional vectors. The values are made up to show the arithmetic.
+
+| Vector | Text | Value |
+| --- | --- | --- |
+| $$\mathbf{a}$$ | "When is VAT due?" | $$(0.6,\ 0.8,\ 0)$$ |
+| $$\mathbf{b}$$ | VAT final return article | $$(0.8,\ 0.6,\ 0)$$ |
+| $$\mathbf{c}$$ | Income tax final return article | $$(0,\ 0.6,\ 0.8)$$ |
+
+All three vectors have length 1. For example, $$\lVert \mathbf{a} \rVert = \sqrt{0.36 + 0.64 + 0} = 1$$. With length 1 the denominator is 1, so cosine similarity equals the inner product.
+
+$$
+\begin{aligned}
+\mathbf{a} \cdot \mathbf{b} &= 0.6 \times 0.8 + 0.8 \times 0.6 + 0 \times 0 = 0.96 \\
+\mathbf{a} \cdot \mathbf{c} &= 0.6 \times 0 + 0.8 \times 0.6 + 0 \times 0.8 = 0.48
+\end{aligned}
+$$
+
+The question $$\mathbf{a}$$ is much closer to $$\mathbf{b}$$ than to $$\mathbf{c}$$. The top search result is the VAT article.
+
+Then why bother with the angle? Wouldn't the inner product alone do? Take one more vector whose length is not 1. $$\mathbf{d} = (1.6,\ 1.2,\ 0)$$ points the same way as $$\mathbf{b}$$ and is just twice as long.
+
+$$
+\begin{aligned}
+\mathbf{a} \cdot \mathbf{d} &= 0.6 \times 1.6 + 0.8 \times 1.2 + 0 \times 0 = 1.92 \\
+\cos\theta &= \frac{\mathbf{a} \cdot \mathbf{d}}{\lVert \mathbf{a} \rVert \, \lVert \mathbf{d} \rVert} = \frac{1.92}{1 \times 2} = 0.96
+\end{aligned}
+$$
+
+The inner product is 1.92, twice that of $$\mathbf{b}$$, but the cosine similarity is 0.96, the same as $$\mathbf{b}$$. The inner product grows with length; cosine similarity looks only at direction. With a model whose vector lengths vary for reasons unrelated to meaning, ranking by inner product pushes longer vectors to the top.
+
+That is why vectors are often scaled to length 1 before they are stored. This is called <strong>normalization</strong>: divide each number in the vector by the vector's length. Normalizing $$\mathbf{d}$$ gives $$\mathbf{b}$$.
+
+$$
+\frac{\mathbf{d}}{\lVert \mathbf{d} \rVert} = \left( \frac{1.6}{2},\ \frac{1.2}{2},\ 0 \right) = (0.8,\ 0.6,\ 0) = \mathbf{b}
+$$
+
+Some models, like [OpenAI's embeddings](https://help.openai.com/en/articles/6824809-embeddings-faq), come out at length 1 to begin with.
+
+Put $$\mathbf{a}$$, $$\mathbf{b}$$, and $$\mathbf{d}$$ on a plane and $$\mathbf{d}$$ reaches twice as far as $$\mathbf{b}$$ in the same direction.
+
+<CosineAngleDiagram lang="en" />
+
+Once vectors are normalized, all three measures give the same ranking, because the squared straight-line distance between two unit-length vectors is:
+
+$$
+\lVert \mathbf{a} - \mathbf{b} \rVert^2 = \lVert \mathbf{a} \rVert^2 + \lVert \mathbf{b} \rVert^2 - 2\,(\mathbf{a} \cdot \mathbf{b}) = 2 - 2\cos\theta
+$$
+
+The higher the cosine similarity, the shorter the straight-line distance, and the inner product equals the cosine similarity. Checking with the example above, both sides come out to 0.08.
+
+$$
+\lVert \mathbf{a} - \mathbf{b} \rVert^2 = (-0.2)^2 + 0.2^2 + 0^2 = 0.08 = 2 - 2 \times 0.96
+$$
+
+Why vector DBs offer several distance measures comes up again in the pgvector section.
+
+In the end, the model decides which measure to use, because it places points according to the measure it was trained with. If the model card says to compare with cosine similarity, follow it.
+
+### How does a model learn where to put points?
+
+An embedding model usually starts from a language model pretrained on a large amount of text. A language model reads words and sentences well, but it has never learned to place a question close to the document that answers it. So it is trained again on countless pairs saying "this document answers this question," moving points so that matching pairs come closer and everything else moves away. Learning by contrasting right pairs with wrong ones is called <strong>contrastive learning</strong>. KURE-v1 started from BGE-M3, a multilingual embedding model, and was trained further on about 2 million Korean examples, each bundling one question with one correct document and five wrong ones.
+
+First, define the score. Write the model as a function $$f$$; then $$f$$ takes text and returns a vector of length 1. KURE-v1 takes the output at the position of [CLS], a special token placed at the start of the sentence, and normalizes it to length 1. The score of a question $$q$$ and a document $$p$$ is the cosine similarity of their vectors, which, with length 1, equals the inner product.
+
+$$
+s(q, p) = f(q) \cdot f(p)
+$$
+
+One training example consists of a question $$q$$, one correct document $$p^{+}$$, and wrong documents $$p_1^{-}, \dots, p_n^{-}$$. The loss function is below. It is the formula used in the [BGE-M3 paper](https://arxiv.org/abs/2402.03216), known as InfoNCE.
+
+$$
+\mathcal{L} = -\log \frac{\exp\big(s(q, p^{+}) / \tau\big)}{\exp\big(s(q, p^{+}) / \tau\big) + \sum_{j=1}^{n} \exp\big(s(q, p_j^{-}) / \tau\big)}
+$$
+
+Let's read the formula from the outside in.
+
+- The fraction is <strong>the probability of picking the correct answer among the candidates</strong>. There are $$n+1$$ candidates: one correct and $$n$$ wrong. Apply the exponential function to each score and divide by the total, and you get probabilities that add up to 1. This calculation is called softmax. Call the resulting probability $$P^{+}$$.
+- $$-\log$$ turns that probability into a penalty. When $$P^{+}$$ is 1 the penalty is 0, and as $$P^{+}$$ approaches 0 the penalty grows without bound.
+- $$\tau$$ is a small positive number called the <strong>temperature</strong>. Dividing the scores by $$\tau$$ widens the gaps between them by that factor.
+
+Let's plug in numbers. The question is "When is VAT due?", the correct answer is the VAT final return article, and the wrong answers are the income tax final return article and the VAT exemption article. Suppose the scores midway through training come out as follows. These are made-up values too.
+
+| Candidate | Score |
+| --- | --- |
+| Correct: VAT final return article | 0.80 |
+| Wrong 1: Income tax final return article | 0.60 |
+| Wrong 2: VAT exemption article | 0.50 |
+
+With $$\tau = 1$$ the scores are used as is. Dividing the numerator and denominator by $$e^{0.80}$$ simplifies the arithmetic.
+
+$$
+\begin{aligned}
+P^{+} &= \frac{1}{1 + e^{-0.20} + e^{-0.30}} = \frac{1}{1 + 0.819 + 0.741} \approx 0.391 \\
+\mathcal{L} &= -\log P^{+} \approx 0.940
+\end{aligned}
+$$
+
+Even though the correct answer has the highest score, the probability of picking it is only 39%. Cosine similarity is confined between -1 and 1, so the gaps between scores are small. With $$\tau = 0.05$$, the same gaps become 20 times wider.
+
+$$
+\begin{aligned}
+P^{+} &= \frac{1}{1 + e^{-4} + e^{-6}} = \frac{1}{1 + 0.0183 + 0.0025} \approx 0.980 \\
+\mathcal{L} &= -\log P^{+} \approx 0.021
+\end{aligned}
+$$
+
+The bar chart compares the probability of picking each candidate at the two temperatures.
+
+<TemperatureDiagram lang="en" />
+
+A small temperature turns even small score gaps into clear ones, so real training keeps the temperature small. The [sentence-transformers](https://sbert.net/docs/package_reference/sentence_transformer/losses.html) library, which was used to train KURE-v1, sets the default temperature to 0.01 or 0.05 depending on the loss function. Dividing by 0.05 is the same as multiplying by 20, so one loss function exposes it as a setting that "multiplies the scores by 20." The model card does not say which value KURE-v1 actually used.
+
+Training moves the scores in the direction that reduces this penalty. Differentiating the penalty with respect to each score tells how much each score should move. Writing the probability of picking wrong answer $$j$$ as $$P_j^{-}$$, we get:
+
+$$
+\frac{\partial \mathcal{L}}{\partial s(q, p^{+})} = -\frac{1 - P^{+}}{\tau},
+\qquad
+\frac{\partial \mathcal{L}}{\partial s(q, p_j^{-})} = \frac{P_j^{-}}{\tau}
+$$
+
+In other words, the correct score goes up and the wrong scores go down. The interesting part is the wrong side. The push on a wrong answer is proportional to $$P_j^{-}$$, the probability of picking it. In the example above, with $$\tau = 0.05$$, the probability of picking the income tax article is about 0.018 and the exemption article about 0.0024. The model pushes the income tax article, which is more easily confused with the correct answer, about 7.4 times harder. A wrong answer like "Lunch menu ideas," on the other hand, has almost zero probability of being picked, so it contributes little to training.
+
+The thickness of the arrows shows how far the correct and wrong answers move in one training step.
+
+<ContrastiveDemo client:visible lang="en" />
+
+How you collect wrong answers determines the quality of training. Two methods are usually combined.
+
+<strong>Use the other correct answers in the batch as wrong answers.</strong> Suppose we train on $$B$$ question–answer pairs at once. Multiplying the matrix $$Q$$ of stacked question vectors by the matrix $$P$$ of stacked answer vectors gives a $$B \times B$$ score table.
+
+$$
+S = Q P^{\top}, \qquad S_{ij} = s(q_i, p_j)
+$$
+
+With a batch size of 4, the score table looks like this.
+
+<BatchMatrixDiagram lang="en" />
+
+The diagonal $$S_{ii}$$ holds the correct scores and the rest are wrong scores. Each question gets $$B-1$$ wrong answers for free. The [DPR paper](https://arxiv.org/abs/2004.04906), which trained retrieval embeddings this way, used a batch size of 128; KURE-v1 used 4,096. The larger the batch, the more wrong answers.
+
+<strong>Deliberately add wrong answers that are easy to confuse.</strong> Most wrong answers in a batch are far from the correct one, so their probability of being picked is close to 0. So documents that look similar to the correct answer are picked and added separately. Such wrong answers are called <strong>hard negatives</strong>. DPR added one negative per question that the keyword search BM25 scored highly; BGE-M3 added 7 per question, and KURE-v1's training data has 5.
+
+Batch negatives have a trap too. Another question's correct answer may also answer this question. If two questions about VAT filing deadlines land in the same batch, each pushes away the other's correct answer as a wrong one. CachedGISTEmbedLoss, the loss function KURE-v1 used, reduces this problem with a method called [GISTEmbed](https://arxiv.org/abs/2402.16829). It uses another, already-trained model as a guide and leaves out wrong answers that the guide considers closer than the correct one. The "Cached" in the name means it adds the Gradient Cache technique, which computes a batch of 4,096 in pieces instead of loading it into memory all at once.
+
+What the model learns is not meaning itself but <strong>how to place correct answers closer than wrong ones</strong>. Texts tied together as correct answers in the training data move closer, and to our eyes the result looks like texts with similar meanings gathering together. So the training data decides what ends up close. This matters again in the last section, on the limits of embeddings.
+
+### Questions and documents must use the same model
+
+Where points land differs from model to model. Even for the same "When is VAT due?", the 1,024 numbers KURE-v1 produces and the 1,536 numbers an OpenAI model produces cannot be compared. The same holds even when the dimension counts match, because each model has learned its own coordinate system. Different versions of the same model have different coordinate systems too.
+
+So the model that turned the documents into vectors and the model that turns questions into vectors must be the same. If you change models, every stored document vector has to be rebuilt with the new model. With many documents, that alone is a big job. Even if the model name looks like a single config line in a PR, changing it means rebuilding every stored vector.
+
+Some models specify a prefix such as `query: ` to put before the question, because that is how they were trained. Rules like this also have to match training exactly for points to land in the same coordinate system.
+
+## Vector DBs — finding nearby points fast
+
+### Comparing against everything is exact but slow
+
+Once the question is a vector, what remains is picking the $$k$$ stored vectors closest to it. The simplest way is to measure against every one of them. With $$N$$ documents and $$d$$ dimensions, one question takes $$N \times d$$ multiplications and as many additions.
+
+This method is exact. It returns the truly closest $$k$$. pgvector also compares everything this way when there is no index. The [pgvector docs](https://github.com/pgvector/pgvector) call this exact nearest neighbor search and describe it as missing nothing.
+
+The problem is when $$N$$ grows. Assuming 1,024-dimensional vectors stored as 4-byte floats, the numbers look like this.
+
+| Documents | Multiplications per question | Memory for the vectors |
+| --- | --- | --- |
+| 10,000 | about 10 million | about 41MB |
+| 100,000 | about 100 million | about 410MB |
+| 1 million | about 1 billion | about 4.1GB |
+| 10 million | about 10 billion | about 41GB |
+
+The work grows in direct proportion to the number of documents. Ten times the documents means ten times the time per question. With tens of thousands of documents, comparing against everything is usually fast enough, so when there are few documents, comparing everything in app memory without a vector DB is also a good choice. The answers are exact, and there is one less thing to operate. Once each question needs billions of operations, you need a different approach.
+
+A vector DB cuts this work. Instead of measuring everything, it finds nearby points by looking at only some of them. This is called <strong>approximate nearest neighbor search</strong>, or ANN. HNSW is the method many vector DBs use. pgvector offers two index types, HNSW and IVFFlat, and dedicated vector DBs such as Qdrant and Weaviate also build their indexes with HNSW.
+
+### HNSW narrows down layer by layer
+
+HNSW stands for Hierarchical Navigable Small World. The three words describe the structure directly. Small World refers to a graph whose points are linked to their neighbors, Navigable means you can follow that graph to find nearby points, and Hierarchical means the graph is stacked in several layers.
+
+First, picture a graph with a single layer. Each point is linked to a few nearby neighbors. When a question vector comes in, you start from any point and move to whichever neighbor is closest to the question. You repeat this until no neighbor is closer. Because it always takes the best option in front of it, this is called <strong>greedy search</strong>.
+
+This gets slow as points multiply. If the starting point is far from the question, you have to cross a long way one neighbor at a time. HNSW solves this with layers. It is like finding an address in a map app: find Seoul on the country map, Gangnam-gu on the Seoul map, and Yeoksam-dong on the Gangnam-gu map. The upper layers have few points, so each hop covers a long distance; going down, points get denser and movement gets finer. The bottom layer has every point.
+
+<strong>How high a point goes is decided by a roll of the dice.</strong> Each time a point is inserted, the highest layer $$l$$ it reaches is drawn with the formula below, from the [HNSW paper](https://arxiv.org/abs/1603.09320).
+
+$$
+l = \big\lfloor {-\ln(U)} \cdot m_L \big\rfloor,
+\qquad U \sim \mathrm{Uniform}(0, 1),
+\qquad m_L = \frac{1}{\ln M}
+$$
+
+$$M$$ is the number of connections a point makes in one layer. Drawn this way, the probability that a point reaches layer $$\ell$$ or above is $$M^{-\ell}$$.
+
+$$
+P(l \ge \ell) = P\big({-\ln U} \ge \ell \ln M\big) = P\big(U \le M^{-\ell}\big) = M^{-\ell}
+$$
+
+Each layer up keeps only 1 in $$M$$ of the points. With $$M$$ set to pgvector's default of 16 and 1 million points inserted, this many points remain on each layer.
+
+| Layer | Points |
+| --- | --- |
+| Layer 0 | 1,000,000 |
+| Layer 1 | about 62,500 |
+| Layer 2 | about 3,900 |
+| Layer 3 | about 240 |
+| Layer 4 | about 15 |
+| Layer 5 | about 1 |
+
+A million points stack up into about six layers. The paper explains that the structure follows the same principle as a skip list, and recommends allowing up to $$M$$ connections per layer, except layer 0, where every point lives, which gets up to $$2M$$.
+
+<strong>Search starts at the top layer and goes down one layer at a time.</strong>
+
+1. Start at the top layer's entry point and use greedy search to find the point closest to the question.
+2. Use that point as the starting point one layer down and repeat the same search.
+3. On reaching layer 0, instead of chasing a single candidate, keep $$ef$$ candidates and search more widely.
+4. Return the $$k$$ closest of the $$ef$$ candidates.
+
+Let's walk through these four steps on a three-layer graph.
+
+<HnswSearchDemo client:visible lang="en" />
+
+The upper layers only need to show the way, so they chase a single candidate; only layer 0, which produces the result, looks wide. In pgvector, this $$ef$$ is set with `hnsw.ef_search`, and the default is 40.
+
+<strong>Insertion uses the same search.</strong> After drawing the new point's layer $$l$$, it descends from the top to find its place, and on each layer from $$l$$ down to 0 picks nearby neighbors and links to them. How many candidates it examines here is `ef_construction`, with a pgvector default of 64. A larger value builds a better graph but takes longer to build the index.
+
+The paper's analysis says search time grows logarithmically with the number of points. That means ten times the points adds only a little search time. But the analysis assumes an idealized graph and low dimensions, and the paper itself says more evidence is needed on whether it holds in high dimensions.
+
+### Fast, but it sometimes misses
+
+Greedy search has a weakness. It stops when no neighbor is closer, but there is no guarantee that spot is truly the closest point. It is like walking only downhill on a mountain: you reach a valley, but it may not be the lowest one. So HNSW sometimes misses the truly closest point.
+
+Every neighbor of the stopping point is farther from the question, so the search never reaches the truly closest point right next to it.
+
+<GreedyTrapDiagram lang="en" />
+
+How much it misses is measured by <strong>recall</strong>. With $$E$$ the exact top $$k$$ from comparing everything and $$A$$ the top $$k$$ from the index:
+
+$$
+\mathrm{Recall@}k = \frac{|A \cap E|}{k}
+$$
+
+If it finds 9 of the exact top 10, recall is 0.9. Recall is tuned through settings.
+
+| Setting | Raise it and | The cost |
+| --- | --- | --- |
+| `hnsw.ef_search` | layer 0 looks at more candidates, so recall rises | search takes longer |
+| `m` | each point gets more links and gets lost less often | uses more memory and takes longer to build |
+| `ef_construction` | the graph gets better | the index takes longer to build |
+
+This is where ordinary indexes and approximate indexes part ways. A B-tree index only makes queries faster; it does not change their results. An approximate index changes results. The pgvector docs also note that adding an approximate index can change the results of the same query. So when you add one, collect sample questions and compare the index results with the exhaustive results to measure recall.
+
+## What does pgvector take over?
+
+### Storing and comparing vectors inside Postgres
+
+[pgvector](https://github.com/pgvector/pgvector) is a Postgres extension. Enabling it adds a column type for vectors, operators that measure distances between vectors, and the HNSW and IVFFlat indexes seen above. This post is based on 0.8.7, released in October 2026. It is also available on managed Postgres such as Amazon RDS and Aurora.
+
+SQL for storing and finding articles looks like this.
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE articles (
+  id        bigserial PRIMARY KEY,
+  tax_type  text NOT NULL,
+  title     text NOT NULL,
+  body      text NOT NULL,
+  embedding vector(1024) NOT NULL
+);
+
+CREATE INDEX ON articles USING hnsw (embedding vector_cosine_ops);
+
+-- $1 is the question vector from the embedding model
+SELECT id, title, 1 - (embedding <=> $1) AS similarity
+FROM articles
+ORDER BY embedding <=> $1
+LIMIT 10;
+```
+
+`vector(1024)` is a column that holds a 1,024-dimensional vector. Distances are measured with operators.
+
+| Operator | Measures | Operator class for the index |
+| --- | --- | --- |
+| `<->` | straight-line distance | `vector_l2_ops` |
+| `<#>` | inner product multiplied by -1 | `vector_ip_ops` |
+| `<=>` | cosine distance, that is, 1 minus cosine similarity | `vector_cosine_ops` |
+
+There are also L1 distance and, for bit vectors, Hamming and Jaccard distance.
+
+All three operators follow the rule <strong>smaller means closer</strong>. Inner product and cosine similarity are larger when closer, so why flip the sign or subtract from 1? Because Postgres indexes can only scan operator results in ascending order. So pgvector turns them into "smaller is closer" values, so that the `ORDER BY distance LIMIT k` pattern can use the index. If you need the original values, multiply the result of `<#>` by -1 and subtract the result of `<=>` from 1. The `similarity` in the SQL above is cosine similarity computed that way.
+
+As noted earlier, normalized vectors give the same ranking under all three measures. For a model that outputs length-1 vectors, like KURE-v1, sorting by `<#>` gives the same results, and the pgvector docs recommend the inner product in that case, as it is the cheapest to compute.
+
+There is a rule that is easy to miss when creating indexes. <strong>Indexes are built per operator.</strong> An index built with `vector_cosine_ops` is used only when sorting by `<=>`. Sort the same column by `<->` and the query skips the index and compares everything. The pgvector docs also say to create one index per distance you plan to use. Whether the query's operator matches the index's operator class is something to check in every PR.
+
+Size has limits too. `vector` takes 4 × dimensions + 8 bytes per row, so 1,024 dimensions come to 4,104 bytes. Half-precision `halfvec` cuts that to 2,056 bytes. The number of dimensions you can index also differs: `vector` can be indexed up to 2,000 dimensions and `halfvec` up to 4,000. To search text-embedding-3-large's 3,072-dimensional vectors with HNSW, either store the column as `halfvec`, or keep the column as `vector` and build only the index as `halfvec`. Changing only the index looks like this.
+
+```sql
+CREATE INDEX ON articles USING hnsw ((embedding::halfvec(3072)) halfvec_cosine_ops);
+```
+
+IVFFlat is an approximate index of a different kind from HNSW. It splits the vectors into groups in advance and searches only the few groups closest to the question. The number of groups is set with `lists` and the number of groups to search with `ivfflat.probes`, whose default is 1. Since the groups are fitted to the data, the index should be built after a fair amount of data is in. The pgvector docs compare the two: HNSW has a better speed–recall tradeoff but takes longer to build and uses more memory.
+
+With pgvector you can mix vector search and ordinary conditions in one query. To search only among VAT articles, add a `WHERE`.
+
+```sql
+SELECT id, title
+FROM articles
+WHERE tax_type = 'VAT'
+ORDER BY embedding <=> $1
+LIMIT 10;
+```
+
+There is a trap here. With an approximate index, the index is scanned first and the condition is applied afterward. HNSW collects only `hnsw.ef_search` candidates on layer 0, 40 by default. If 10% of rows match the condition, only 4 of the 40 candidates survive on average. You asked for `LIMIT 10` and got 4 back.
+
+Since 0.8.0, iterative index scans can reduce this problem. When turned on, they scan more of the index when results fall short.
+
+```sql
+SET hnsw.iterative_scan = strict_order;
+```
+
+The default is `off`. `strict_order` keeps distance order exact, while `relaxed_order` may come back slightly out of order but gives better recall. To keep it from scanning forever, `hnsw.max_scan_tuples` sets a cap, 20,000 rows by default.
+
+The animation shows, in sequence, only the matching rows surviving out of 40 candidates and iterative scanning covering the shortfall.
+
+<FilterScanDemo client:visible lang="en" />
+
+### You still need a separate embedding model
+
+Look again at `$1` in the SQL above. Postgres does not produce the question vector. The app sends the question to the embedding model, gets the vector back, and puts it into the query. When adding documents, too, the app first makes the vectors and writes them into the `embedding` column. In terms of the four steps from the start, pgvector handles just two: storing and comparing. Some extensions let you call an embedding model from inside SQL, but even then the model has to be running somewhere.
+
+### When you need a dedicated vector DB
+
+You now have three options.
+
+| | Compare all in app memory | pgvector | Dedicated vector DB |
+| --- | --- | --- | --- |
+| How it searches | compares everything, so it is exact | compares everything, or HNSW or IVFFlat approximate search | mostly HNSW approximate search |
+| Extra to operate | nothing | one Postgres extension | one new system |
+| Filtering with other data | in app code | with SQL `WHERE` and `JOIN` | with the vector DB's filtering features |
+| Fits when | documents are few and rarely change | you already run Postgres and handle vectors alongside other data | there are very many vectors, or vector search load must be split off |
+
+Comparing everything in app memory means every app server holds its own copy of the vectors. As servers multiply, so do the copies, and when documents change, every server has to reload them. That is why this approach suits cases where documents are few and rarely change.
+
+Whether to move from pgvector to a dedicated vector DB usually comes down to two things.
+
+The first is <strong>scale</strong>. HNSW reads by hopping from point to point along the graph. It is fast only when the graph and vectors are in memory, and much slower when it has to read from disk. A million 1,024-dimensional vectors alone take about 4.1GB, with the graph's links on top.
+
+The second is <strong>other work on the same DB</strong>. Vector search uses a lot of memory and CPU. If vector search grows on a DB that also handles queries such as orders and payments, those queries can slow down too, all the more if several services share one DB server. In that case it is safer to move vector search to another DB. That other DB need not be a dedicated vector DB; a separate Postgres with pgvector works as well.
+
+Conversely, if the vectors fit comfortably in memory and you need to filter them together with other data such as tax type or date, pgvector is the simplest. With data and vectors in one place, you don't have to look after transactions, backups, and permissions separately.
+
+## Similar is not the same as correct
+
+Embeddings place texts with similar meanings close together. But what search wants is not similar text; it is the answer to the question. The two usually overlap, but not always.
+
+### Questions embeddings miss
+
+<strong>They cannot tell apart different documents on the same topic.</strong> For the question "When is VAT due?", the final return article for general taxpayers and the filing article for simplified taxpayers both cover VAT filing deadlines. They use almost the same words, so both land near the question. Which one is the answer depends on what kind of business the asker runs, and that information is not in the question. Embeddings cannot know a condition the sentence does not contain.
+
+<strong>They are weak at negation.</strong> "VAT-exempt goods" and "goods that are not VAT-exempt" mean the opposite, yet differ by a single word, so embeddings tend to place them close together. In the [NevIR](https://arxiv.org/abs/2305.07614) study, which tested retrieval models on pairs of documents differing only by a negation, most models did about as well as random choice or worse, and embedding-style models were among the worst.
+
+<strong>They treat numbers and proper nouns loosely.</strong> "Tax year 2024" and "tax year 2025," or "Article 48" and "Article 49," differ by one digit but point to different things. To an embedding, such a difference tends to look like a slight difference in meaning. For questions like these, keyword search, which matches the letters exactly, is more accurate.
+
+<strong>They don't know words absent from their training data.</strong> As the contrastive learning section showed, the training data decides what ends up close. Names of programs created after the model was trained, or abbreviations used only inside a company, can land in odd places. "VAT" landing near value-added tax is itself because the training data had enough such pairs.
+
+An embedding score says "how similar," not "is this the answer." It is also hard to draw a cutoff that treats anything above 0.8 as an answer. How close a cosine similarity of 0.8 is differs from model to model, and even within one model, scores can run uniformly high for some questions and uniformly low for others.
+
+### Mix in keyword search, then filter once more
+
+The weaknesses of embeddings line up with the strengths of keyword search. So the two are used together, which is called <strong>hybrid search</strong>. The pgvector docs also show how to use it together with Postgres full-text search.
+
+The standard score for keyword search is BM25, and Elasticsearch uses it by default too. The score of a question $$q$$ and a document $$d$$ is as follows, written in the commonly used form of the formula from [Robertson and Zaragoza's review](https://www.staff.city.ac.uk/~sbrp622/papers/foundations_bm25_review.pdf).
+
+$$
+\mathrm{BM25}(q, d) = \sum_{t \in q} \mathrm{IDF}(t) \cdot \frac{f_{t,d} \, (k_1 + 1)}{f_{t,d} + k_1 \left(1 - b + b \cdot \dfrac{|d|}{\mathrm{avgdl}}\right)}
+$$
+
+$$
+\mathrm{IDF}(t) = \log \frac{N - n_t + 0.5}{n_t + 0.5}
+$$
+
+- $$f_{t,d}$$ is the number of times the question's word $$t$$ appears in document $$d$$. More occurrences raise the score, but because of $$k_1$$, past a point it stops rising.
+- $$|d| / \mathrm{avgdl}$$ is the document's length divided by the average length. Longer documents have more chances for a word to appear by accident, so their scores are discounted. $$b$$ sets how much.
+- $$\mathrm{IDF}(t)$$ expresses how rare a word is. $$N$$ is the total number of documents and $$n_t$$ the number of documents containing $$t$$. "Simplified taxpayer," which appears in only a few articles, carries more weight than "value-added tax," which appears in most of them.
+
+Elasticsearch's defaults are $$k_1 = 1.2$$ and $$b = 0.75$$.
+
+As the formula shows, BM25 adds up only the words that appear in the question. If the question's "VAT" is not in the document, that word scores 0. On the other hand, it is strong on questions where the letters must match exactly, such as "Article 49" or "simplified taxpayer." For languages like Korean, results also depend on how a morphological analyzer splits words.
+
+<strong>Merge the two lists by rank.</strong> BM25 scores have no upper bound, while cosine similarity lies between -1 and 1. Scores of different scales cannot simply be added. So they are often merged with Reciprocal Rank Fusion, or RRF, which uses ranks instead of scores. If document $$d$$ is ranked $$r(d)$$ in list $$r$$, its score is:
+
+$$
+\mathrm{RRF}(d) = \sum_{r \in R} \frac{1}{k + r(d)}
+$$
+
+The [paper that proposed RRF](http://cormack.uwaterloo.ca/cormacksigir09-rrf.pdf) used $$k = 60$$ and noted that this value is near-optimal but that results do not depend much on it. A document missing from a list adds nothing from that list. Here is an example. The ranks are made up.
+
+| Document | Embedding rank | Keyword rank | RRF score |
+| --- | --- | --- | --- |
+| A | 1 | 3 | $$\frac{1}{61} + \frac{1}{63} \approx 0.0323$$ |
+| B | 2 | none | $$\frac{1}{62} \approx 0.0161$$ |
+| C | 5 | 1 | $$\frac{1}{65} + \frac{1}{61} \approx 0.0318$$ |
+
+Here is how the three documents' ranks merge into a single list.
+
+<RrfMergeDiagram lang="en" />
+
+A and C, which appear in both lists, move to the front, and B, which appears in only one, drops back. Documents one method missed get picked up by the other, and documents both methods found are treated as more trustworthy.
+
+<strong>Finally, filter once more with a reranking model.</strong> An embedding model turns the question and the document into vectors separately. Document vectors can be precomputed, which makes it fast, but it never sees the question and the document together. A reranking model takes the question and the document together and outputs a score between 0 and 1 for how well they match. Such a model is called a <strong>cross-encoder</strong>. Because it reads both together, it is better at catching negation and conditions. In the NevIR study, cross-encoders did best as well.
+
+The catch is speed. Every question requires running the model once per candidate document. The [sentence-transformers docs](https://sbert.net/examples/cross_encoder/applications/README.html) give an example of comparing 10,000 sentences pairwise: a cross-encoder computes about 50 million pairs and takes about 65 hours, while an embedding model finishes in about 5 seconds. So the docs recommend first picking around 100 candidates with embeddings and reranking only those 100 with a cross-encoder.
+
+Put together, search is usually built in this order.
+
+1. Pull a generous set of candidates from keyword search and embedding search each.
+2. Merge the two lists with RRF.
+3. Rerank only the top few dozen to 100 candidates with a reranking model.
+4. Use the top $$k$$ of those.
+
+Going down the stages, the candidates shrink while the computation spent per candidate grows.
+
+<RetrievalFunnelDiagram lang="en" />
+
+Sometimes a small judgment model or an LLM takes the reranker's place and is asked "does this document answer this question?" Either way the principle is the same: cut candidates with fast, coarse stages and save slow, precise stages for the few that remain.
+
+## Wrap-up
+
+The embedding model turns text into coordinates by meaning, and the vector DB quickly finds the nearby ones among those coordinates. Only the model knows meaning; the vector DB saves computation at the cost of occasionally missing.
+
+When reviewing a PR that uses embeddings, ask:
+
+1. Where does the embedding model run? It is called on every question; what happens to search when that call fails?
+2. Are documents and questions converted with the same model and the same prefix rules? Is there a way to rebuild the vectors when the model changes?
+3. Does the distance measure match the model card? If the vectors come out at length 1, is the inner product used?
+4. How many documents are there? Is the scale small enough that comparing everything is fast enough?
+5. If an approximate index was added, was recall measured against exhaustive results?
+6. Does the query's distance operator match the index's operator class? When combined with `WHERE`, do results come up short?
+7. Does it pick answers by embedding score alone? Is it backed up by keyword search or reranking?
+
+A PR that answers these questions without hesitation has put the embedding model and the vector DB each in its proper place.

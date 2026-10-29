@@ -9,6 +9,8 @@ import Giscus from '../components/Giscus.astro';
 import Header from '../components/Header.astro';
 import TableOfContents from '../components/TableOfContents.astro';
 import { type PostNav, tagSlug } from '../lib/blog';
+// ponytail: 수식이 없는 글에도 붙는다(압축 후 약 4KB). 글꼴은 수식이 있는 글에서만 받는다.
+import 'katex/dist/katex.min.css';
 
 type Props = CollectionEntry<'blog'>['data'] & {
 	lang?: 'en' | 'ko';
