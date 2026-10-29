@@ -27,7 +27,7 @@ A PR that adds embedding-based search brings a batch of unfamiliar terms at once
 
 This post explains the two separately. One is the embedding model, which turns text into numbers; the other is the vector DB, which quickly finds the nearby ones among those numbers. We follow how each works inside, down to the math, and then look at which part pgvector takes over and why embeddings alone are not enough. By the end, when you meet these terms in a PR, you will be able to explain what each one does.
 
-## Turning text into numbers, and finding nearby numbers
+## Embedding models and vector DBs do different jobs
 
 Searching with embeddings takes four steps. The first two happen once when a document is added; the last two happen every time a question comes in.
 
@@ -56,7 +56,7 @@ So which of the two is essential? The embedding model. Without vectors there is 
 
 The misunderstanding that "with pgvector you don't need an embedding server" also clears up with this table. pgvector handles steps 2 and 4. Steps 1 and 3 still belong to the embedding model. Step 3 in particular runs on every question, so the embedding model, whether a server you run yourself or an external API, has to be callable at any time.
 
-## Embeddings — turning meaning into coordinates
+## Embeddings — putting meaning into numbers
 
 ### Similar meanings land close together
 
@@ -158,7 +158,7 @@ Why vector DBs offer several distance measures comes up again in the pgvector se
 
 In the end, the model decides which measure to use, because it places points according to the measure it was trained with. If the model card says to compare with cosine similarity, follow it.
 
-### How does a model learn where to put points?
+### Pull the answer in, push the wrong ones away
 
 An embedding model usually starts from a language model pretrained on a large amount of text. A language model reads words and sentences well, but it has never learned to place a question close to the document that answers it. So it is trained again on countless pairs saying "this document answers this question," moving points so that matching pairs come closer and everything else moves away. Learning by contrasting right pairs with wrong ones is called <strong>contrastive learning</strong>. KURE-v1 started from BGE-M3, a multilingual embedding model, and was trained further on about 2 million Korean examples, each bundling one question with one correct document and five wrong ones.
 
@@ -254,7 +254,7 @@ So the model that turned the documents into vectors and the model that turns que
 
 Some models specify a prefix such as `query: ` to put before the question, because that is how they were trained. Rules like this also have to match training exactly for points to land in the same coordinate system.
 
-## Vector DBs — finding nearby points fast
+## Vector DBs — finding nearby vectors fast
 
 ### Comparing against everything is exact but slow
 
@@ -351,7 +351,7 @@ If it finds 9 of the exact top 10, recall is 0.9. Recall is tuned through settin
 
 This is where ordinary indexes and approximate indexes part ways. A B-tree index only makes queries faster; it does not change their results. An approximate index changes results. The pgvector docs also note that adding an approximate index can change the results of the same query. So when you add one, collect sample questions and compare the index results with the exhaustive results to measure recall.
 
-## What does pgvector take over?
+## How far does pgvector go?
 
 ### Storing and comparing vectors inside Postgres
 
@@ -431,7 +431,7 @@ The animation shows, in sequence, only the matching rows surviving out of 40 can
 
 Look again at `$1` in the SQL above. Postgres does not produce the question vector. The app sends the question to the embedding model, gets the vector back, and puts it into the query. When adding documents, too, the app first makes the vectors and writes them into the `embedding` column. In terms of the four steps from the start, pgvector handles just two: storing and comparing. Some extensions let you call an embedding model from inside SQL, but even then the model has to be running somewhere.
 
-### When you need a dedicated vector DB
+### When do you need a dedicated vector DB?
 
 You now have three options.
 
@@ -452,11 +452,11 @@ The second is <strong>other work on the same DB</strong>. Vector search uses a l
 
 Conversely, if the vectors fit comfortably in memory and you need to filter them together with other data such as tax type or date, pgvector is the simplest. With data and vectors in one place, you don't have to look after transactions, backups, and permissions separately.
 
-## Similar is not the same as correct
+## A similar document is not necessarily the answer
 
 Embeddings place texts with similar meanings close together. But what search wants is not similar text; it is the answer to the question. The two usually overlap, but not always.
 
-### Questions embeddings miss
+### Questions embeddings struggle with
 
 <strong>They cannot tell apart different documents on the same topic.</strong> For the question "When is VAT due?", the final return article for general taxpayers and the filing article for simplified taxpayers both cover VAT filing deadlines. They use almost the same words, so both land near the question. Which one is the answer depends on what kind of business the asker runs, and that information is not in the question. Embeddings cannot know a condition the sentence does not contain.
 
@@ -468,7 +468,7 @@ Embeddings place texts with similar meanings close together. But what search wan
 
 An embedding score says "how similar," not "is this the answer." It is also hard to draw a cutoff that treats anything above 0.8 as an answer. How close a cosine similarity of 0.8 is differs from model to model, and even within one model, scores can run uniformly high for some questions and uniformly low for others.
 
-### Mix in keyword search, then filter once more
+### Add keyword search, then filter once more
 
 The weaknesses of embeddings line up with the strengths of keyword search. So the two are used together, which is called <strong>hybrid search</strong>. The pgvector docs also show how to use it together with Postgres full-text search.
 
@@ -531,14 +531,14 @@ Sometimes a small judgment model or an LLM takes the reranker's place and is ask
 
 The embedding model turns text into coordinates by meaning, and the vector DB quickly finds the nearby ones among those coordinates. Only the model knows meaning; the vector DB saves computation at the cost of occasionally missing.
 
-When reviewing a PR that uses embeddings, ask:
+Once you decide you need embeddings, work through these questions before you build anything.
 
-1. Where does the embedding model run? It is called on every question; what happens to search when that call fails?
-2. Are documents and questions converted with the same model and the same prefix rules? Is there a way to rebuild the vectors when the model changes?
-3. Does the distance measure match the model card? If the vectors come out at length 1, is the inner product used?
-4. How many documents are there? Is the scale small enough that comparing everything is fast enough?
-5. If an approximate index was added, was recall measured against exhaustive results?
-6. Does the query's distance operator match the index's operator class? When combined with `WHERE`, do results come up short?
-7. Does it pick answers by embedding score alone? Is it backed up by keyword search or reranking?
+1. How many documents are there? If comparing everything is fast enough at that scale, could you start without a vector DB?
+2. Where will the embedding model run? It has to be called on every question; what will search do when that call fails?
+3. Can documents and questions go through the same model with the same prefix rules? If you change the model later, how will you rebuild the stored vectors?
+4. Does the distance measure match the model card? If the vectors come out at length 1, is the inner product enough?
+5. If you add an approximate index, how will you measure recall against exhaustive results?
+6. How will you pair the query's distance operator with the index's operator class? What does it take to keep results from coming up short when you add `WHERE`?
+7. Will you pick answers by embedding score alone, or back it up with keyword search or reranking?
 
-A PR that answers these questions without hesitation has put the embedding model and the vector DB each in its proper place.
+If you settle these answers before you start, the embedding model and the vector DB each end up in their proper place.
