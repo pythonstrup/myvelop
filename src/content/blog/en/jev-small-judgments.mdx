@@ -7,6 +7,26 @@ series: "Running LLM APIs"
 seriesOrder: 4
 socialImage: "../../../assets/blog/jev-small-judgments/og.png"
 ---
+import AnswerShapeDemo from "@/materials/jev-small-judgments/AnswerShapeDemo";
+import AutoRouterDiagram from "@/materials/jev-small-judgments/AutoRouterDiagram";
+import BandsDemo from "@/materials/jev-small-judgments/BandsDemo";
+import CodeOwnsFlowDiagram from "@/materials/jev-small-judgments/CodeOwnsFlowDiagram";
+import ConfidenceDiagram from "@/materials/jev-small-judgments/ConfidenceDiagram";
+import CostBreakdownDiagram from "@/materials/jev-small-judgments/CostBreakdownDiagram";
+import FormatFailDiagram from "@/materials/jev-small-judgments/FormatFailDiagram";
+import IndependenceDemo from "@/materials/jev-small-judgments/IndependenceDemo";
+import JevGatewayDiagram from "@/materials/jev-small-judgments/JevGatewayDiagram";
+import JudgmentRaceDemo from "@/materials/jev-small-judgments/JudgmentRaceDemo";
+import NoulDistanceDiagram from "@/materials/jev-small-judgments/NoulDistanceDiagram";
+import QuestionTypesDiagram from "@/materials/jev-small-judgments/QuestionTypesDiagram";
+import ReaderPipelineDemo from "@/materials/jev-small-judgments/ReaderPipelineDemo";
+import RepeatRunsDemo from "@/materials/jev-small-judgments/RepeatRunsDemo";
+import ScaleCostDiagram from "@/materials/jev-small-judgments/ScaleCostDiagram";
+import ScorePositionDiagram from "@/materials/jev-small-judgments/ScorePositionDiagram";
+import ScoringRulesDiagram from "@/materials/jev-small-judgments/ScoringRulesDiagram";
+import SplitQuestionsDiagram from "@/materials/jev-small-judgments/SplitQuestionsDiagram";
+import ThinkingSpreadDiagram from "@/materials/jev-small-judgments/ThinkingSpreadDiagram";
+import WhenToUseDiagram from "@/materials/jev-small-judgments/WhenToUseDiagram";
 
 ## Introduction
 
@@ -40,9 +60,21 @@ On the table alone, Haiku 5.5's input price is only 2.4 times Jev's. At that gap
 
 The first is output. A generative model writes its answer as text and charges for that text, and Haiku 5.5's output price is five times its input price. Asking for 20 judgments as JSON produced about 500 tokens of answer alone, and when Haiku thought first, about 2,000 more tokens came on top. Jev writes no text, so output costs nothing.
 
+Stack the cost of the 20 judgments by input and output, and the two Haiku runs pay the same for input while the gap opens only in output.
+
+<CostBreakdownDiagram lang="en" />
+
 The second is the quality of the answer. On the same resume, I asked how deeply the candidate had handled high-volume traffic. Haiku answered with something like `{"answer": "Deep", "p": 0.85}`. That 0.85 is characters the model wrote, and over ten identical requests it moved between 0.55 and 0.85. Of the 200 probabilities from those ten runs, all but 8 fell on multiples of 0.05, and a third of them were 0.6. Jev also picked Deep, but it returned a probability for each option, such as Deep 0.85 and Moderate 0.15, and over five runs Deep stayed within 0.82–0.89. Drawing the line between handling an answer automatically and passing it to a person needs this kind of distribution.
 
+Send the same question again and again, and the single probability Haiku writes scatters across the scale, while the probabilities Jev splits across the options move only within a narrow band.
+
+<AnswerShapeDemo client:visible lang="en" />
+
 The third is independence between questions. Ask a generative model 20 questions at once and it writes the answers one after another, so earlier answers can sway later ones. Keeping the judgments from bleeding into each other means calling it once per question, which sends the same resume 20 times. Jev processes the questions bundled in one request side by side, and none of them sees the others' answers.
+
+Asked five questions, a generative model rereads its earlier answers before writing each new one, while Jev handles all five side by side and no answer sees another.
+
+<IndependenceDemo client:visible lang="en" />
 
 So the difference comes from the shape of the answer, not the price table. A model that answers in text spends money and time on everything it writes, and it can give probabilities only as written characters.
 
@@ -55,6 +87,10 @@ Sequoia, an investor in TypeSafe, applies this paradox to judgment in its [inves
 Take reading resumes. When judgment is expensive, you end up asking one thing: what score does this person get. That single answer hides several judgments, such as whether the requirements are met, how much of the work the person led, and how concretely the experience is written. If the answer looks wrong, you cannot tell which judgment failed, and it is hard to find what to fix.
 
 When judgment is cheap, the question can be split. One question per requirement, per preferred qualification, and per facet of the career comes to about twenty. Asking those twenty with Jev cost $0.000116, so ten thousand runs come to $1.16. Then each answer can be inspected on its own, thresholds can be tuned separately, and code can combine the results.
+
+Spread the judgments hidden inside one broad question into 20 narrow ones, and each answer can be inspected on its own while code takes over combining them.
+
+<SplitQuestionsDiagram lang="en" />
 
 So how does Jev take these questions, and what does it return?
 
@@ -74,6 +110,10 @@ So TypeSafe built a model whose answers are meant to be read by programs, not pe
 
 So using Jev starts from code as well. Write the ordinary flow first, then put Jev only where the meaning of text has to be read.
 
+The flow stays in code from start to finish, and Jev fills only one step in the middle.
+
+<CodeOwnsFlowDiagram lang="en" />
+
 ### How to ask Jev
 
 There are three kinds of questions.
@@ -83,6 +123,10 @@ There are three kinds of questions.
 | noul | Does the condition hold? | One probability of yes |
 | choice | Which of the options is it? | The chosen option, a probability per option, a confidence |
 | score | Where on an ordered scale is it? | A probability-weighted position, a probability per level, a confidence |
+
+Drawn by type, the answers Jev actually returned for the three example questions in this post take these shapes.
+
+<QuestionTypesDiagram lang="en" />
 
 A request has two parts: `state`, the material to judge, and `questions`, the set of questions. Here are three of the questions sent in the resume experiment. I ran the experiment in Korean, so the strings here are translations.
 
@@ -144,6 +188,10 @@ Where to draw the bands depends on the harm a wrong answer does. TypeSafe's [con
 | How deeply were the required skills handled? | One choice per requirement | Confidence 0.9 or higher | It feeds the reading order, so a mistake pushes a resume far down |
 | Are the preferred qualifications met? | One choice per qualification | Confidence 0.7 or higher, otherwise left as unknown | It only adds a little, so a mistake does little harm |
 
+Dropping the actual answers for the same resume into these bands shows which ones are handled right away and which ones are passed on.
+
+<BandsDemo client:visible lang="en" />
+
 The easier an item is to undo when wrong, the lower the threshold. The harder it is to undo when missed, the higher. These numbers are only a starting point too, and they need to be measured again on your own data.
 
 Two points are easy to confuse. A noul of 0.5 does not mean half right. It means Jev does not know. And when Jev's probabilities are said to be calibrated against outcomes, that holds across many predictions taken together. It is not a promise that each answer is right.
@@ -178,9 +226,17 @@ The confidence of 0.72 expresses, from 0 to 1, how far the top choice is ahead o
 
 Looking only at the top choice misses some answers. When I asked how deeply the same resume handled incident response, Deep came first, but at 0.55 against 0.45 for Moderate it was close to a coin flip, and the confidence was 0.33. Store only Deep and the fact that Jev hesitated is lost. By the bands above, this answer should not be handled right away. It goes to review.
 
+Placed on a scale from 1/3 to 1, the two top choices show their difference in confidence as a difference in length.
+
+<ConfidenceDiagram lang="en" />
+
 ### What does 0.99 mean in a score?
 
 Score levels are numbered 0, 1, 2 in the order they were sent. The 0.99 for `scope` is not one chosen level but a position: each level times its probability, added up. 0 × 0.14 + 1 × 0.73 + 2 × 0.13 = 0.99, so the answer sits in the middle of a team-level project with a little spread evenly to either side.
+
+This chart shows the probability on each of the three scope levels together with the weighted position.
+
+<ScorePositionDiagram lang="en" />
 
 The confidence of 0.59 says the probability is not all on one level and some of it rests on the neighbors. Score confidence drops further the farther from the most likely level the probability lands. The position can be combined with other scores as it is. When rounding it to a level, look at the confidence as well.
 
@@ -190,11 +246,19 @@ The 0.53 for `stack_kafka` is the probability that the resume describes using Ka
 
 On the same resume, Kotlin came out at 0.97, because the summary says plainly that the candidate mainly uses Kotlin. A noul has no separate confidence. The farther the probability is from 0.5, the surer the answer. Following the table above, the reader tags Kotlin and leaves Kafka untagged as a point to check.
 
+Measured by their distance from 0.5, the Kafka and Kotlin answers are far apart in certainty.
+
+<NoulDistanceDiagram lang="en" />
+
 ### Do you get the same answer twice?
 
 I sent the same request five times. None of the seven choice questions changed its top choice, but the probabilities wobbled a little in the second decimal place. Deep for incident response moved between 0.54 and 0.58, and the Kafka question went 0.53, 0.44, 0.51, 0.51, 0.58, crossing back and forth over 0.5.
 
 For comparison I sent the same request to Haiku ten times. On the database design question it chose Shallow twice and Moderate eight times. Jev chose Shallow all five times, with the probability within 0.78–0.81.
+
+Replay Jev's five runs and Haiku's ten in order, and Jev's numbers wobble a little while Haiku's chosen option changes.
+
+<RepeatRunsDemo client:visible lang="en" />
 
 Because of this wobble, an answer sitting just above or below a threshold can land on a different side each time it is sent. In those spots, send the same request a few times and take the average.
 
@@ -219,6 +283,10 @@ Times are medians, and the range in parentheses runs from the fastest to the slo
 
 For the same 20 judgments, Jev was 61 times faster and 14 times cheaper than Haiku with thinking, and 16 times faster and 6 times cheaper than Haiku without thinking.
 
+Send these 20 judgments through all five methods at once, and Jev's lane finishes almost as soon as it starts.
+
+<JudgmentRaceDemo client:visible lang="en" />
+
 ### Why not just ask Haiku everything at once?
 
 Asking Haiku without thinking, all at once, costs $0.0007 per resume, and you could call that cheap enough. I still chose Jev, for three reasons.
@@ -227,11 +295,23 @@ First, matching the conditions widens the gap a lot. Asking everything at once l
 
 Second, the gap grows with scale. For 30,000 resumes, Jev costs about $3.5, Haiku without thinking about $21, Haiku with thinking about $50, and Haiku asked one question per call about $218. If an agent makes these judgments several times within one task, multiply accordingly.
 
+Lined up as bars for 30,000 resumes, Jev's bar is barely visible.
+
+<ScaleCostDiagram lang="en" />
+
 Last, the time is hard to predict. Haiku 5.5 decides for each request whether to think. With the default settings it thought in all five runs, and even with effort, the setting for how much it thinks, lowered to low, it thought in two of five. So the same request with the same settings sometimes finished in 2–3 seconds and sometimes took close to 11. When one step of an agent swings like this, the length of the whole task is hard to estimate. Being unpredictable is a bigger problem than being slow.
+
+Plotting the ten all-at-once runs as dots shows that even the five runs with effort lowered to low split into two clusters, depending on whether Haiku thought.
+
+<ThinkingSpreadDiagram lang="en" />
 
 ### The answer format wobbles too
 
 When asked one question per call, the format of the answer wobbled as well. The prompt said to use the question name as the key, yet with only one question in the call, 7–11 of the 20 calls returned the answer without the key. Better prompting might bring that down, so the number cannot be taken as a limit of Haiku. But with a generative model, keeping to the format becomes the model's job too, and code bears the cost of calling again when the format breaks. Jev returned all 20 answers in the fixed shape in every one of the five runs.
+
+Each cell is one call, and the red cells came back without the key.
+
+<FormatFailDiagram lang="en" />
 
 ### Limits of this measurement
 
@@ -360,6 +440,10 @@ In the reader, one resume flows through these steps.
 3. If every answer is sure, code assigns the reading order right away. If some answers have low confidence, a large model reads only that resume again and writes a short note on why it is unclear.
 4. A person reads the resumes in the set order and decides while looking at the flagged points.
 
+In the animation, only the two unclear resumes out of six go through the large model.
+
+<ReaderPipelineDemo client:visible lang="en" />
+
 This way the large model is used only on unclear resumes. Rather than switching to this structure from the start, though, it is better to begin with a shadow test. Leave the current flow as it is and only compute what the judgment would have been had Jev finished it, then compare that with the large model's judgment. The more the two overlap, the less often the large model needs to be called.
 
 ### Split the questions, and let code combine them
@@ -371,6 +455,10 @@ The reader does not ask Jev for the reading order directly. Code owns the rules 
 - If any required skill is confidently Shallow, push the resume back regardless of the total.
 
 A condition where a single miss is disqualifying, like the last rule, belongs outside the weighted sum. In a weighted sum, a shortfall in one item gets covered by the others.
+
+Draw Jev's judgments apart from the rules in code, and the gate stands outside the weighted sum.
+
+<ScoringRulesDiagram lang="en" />
 
 Store Jev's answers along with their probabilities. Then when the weights or the filters on the screen change, there is no need to call Jev again. Only the calculation has to run again. You need to ask again only when the meaning of a question changes.
 
@@ -402,7 +490,15 @@ curl https://<gateway-host>/typesafe/v1/systemone \
 
 Going through the gateway puts Jev's cost and logs in the same place as the other models. Cost is computed from the token counts in the response, and even when Jev is called as `jev-latest`, the log records the name of the version that actually answered. Streaming and per-end-user usage tracking are not supported. To run several deployments with load balancing, or to fall back to another model, the [LiteLLM docs](https://docs.litellm.ai/docs/pass_through/typesafe) recommend listing Jev in `model_list` and using the unified `/v1/systemone` route instead of pass-through.
 
+Between the service and the TypeSafe API, the proxy takes Jev requests on two routes.
+
+<JevGatewayDiagram lang="en" />
+
 LiteLLM also uses Jev for judgments inside the gateway. The auto router can use Jev as its classifier and pick which model a request goes to with a single choice question. The gateway is doing the job this post describes, putting a small judgment in front of an expensive model. [v1.104.3](https://docs.litellm.ai/release_notes/v1.104.3/v1-104-3) added a guardrail as well, which checks messages and tool arguments against yes-or-no questions an admin writes and then blocks or logs them.
+
+Inside the auto router, Jev picks the model for each request with a single choice question.
+
+<AutoRouterDiagram lang="en" />
 
 ## When should you use Jev?
 
@@ -420,6 +516,10 @@ On the other hand, in these places Jev is worth considering before a generative 
 - Places that filter or route before an expensive model is called.
 - Places that check by meaning whether candidates pulled in by code or search really fit.
 - Places that check whether a large model's output matches its evidence.
+
+Filter out the jobs Jev should not take, top to bottom, and the repeated judgments left at the end belong to Jev.
+
+<WhenToUseDiagram lang="en" />
 
 ## Summary
 
