@@ -7,6 +7,8 @@ import sitemap from "@astrojs/sitemap";
 import { defineConfig } from "astro/config";
 
 import tailwindcss from "@tailwindcss/vite";
+import rehypeKatex from "rehype-katex";
+import remarkMath from "remark-math";
 import { readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -121,8 +123,9 @@ export default defineConfig({
 
   markdown: {
     processor: unified({
-      remarkPlugins: [remarkWikilinks],
-      rehypePlugins: [rehypeWrapTables],
+      // 수식은 $$...$$ 만 읽는다. 기존 글의 "$0.042" 같은 달러 금액이 한 쌍이면 수식으로 바뀌기 때문이다.
+      remarkPlugins: [remarkWikilinks, [remarkMath, { singleDollarTextMath: false }]],
+      rehypePlugins: [rehypeWrapTables, rehypeKatex],
     }),
     shikiConfig: {
       themes: {
