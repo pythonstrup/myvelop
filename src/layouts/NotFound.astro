@@ -159,7 +159,7 @@ const blogHref = lang === 'ko' ? '/ko/blog/' : '/blog/';
 				if (desktopLanguage instanceof HTMLAnchorElement) {
 					desktopLanguage.href = '/404/';
 					desktopLanguage.textContent = 'EN';
-					desktopLanguage.setAttribute('aria-label', '영어로 보기');
+					desktopLanguage.setAttribute('aria-label', 'EN, 영어로 보기');
 				}
 				const mobileLanguage = document.querySelector('.language-link');
 				if (mobileLanguage instanceof HTMLAnchorElement) mobileLanguage.href = '/404/';

@@ -1,6 +1,6 @@
 ---
 title: "Recompute, Don’t Increment: Updating Review Statistics with RabbitMQ"
-description: "Statistics are recomputed when each RabbitMQ event arrives, not incremented in the review write. Duplicates do not stack, and the loss windows that remain."
+description: "Statistics are recomputed when each RabbitMQ event arrives, not incremented in the review write. Duplicates do not stack, but some message-loss windows remain."
 pubDate: "2026-07-17T21:25:00+09:00"
 tags: ["Kotlin", "Spring", "RabbitMQ", "message queue", "idempotency"]
 socialImage: "../../../assets/blog/recompute-dont-increment-rabbitmq/og.png"

@@ -1,6 +1,6 @@
 ---
 title: "실무에서 @Transactional을 제거했더니 성능이 2배 향상된 이유"
-description: "Spring의 @Transactional(readOnly = true)는 dirty checking을 Manual로 바꿔 빨라진다고 알려져 있다. Elastic APM의 호출 로그에서는 불필요한 JDBC 때문에 오히려 느려졌다."
+description: "Spring의 @Transactional(readOnly = true)는 dirty checking을 Manual로 바꿔 빨라진다고 알려져 있다. Elastic APM의 호출 로그에서는 불필요한 JDBC 호출 때문에 오히려 느려졌다."
 pubDate: "2025-05-08T22:38:02+09:00"
 updatedDate: "2025-09-15T19:51:46+09:00"
 socialImage: "../../../assets/blog/removing-transactional-doubled-performance/01.png"

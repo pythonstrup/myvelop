@@ -1,6 +1,6 @@
 ---
 title: "BullMQ로 알림 시스템 운영하기 1편 - BullMQ란"
-description: "알림톡, 이메일, 푸시를 HTTP 호출로만 보내면 곧 한계다. 발송 모듈, rate limit, 스케줄, 이력 저장을 BullMQ 하나에 맡기는 이유를 정리한 1편."
+description: "알림톡, 이메일, 푸시를 HTTP 호출로만 보내면 금세 한계에 부딪힌다. 1편에서는 발송 모듈, rate limit, 스케줄, 이력 저장을 BullMQ 하나에 맡기는 이유를 정리한다."
 pubDate: "2026-05-18T23:35:46+09:00"
 updatedDate: "2026-06-04T22:32:30+09:00"
 socialImage: "../../../assets/blog/bullmq-notification-part-1-what-is-bullmq/01.png"

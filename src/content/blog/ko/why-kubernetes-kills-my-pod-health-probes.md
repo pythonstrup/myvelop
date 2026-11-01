@@ -1,6 +1,6 @@
 ---
 title: "Kubernetes가 내 Pod를 죽이는 이유: Health Probe"
-description: "Kubernetes는 Pod의 상태를 판단하기 위해 두 종류의 probe를 제공한다. \"이 컨테이너가 살아있는가\"를 확인한다. kubelet이 주기적으로 지정된 엔드포인트를 호출하고, 응답이 없거나 실패하면 컨테이너를 재시작한다. 앱이 데드락에 빠지거나, 메모리 릭으로 응답 불능 상태가 됐을 때 자동으로 복구시키는…"
+description: "Kubernetes는 liveness와 readiness 두 probe로 Pod 상태를 판단한다. 각 probe가 언제 컨테이너를 재시작하고 트래픽을 막는지 살피고, 스프링과 NestJS에서 설정하는 방법과 주의할 점을 정리했다."
 pubDate: "2026-03-18T00:08:15+09:00"
 socialImage: "../../../assets/blog/why-kubernetes-kills-my-pod-health-probes/01.png"
 tags: ["Health Check","k8s","kubernetes","terminus","nestjs","redis"]

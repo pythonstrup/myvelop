@@ -1,6 +1,6 @@
 ---
 title: "Lettuce 분산 락의 오해와 진실 (feat. RedisLockRegistry)"
-description: "이전 글인 \"좋아요 기능으로 알아보는 비관적 락\"에서 이어지는 글이다. \"Lettuce는 SpinLock만 지원한다\"는 잘못된 정보를 바로잡고, Spring RedisLockRegistry의 PubSub Lock 설정으로 Redisson 없이도 효율적인 분산 락을 구현하는 방법을 소개한다. 구글에 \"Redis 분산…"
+description: "\"Lettuce는 SpinLock만 지원한다\"는 잘못된 정보를 바로잡는다. Spring RedisLockRegistry의 PubSub Lock 설정으로 Redisson 없이도 효율적인 분산 락을 구현하는 방법을 소개한다."
 pubDate: "2025-09-29T13:41:16+09:00"
 updatedDate: "2025-10-13T16:23:38+09:00"
 socialImage: "../../../assets/blog/lettuce-distributed-lock-myths/01.png"
