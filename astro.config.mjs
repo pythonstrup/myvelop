@@ -10,6 +10,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { withTrailingSlash } from "./src/lib/nav.ts";
 import { tagSlug } from "./src/lib/slug.ts";
 
 // Keep delayed Korean subsets from replacing already-rendered text.
@@ -97,6 +98,22 @@ function remarkWikilinks() {
   };
 }
 
+// Markdown links such as /blog/foo are directory pages. Emit the canonical trailing slash
+// so the built HTML does not depend on Cloudflare's 308.
+function remarkInternalTrailingSlash() {
+  /** @param {any} tree */
+  return (tree) => {
+    /** @param {any} node */
+    const walk = (node) => {
+      if ((node.type === "link" || node.type === "definition") && typeof node.url === "string") {
+        node.url = withTrailingSlash(node.url);
+      }
+      node.children?.forEach(walk);
+    };
+    walk(tree);
+  };
+}
+
 // https://astro.build/config
 export default defineConfig({
   site: "https://pythonstrup.com",
@@ -111,7 +128,7 @@ export default defineConfig({
     mdx(),
     react(),
     sitemap({
-      filter: (page) => !["/404/", "/ko/404/"].includes(new URL(page).pathname),
+      filter: (page) => !["/404/", "/ko/404/", "/llms.txt"].includes(new URL(page).pathname),
     }),
   ],
 
@@ -121,7 +138,7 @@ export default defineConfig({
 
   markdown: {
     processor: unified({
-      remarkPlugins: [remarkWikilinks],
+      remarkPlugins: [remarkWikilinks, remarkInternalTrailingSlash],
       rehypePlugins: [rehypeWrapTables],
     }),
     shikiConfig: {

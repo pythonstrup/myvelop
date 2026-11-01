@@ -17,7 +17,7 @@ interface Props {
 
 const { tag, posts, lang, alternatePath } = Astro.props;
 const isKo = lang === 'ko';
-const backHref = isKo ? '/ko/blog' : '/blog';
+const backHref = isKo ? '/ko/blog/' : '/blog/';
 const backLabel = isKo ? '← 목록으로' : '← Back to blog';
 const countLabel = isKo
 	? `글 ${posts.length}편`

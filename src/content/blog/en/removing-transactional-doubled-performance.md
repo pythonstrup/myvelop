@@ -1,6 +1,6 @@
 ---
 title: "Why Removing @Transactional Doubled Performance in Production"
-description: "In Spring, @Transactional(readOnly = true) is commonly said to optimize performance by changing dirty checking to Manual mode. In practice, however, unnecessary JDBC calls can actually make it slower. Based on real call traces from Elastic APM, this post analyzes how read-only transactions affect performance and suggests a more practical alternative."
+description: "@Transactional(readOnly = true) is supposed to speed Spring up by turning off dirty checking. Elastic APM showed extra JDBC calls that made it slower."
 pubDate: "2025-05-08T22:38:02+09:00"
 updatedDate: "2025-09-15T19:51:46+09:00"
 socialImage: "../../../assets/blog/removing-transactional-doubled-performance/01.png"

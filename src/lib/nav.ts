@@ -17,20 +17,35 @@ export function isActivePath(current: string, target: string): boolean {
 	return t === "/" ? c === "/" : c === t || c.startsWith(t + "/");
 }
 
+/**
+ * Directory URLs keep a trailing slash so Cloudflare Pages does not 308 them.
+ * A dot in the last segment means a file (`/rss.xml`, `/favicon.svg`) and stays as written.
+ */
+export function withTrailingSlash(href: string): string {
+	if (!href.startsWith("/") || href.startsWith("//")) return href;
+	const splitAt = href.search(/[?#]/);
+	const pathname = splitAt === -1 ? href : href.slice(0, splitAt);
+	const suffix = splitAt === -1 ? "" : href.slice(splitAt);
+	if (pathname === "/" || pathname.endsWith("/")) return href;
+	const last = pathname.slice(pathname.lastIndexOf("/") + 1);
+	if (last.includes(".")) return href;
+	return `${pathname}/${suffix}`;
+}
+
 const navItems = [
-	{ label: { en: "Home", ko: "홈" }, path: "" },
-	{ label: { en: "Blog", ko: "블로그" }, path: "/blog" },
-	{ label: { en: "Notes", ko: "노트" }, path: "/notes" },
-	{ label: { en: "About", ko: "소개" }, path: "/about" },
-	{ label: { en: "Search", ko: "검색" }, path: "/search" },
+	{ label: { en: "Home", ko: "홈" }, path: "/" },
+	{ label: { en: "Blog", ko: "블로그" }, path: "/blog/" },
+	{ label: { en: "Notes", ko: "노트" }, path: "/notes/" },
+	{ label: { en: "About", ko: "소개" }, path: "/about/" },
+	{ label: { en: "Search", ko: "검색" }, path: "/search/" },
 ];
 
-/** Nav links with the locale base applied (Home resolves to "/" or "/ko"). */
+/** Nav links with the locale base applied (Home resolves to "/" or "/ko/"). */
 export function navLinks(isKo: boolean): { label: string; href: string }[] {
 	const base = isKo ? "/ko" : "";
 	return navItems.map(({ label, path }) => ({
 		label: isKo ? label.ko : label.en,
-		href: path ? `${base}${path}` : base || "/",
+		href: withTrailingSlash(path === "/" ? `${base}/` : `${base}${path}`),
 	}));
 }
 

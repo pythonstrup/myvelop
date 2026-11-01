@@ -167,10 +167,100 @@ async function verifyRequiredOutput() {
 		'sitemap-index.xml',
 		'sitemap-0.xml',
 		'robots.txt',
+		'llms.txt',
 		'pagefind/pagefind.js',
 	];
 	for (const path of required) {
 		if (!(await isFile(join(dist, path)))) fail(`dist/${path}: required build output is missing`);
+	}
+}
+
+function internalPathname(value) {
+	if (value.startsWith('/') && !value.startsWith('//')) return localPath(value);
+	try {
+		const url = new URL(value);
+		if (url.origin !== 'https://pythonstrup.com') return;
+		try {
+			return decodeURIComponent(url.pathname);
+		} catch {
+			return url.pathname;
+		}
+	} catch {
+		return;
+	}
+}
+
+async function directoryLinkMissesSlash(pathname) {
+	if (!pathname || pathname.endsWith('/')) return false;
+	const last = pathname.slice(pathname.lastIndexOf('/') + 1);
+	if (last.includes('.')) return false;
+	const target = resolve(dist, `.${pathname}`);
+	const relativeTarget = relative(dist, target);
+	if (relativeTarget === '..' || relativeTarget.startsWith(`..${sep}`) || isAbsolute(relativeTarget)) return false;
+	return isFile(join(target, 'index.html'));
+}
+
+function verifyJsonLd(name, html, { isBlogPost, isHome }) {
+	const scripts = [
+		...html.matchAll(/<script\b(?=[^>]*\btype=["']application\/ld\+json["'])[^>]*>([\s\S]*?)<\/script>/gi),
+	];
+	if (scripts.length === 0) {
+		fail(`${name}: missing JSON-LD`);
+		return;
+	}
+
+	const nodes = [];
+	for (const script of scripts) {
+		let data;
+		try {
+			data = JSON.parse(script[1]);
+		} catch {
+			fail(`${name}: JSON-LD is not valid JSON`);
+			return;
+		}
+		if (data?.['@context'] !== 'https://schema.org') fail(`${name}: JSON-LD @context must be https://schema.org`);
+		if (Array.isArray(data?.['@graph'])) nodes.push(...data['@graph']);
+		else if (Array.isArray(data)) nodes.push(...data);
+		else nodes.push(data);
+	}
+
+	if (isHome) {
+		const website = nodes.find((node) => node['@type'] === 'WebSite');
+		if (!website) fail(`${name}: missing WebSite JSON-LD`);
+		else if (website.publisher?.['@type'] !== 'Person' || !website.publisher.name || !website.publisher.url) {
+			fail(`${name}: WebSite publisher should be a Person with a name and url`);
+		}
+	}
+
+	if (!isBlogPost) return;
+	const posting = nodes.find((node) => node['@type'] === 'BlogPosting');
+	const crumbs = nodes.find((node) => node['@type'] === 'BreadcrumbList');
+	if (!posting) fail(`${name}: missing BlogPosting JSON-LD`);
+	if (!crumbs) fail(`${name}: missing BreadcrumbList JSON-LD`);
+	if (posting) {
+		if (Number.isNaN(Date.parse(posting.datePublished)) || Number.isNaN(Date.parse(posting.dateModified))) {
+			fail(`${name}: BlogPosting dates must be valid`);
+		}
+		const modifiedMeta = html.match(/<meta\b(?=[^>]*\bproperty=["']article:modified_time["'])[^>]*>/i)?.[0];
+		const modifiedContent = modifiedMeta?.match(/\bcontent=["']([^"']+)["']/i)?.[1];
+		if (modifiedContent) {
+			if (posting.dateModified !== modifiedContent) {
+				fail(`${name}: dateModified does not match article:modified_time`);
+			}
+		} else if (posting.dateModified !== posting.datePublished) {
+			fail(`${name}: dateModified should fall back to datePublished when the post has no updated date`);
+		}
+		if (posting.author?.['@type'] !== 'Person') fail(`${name}: BlogPosting author should be a Person`);
+	}
+	const items = crumbs?.itemListElement;
+	if (!Array.isArray(items) || items.length < 3) {
+		fail(`${name}: BreadcrumbList needs Home, Blog, and the post`);
+	} else {
+		for (const [index, item] of items.entries()) {
+			if (item['@type'] !== 'ListItem' || item.position !== index + 1 || !item.name || typeof item.item !== 'string') {
+				fail(`${name}: BreadcrumbList item ${index + 1} is not a positioned ListItem with a URL`);
+			}
+		}
 	}
 }
 
@@ -235,6 +325,45 @@ async function verifyHtml() {
 		for (const value of values) {
 			const pathname = localPath(decodeXml(value));
 			if (pathname && !(await builtTargetExists(pathname))) fail(`${name}: missing local target ${value}`);
+		}
+
+		const titleText = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1];
+		const rel = relative(dist, file);
+		if ((rel === 'index.html' || rel === 'ko/index.html') && titleText === 'pythonstrup') {
+			fail(`${name}: home title should describe the site, not only the brand`);
+		}
+
+		const locale = expectedLang === 'ko' ? 'ko_KR' : 'en_US';
+		const otherLocale = expectedLang === 'ko' ? 'en_US' : 'ko_KR';
+		if (!new RegExp(`<meta\\b(?=[^>]*\\bproperty=["']og:locale["'])(?=[^>]*\\bcontent=["']${locale}["'])[^>]*>`, 'i').test(html)) {
+			fail(`${name}: missing og:locale ${locale}`);
+		}
+		const hasEnglishHreflang = /<link\b(?=[^>]*\bhreflang=["']en["'])[^>]*>/i.test(html);
+		const alternateLocale = new RegExp(
+			`<meta\\b(?=[^>]*\\bproperty=["']og:locale:alternate["'])(?=[^>]*\\bcontent=["']${otherLocale}["'])[^>]*>`,
+			'i',
+		);
+		if (hasEnglishHreflang && !alternateLocale.test(html)) {
+			fail(`${name}: missing og:locale:alternate ${otherLocale}`);
+		}
+
+		const isBlogPost = /^(?:ko\/)?blog\/(?!page\/|tags\/)[^/]+\/index\.html$/.test(rel);
+		const isHome = rel === 'index.html' || rel === 'ko/index.html';
+		if (isBlogPost || isHome || /<script\b(?=[^>]*\btype=["']application\/ld\+json["'])/i.test(html)) {
+			verifyJsonLd(name, html, { isBlogPost, isHome });
+		}
+
+		for (const tag of html.matchAll(/<a\b[^>]*>/gi)) {
+			const href = tag[0].match(/\bhref=["']([^"']+)["']/i)?.[1];
+			if (!href) continue;
+			const pathname = internalPathname(decodeXml(href));
+			if (pathname && (await directoryLinkMissesSlash(pathname))) {
+				fail(`${name}: internal link would redirect to add a trailing slash: ${href}`);
+			}
+		}
+
+		if (rel.endsWith('blog/llm-gateway/index.html') && /<th(?:\s[^>]*)?>\s*<\/th>/i.test(html)) {
+			fail(`${name}: table header cell is empty`);
 		}
 
 		for (const tag of html.matchAll(/<link\b(?=[^>]*\bhreflang=["'][^"']+["'])[^>]*>/gi)) {
@@ -388,6 +517,21 @@ async function verifyNotesRss() {
 	}
 }
 
+async function verifyLlms(postNames) {
+	const text = await readFile(join(dist, 'llms.txt'), 'utf8');
+	if (!text.startsWith('# pythonstrup\n')) fail('dist/llms.txt: missing site heading');
+	if (!text.includes('## English posts') || !text.includes('## Korean posts')) {
+		fail('dist/llms.txt: missing a language section');
+	}
+	for (const lang of ['en', 'ko']) {
+		const prefix = lang === 'en' ? '/blog' : '/ko/blog';
+		for (const name of postNames[lang]) {
+			const url = `https://pythonstrup.com${prefix}/${name}/`;
+			if (!text.includes(url)) fail(`dist/llms.txt: missing ${url}`);
+		}
+	}
+}
+
 async function verifyFontCss() {
 	const cssFiles = await walk(join(dist, '_astro'), (path) => path.endsWith('.css'));
 	let pretendardFaces = 0;
@@ -413,6 +557,7 @@ const { htmlCount, canonicalUrls } = await verifyHtml();
 await verifySitemap(canonicalUrls);
 await verifyRss(postNames);
 await verifyNotesRss();
+await verifyLlms(postNames);
 await verifyRedirects();
 await verifyFontCss();
 

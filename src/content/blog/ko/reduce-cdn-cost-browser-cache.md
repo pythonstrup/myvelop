@@ -1,6 +1,6 @@
 ---
 title: "CDN 비용 줄이기 - 브라우저 캐시"
-description: "CDN을 도입했는데 매달 나가는 비용이 부담스럽다고 생각한 적이 있는가? 우리 팀은 브라우저 캐시 설정만으로 연간 100만원 이상의 CDN 비용을 절감했다. 단순히 Cache-Control 헤더를 적절히 설정하는 것만으로도 가능하다. 이 글에서는 CDN의 기본 원리부터 시작해서, Cache-Control 헤더에…"
+description: "CDN 비용이 매달 부담되어, 브라우저 Cache-Control만으로 연간 100만 원 이상을 줄였다. CDN이 무엇을 대신 받는지와, 그 헤더가 비용을 어떻게 가르는지."
 pubDate: "2025-11-22T18:05:57+09:00"
 updatedDate: "2025-11-22T18:07:48+09:00"
 socialImage: "../../../assets/blog/reduce-cdn-cost-browser-cache/02.png"

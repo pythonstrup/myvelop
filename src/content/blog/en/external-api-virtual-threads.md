@@ -1,6 +1,6 @@
 ---
 title: "How an External API Nearly Brought Down Our Service: Adopting Virtual Threads"
-description: "This article traces how I diagnosed thread blocking caused by network I/O and found a fundamental solution with JDK 21 virtual threads. Beyond the initial fix, it examines the unexpected challenges of thread pinning and overwhelming that emerged during adoption, along with their solutions."
+description: "Network I/O was blocking threads. JDK 21 virtual threads fixed that, then pinning and overwhelming showed up. How each one was handled."
 pubDate: "2025-09-20T16:05:37+09:00"
 updatedDate: "2025-09-20T16:29:19+09:00"
 socialImage: "../../../assets/blog/external-api-virtual-threads/03.png"

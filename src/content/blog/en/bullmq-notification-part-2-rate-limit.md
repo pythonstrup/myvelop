@@ -1,6 +1,6 @@
 ---
 title: "Running a Notification System with BullMQ, Part 2 - Rate Limits and the Design They Forced"
-description: "The sending quota was 100 messages per 5 seconds and our average was 20 req/s. On paper we were inside the limit, yet 429s kept appearing. Two fixed windows whose start times were not aligned turned out to be the cause, and the fact that another team shared the same third-party account pushed us to redesign the sending path itself."
+description: "Quota was 100 messages per 5 seconds, average 20 req/s, yet 429s still fired. Misaligned fixed windows and a shared account forced a new sending path."
 pubDate: "2026-07-20T21:00:00+09:00"
 tags: ["BullMQ","nodejs","redis","typescript","rate limit"]
 series: "Running a Notification System with BullMQ"

@@ -1,6 +1,6 @@
 ---
-title: "LLM 게이트웨이 - OpenRouter, LiteLLM, Cloudflare AI Gateway 중 무엇을 고를까"
-description: "OpenAI, Anthropic, Gemini API를 서비스 코드에서 직접 부르면 형식 차이, 장애 대응, 키와 비용 관리가 서비스마다 반복된다. LLM 게이트웨이가 이 반복을 어떻게 한곳으로 모으는지, 그 대가로 무엇을 내주는지 짚고 OpenRouter, LiteLLM, Cloudflare AI Gateway의 지연, fallback, 응답 캐시, 팀별 예산을 공식 문서와 공개된 측정으로 비교했다. 첫 토큰까지는 Cloudflare가 26~37ms, OpenRouter가 200ms 남짓 더 걸렸다."
+title: "LLM API 게이트웨이: OpenRouter, LiteLLM, Cloudflare 비교"
+description: "LLM API 게이트웨이는 OpenAI, Anthropic, Gemini 호출의 형식과 장애 대응, 키와 비용을 한곳에 모은다. OpenRouter, LiteLLM, Cloudflare의 지연, fallback, 캐시, 팀 예산을 비교한다."
 pubDate: "2026-10-19T20:15:00+09:00"
 tags: ["llm", "llm-gateway", "openrouter", "litellm", "cloudflare"]
 series: "LLM API 운영"
@@ -72,7 +72,7 @@ LLM 게이트웨이는 이 문제를 앱과 제공자 사이의 한 겹에서 �
 
 위 세 함수는 모두 모델에 질문을 보내고 답을 받는데, 생김새는 제각각이다.
 
-| | OpenAI Chat Completions | Anthropic Messages | Gemini Interactions |
+| 항목 | OpenAI Chat Completions | Anthropic Messages | Gemini Interactions |
 | --- | --- | --- | --- |
 | 시스템 프롬프트 | `messages` 안의 `role: "system"` | 별도 `system` 필드 | 별도 `system_instruction` 필드 |
 | 최대 출력 토큰 | 선택 | `max_tokens` 필수 | 선택(`generation_config.max_output_tokens`) |
@@ -246,7 +246,7 @@ OpenRouter [공식 문서](https://openrouter.ai/docs/guides/best-practices/late
 
 ### 넘기는 단위와 설정 위치가 다르다
 
-| | 같은 모델의 다른 공급처로 | 다른 모델로 | 설정하는 곳 |
+| 게이트웨이 | 같은 모델의 다른 공급처로 | 다른 모델로 | 설정하는 곳 |
 | --- | --- | --- | --- |
 | OpenRouter | 기본으로 켜져 있다. 최근 30초 동안 장애가 없던 공급처 가운데 쌀수록 먼저 고를 가능성이 크고, 실패하면 다음 공급처로 넘긴다. | `models` 배열에 적은 순서대로 넘긴다. 요금은 실제로 응답한 모델 기준이다. | 요청 본문, 또는 프리셋 |
 | LiteLLM | 같은 별칭에 묶인 deployment끼리 `num_retries`만큼 재시도한다. 분당 실패가 `allowed_fails`를 넘은 deployment는 `cooldown_time` 동안 뺀다. | 재시도를 다 쓰면 `fallbacks`로 넘긴다. 컨텍스트 초과는 `context_window_fallbacks`, 콘텐츠 정책 위반은 `content_policy_fallbacks`로 따로 받는다. | 게이트웨이 설정 파일 |
@@ -319,7 +319,7 @@ Cloudflare는 Dynamic Routing 경로를 만든다. 대시보드의 흐름도 편
 
 세 게이트웨이 모두 같은 요청이 다시 오면 저장해 둔 답을 돌려주는 응답 캐시를 둘 수 있다. 응답 캐시는 모델 제공자가 입력 앞부분을 재사용하는 프롬프트 캐싱과는 다른 기능이다. 둘의 차이는 [AI 캐시가 제값을 하려면](/ko/blog/llm-prompt-caching/)에서 다뤘다.
 
-| | 켜는 방법 | 유효 시간 | 맞추는 기준 |
+| 게이트웨이 | 켜는 방법 | 유효 시간 | 맞추는 기준 |
 | --- | --- | --- | --- |
 | OpenRouter | 요청 헤더 `X-OpenRouter-Cache: true`, 또는 프리셋의 `cache_enabled` | 기본 5분, 1초\~24시간 | API 키, 모델, 스트리밍 여부, 요청 본문이 모두 같아야 한다. 적중하면 요금이 0이다. |
 | Cloudflare | 기본은 꺼져 있다. 대시보드에서 켜거나 `cf-aig-cache-ttl` 헤더를 붙인다. | 60초\~1개월 | 요청 전체가 정확히 같아야 한다. 의미가 비슷한 요청을 묶는 기능은 계획 중이다. |
@@ -333,7 +333,7 @@ Cloudflare는 Dynamic Routing 경로를 만든다. 대시보드의 흐름도 편
 
 ### 팀을 나누는 단위와 걸 수 있는 한도
 
-| | 팀을 나누는 단위 | 팀마다 걸 수 있는 것 | 한도를 넘으면 |
+| 게이트웨이 | 팀을 나누는 단위 | 팀마다 걸 수 있는 것 | 한도를 넘으면 |
 | --- | --- | --- | --- |
 | LiteLLM | 팀(`team_id`), 팀에 속한 virtual key, 팀 안의 멤버 | 예산(`max_budget`, 초기화 주기 `budget_duration`), 분당 요청·토큰 수(`rpm_limit`, `tpm_limit`), 동시 요청 수, 쓸 수 있는 모델(`models`) | 요청을 거절한다. 속도 제한은 429로 막는다. |
 | OpenRouter | 워크스페이스, 멤버, API 키 | 워크스페이스 예산(일·주·월·전체 기간), 가드레일로 멤버·키마다 거는 예산, 쓸 수 있는 모델과 공급처, 데이터를 남기지 않는 공급처만 쓰도록 강제하는 ZDR | 요청을 거절한다. 워크스페이스 예산은 403으로 막는다. |
@@ -371,7 +371,7 @@ LLM 비용은 요청 수가 아니라 토큰으로 매겨지고, 같은 요청�
 
 공식 문서에서 확인하지 못한 칸은 `—`로 두었다.
 
-| | 운영 형태 | 오픈소스 | 비용 | 팀별 예산 | 의미 기반 캐시 |
+| 게이트웨이 | 운영 형태 | 오픈소스 | 비용 | 팀별 예산 | 의미 기반 캐시 |
 | --- | --- | --- | --- | --- | --- |
 | OpenRouter | 관리형 | 아니다 | 크레딧 구매 시 5.5%, BYOK는 월 $25,000 초과분에 5% | 워크스페이스, 멤버, 키 | —(응답 캐시는 정확히 같은 요청만 맞춘다) |
 | LiteLLM | 셀프호스팅 | 그렇다(MIT, `enterprise/`는 별도 라이선스) | 수수료 없음, 서버 운영 비용 | 팀, 키, 멤버 | 있다 |

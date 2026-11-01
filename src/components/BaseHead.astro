@@ -20,12 +20,23 @@ interface Props {
 	additionalFeeds?: { title: string; href: string }[];
 	/** Ordered reading path. Emits a CollectionPage with an ItemList. */
 	collection?: { name: string; url: string }[];
+	/** Home page. Emits WebSite JSON-LD with the author as publisher. */
+	website?: boolean;
 }
 
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 
-const { title, description, image = FallbackImage, alternatePath, article, person, additionalFeeds, collection } =
-	Astro.props;
+const {
+	title,
+	description,
+	image = FallbackImage,
+	alternatePath,
+	article,
+	person,
+	additionalFeeds,
+	collection,
+	website,
+} = Astro.props;
 const lang = Astro.currentLocale === 'ko' ? 'ko' : 'en';
 const imageURL = new URL(image.src, Astro.url);
 const authorURL = new URL(lang === 'ko' ? '/ko/about/' : '/about/', Astro.site);
@@ -37,10 +48,11 @@ const author = {
 	url: authorURL,
 	sameAs: externalLinks.map((link) => link.href),
 };
+const homeURL = new URL(lang === 'ko' ? '/ko/' : '/', Astro.site);
+const blogURL = new URL(lang === 'ko' ? '/ko/blog/' : '/blog/', Astro.site);
 const collectionLd =
 	collection && collection.length > 0
 		? {
-				'@context': 'https://schema.org',
 				'@type': 'CollectionPage',
 				name: title,
 				description,
@@ -59,23 +71,61 @@ const collectionLd =
 				},
 			}
 		: undefined;
-const jsonLd = article
-	? {
-			'@context': 'https://schema.org',
-			'@type': 'BlogPosting',
-			headline: title,
-			description,
-			inLanguage: lang,
-			url: canonicalURL,
-			image: imageURL,
-			datePublished: article.publishedTime.toISOString(),
-			dateModified: (article.modifiedTime ?? article.publishedTime).toISOString(),
-			keywords: article.tags,
-			author,
-		}
-	: person
-		? { '@context': 'https://schema.org', ...author, image: imageURL }
-		: collectionLd;
+const blogPosting = article && {
+	'@type': 'BlogPosting',
+	headline: title,
+	description,
+	inLanguage: lang,
+	url: canonicalURL,
+	image: imageURL,
+	datePublished: article.publishedTime.toISOString(),
+	dateModified: (article.modifiedTime ?? article.publishedTime).toISOString(),
+	keywords: article.tags,
+	author,
+};
+const breadcrumb = article && {
+	'@type': 'BreadcrumbList',
+	itemListElement: [
+		{
+			'@type': 'ListItem',
+			position: 1,
+			name: lang === 'ko' ? '홈' : 'Home',
+			item: homeURL,
+		},
+		{
+			'@type': 'ListItem',
+			position: 2,
+			name: lang === 'ko' ? '블로그' : 'Blog',
+			item: blogURL,
+		},
+		{
+			'@type': 'ListItem',
+			position: 3,
+			name: title,
+			item: canonicalURL,
+		},
+	],
+};
+const websiteLd = website && {
+	'@type': 'WebSite',
+	name: SITE_TITLE,
+	description,
+	inLanguage: lang,
+	url: canonicalURL,
+	publisher: author,
+};
+const nodes: Record<string, unknown>[] = [];
+if (blogPosting) nodes.push(blogPosting);
+if (breadcrumb) nodes.push(breadcrumb);
+if (person) nodes.push({ ...author, image: imageURL });
+if (websiteLd) nodes.push(websiteLd);
+if (collectionLd) nodes.push(collectionLd);
+const jsonLd =
+	nodes.length === 0
+		? undefined
+		: nodes.length === 1
+			? { '@context': 'https://schema.org', ...nodes[0] }
+			: { '@context': 'https://schema.org', '@graph': nodes };
 // '<' must not appear raw inside <script>; the escape survives JSON.parse unchanged.
 const jsonLdHtml = jsonLd && JSON.stringify(jsonLd).replace(/</g, '\\u003c');
 const englishURL = alternatePath && new URL(alternatePath, Astro.site);
@@ -142,6 +192,12 @@ const rssURL = new URL(Astro.currentLocale === 'ko' ? 'ko/rss.xml' : 'rss.xml', 
 
 <!-- Open Graph / Facebook -->
 <meta property="og:type" content={article ? 'article' : 'website'} />
+<meta property="og:locale" content={lang === 'ko' ? 'ko_KR' : 'en_US'} />
+{
+	alternatePath && (
+		<meta property="og:locale:alternate" content={lang === 'ko' ? 'en_US' : 'ko_KR'} />
+	)
+}
 {
 	article && (
 		<>

@@ -1,6 +1,6 @@
 ---
-title: "LLM Gateways - Choosing Between OpenRouter, LiteLLM, and Cloudflare AI Gateway"
-description: "Calling the OpenAI, Anthropic, and Gemini APIs straight from service code means every service repeats the same format handling, failover, and key and cost management. This post looks at how an LLM gateway pulls that repetition into one place and what it costs in return, then compares OpenRouter, LiteLLM, and Cloudflare AI Gateway on latency, fallbacks, response caching, and per-team budgets using official docs and published measurements. Cloudflare added 26–37 ms to the first token; OpenRouter added a little over 200 ms."
+title: "LLM API Gateway: OpenRouter, LiteLLM, and Cloudflare"
+description: "An LLM API gateway puts OpenAI, Anthropic, and Gemini calls in one place. Compare OpenRouter, LiteLLM, and Cloudflare on latency, fallback, cache, and budgets."
 pubDate: "2026-10-19T20:15:00+09:00"
 tags: ["llm", "llm-gateway", "openrouter", "litellm", "cloudflare"]
 series: "Running LLM APIs"
@@ -72,7 +72,7 @@ An LLM gateway is a tool that tries to solve this in one layer between the app a
 
 The three functions above all send a question to a model and get an answer back, yet each looks different.
 
-| | OpenAI Chat Completions | Anthropic Messages | Gemini Interactions |
+| Field | OpenAI Chat Completions | Anthropic Messages | Gemini Interactions |
 | --- | --- | --- | --- |
 | System prompt | `role: "system"` inside `messages` | Separate `system` field | Separate `system_instruction` field |
 | Max output tokens | Optional | `max_tokens` required | Optional (`generation_config.max_output_tokens`) |
@@ -246,7 +246,7 @@ The failover that every service had to write earlier is handled differently by e
 
 ### What they switch between, and where the setting lives
 
-| | To another provider of the same model | To another model | Where it is configured |
+| Gateway | To another provider of the same model | To another model | Where it is configured |
 | --- | --- | --- | --- |
 | OpenRouter | On by default. Among providers with no outage in the last 30 seconds, cheaper ones are more likely to be tried first, and a failure moves to the next provider. | Moves through the `models` array in order. You pay for the model that actually answered. | Request body, or a preset |
 | LiteLLM | Retries `num_retries` times across deployments under the same alias. A deployment whose failures per minute exceed `allowed_fails` is pulled out for `cooldown_time`. | Once retries run out, moves to `fallbacks`. Context overflows go to `context_window_fallbacks` and content policy violations to `content_policy_fallbacks`. | Gateway config file |
@@ -319,7 +319,7 @@ In all three setups, only `tax` remains in the app code. What differs is where y
 
 All three gateways can keep a response cache that returns a stored answer when the same request comes in again. It is a different feature from prompt caching, where the model provider reuses the start of the input. The difference between the two is covered in [When AI Caching Pays Off](/blog/llm-prompt-caching/).
 
-| | How to turn it on | Lifetime | What has to match |
+| Gateway | How to turn it on | Lifetime | What has to match |
 | --- | --- | --- | --- |
 | OpenRouter | Request header `X-OpenRouter-Cache: true`, or `cache_enabled` on a preset | 5 minutes by default, 1 second to 24 hours | API key, model, streaming mode, and request body must all match. A hit costs nothing. |
 | Cloudflare | Off by default. Turn it on in the dashboard or send a `cf-aig-cache-ttl` header. | 60 seconds to 1 month | The whole request must match exactly. Grouping similar requests by meaning is planned. |
@@ -333,7 +333,7 @@ Earlier, with five teams using LLMs, keys scattered, nobody could see who spent 
 
 ### How teams are separated, and what limits you can set
 
-| | Unit that separates teams | What you can set per team | When a limit is exceeded |
+| Gateway | Unit that separates teams | What you can set per team | When a limit is exceeded |
 | --- | --- | --- | --- |
 | LiteLLM | Teams (`team_id`), virtual keys in a team, members within a team | Budget (`max_budget`, reset interval `budget_duration`), requests and tokens per minute (`rpm_limit`, `tpm_limit`), concurrent requests, allowed models (`models`) | The request is rejected. Rate limits return 429. |
 | OpenRouter | Workspaces, members, API keys | Workspace budgets (daily, weekly, monthly, lifetime), per-member and per-key budgets through guardrails, allowed models and providers, ZDR to force providers that keep no data | The request is rejected. Workspace budgets return 403. |
@@ -371,7 +371,7 @@ This post focused on three tools, but there are more options. Here is a short lo
 
 Cells that could not be confirmed in the official docs are marked `—`.
 
-| | Deployment | Open source | Cost | Per-team budgets | Semantic cache |
+| Gateway | Deployment | Open source | Cost | Per-team budgets | Semantic cache |
 | --- | --- | --- | --- | --- | --- |
 | OpenRouter | Managed | No | 5.5% on credit purchases; BYOK 5% beyond $25,000 a month | Workspaces, members, keys | — (response cache matches identical requests only) |
 | LiteLLM | Self-hosted | Yes (MIT; `enterprise/` under a separate license) | No fees; server costs | Teams, keys, members | Yes |

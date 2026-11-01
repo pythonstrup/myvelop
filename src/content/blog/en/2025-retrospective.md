@@ -1,6 +1,6 @@
 ---
 title: "2025 Retrospective"
-description: "I believed that strong technical skills were all that mattered: clean code, refactoring, TDD, and domain-driven design. I kept practicing because I thought writing good code was a developer's highest virtue. Then the AI era shook that assumption. I realized that writing code well is no longer enough to create irreplaceable value. So what should developers truly focus on?"
+description: "Clean code, refactoring, TDD, and DDD felt like enough. The AI era showed that writing code well no longer creates irreplaceable value. A 2025 retrospective."
 pubDate: "2026-02-17T14:20:34+09:00"
 updatedDate: "2026-02-17T20:54:35+09:00"
 socialImage: "../../../assets/blog/2025-retrospective/03.jpg"

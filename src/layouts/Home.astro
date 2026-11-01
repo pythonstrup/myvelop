@@ -3,7 +3,7 @@ import BaseHead from '../components/BaseHead.astro';
 import Footer from '../components/Footer.astro';
 import FormattedDate from '../components/FormattedDate.astro';
 import Header from '../components/Header.astro';
-import { SITE_DESCRIPTION, SITE_DESCRIPTION_KO, SITE_TITLE } from '../consts';
+import { SITE_DESCRIPTION, SITE_DESCRIPTION_KO, SITE_HOME_TITLE, SITE_HOME_TITLE_KO } from '../consts';
 import { getHomePage } from '../lib/home';
 import { notesFeedInfo } from '../lib/notes';
 
@@ -21,10 +21,11 @@ const { copy } = page;
 <html lang={lang}>
 	<head>
 		<BaseHead
-			title={SITE_TITLE}
+			title={isKo ? SITE_HOME_TITLE_KO : SITE_HOME_TITLE}
 			description={isKo ? SITE_DESCRIPTION_KO : SITE_DESCRIPTION}
 			alternatePath="/"
 			additionalFeeds={[notesFeedInfo(lang)]}
+			website
 		/>
 	</head>
 	<body>

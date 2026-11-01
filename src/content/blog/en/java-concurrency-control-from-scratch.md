@@ -1,6 +1,6 @@
 ---
 title: "Relearning Java Concurrency Control from the Ground Up"
-description: "This article explores how the JVM monitor behind synchronized actually works, examines the concurrency-control features provided by ReentrantLock, and solves the producer-consumer problem that can arise in concurrent programs. It then improves performance with a lock-striping strategy based on per-user keys."
+description: "How the JVM monitor behind synchronized works, what ReentrantLock adds, and a producer-consumer fix. Then lock striping on per-user keys to raise throughput."
 pubDate: "2025-09-23T20:49:00+09:00"
 updatedDate: "2025-10-12T16:26:46+09:00"
 socialImage: "../../../assets/blog/java-concurrency-control-from-scratch/01.png"

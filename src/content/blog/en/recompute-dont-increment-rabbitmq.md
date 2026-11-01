@@ -1,6 +1,6 @@
 ---
 title: "Recompute, Don’t Increment: Updating Review Statistics with RabbitMQ"
-description: "How I separated review mutations from statistics calculation, then had a Review Consumer recompute statistics from the data available when each RabbitMQ event was processed. This article also covers functional idempotency and the message-loss windows that remained."
+description: "Statistics are recomputed when each RabbitMQ event arrives, not incremented in the review write. Duplicates do not stack, and the loss windows that remain."
 pubDate: "2026-07-17T21:25:00+09:00"
 tags: ["Kotlin", "Spring", "RabbitMQ", "message queue", "idempotency"]
 socialImage: "../../../assets/blog/recompute-dont-increment-rabbitmq/og.png"

@@ -1,6 +1,6 @@
 ---
 title: "Operating a Notification System with BullMQ, Part 1: What Is BullMQ?"
-description: "Every service needs to send messages to users, whether through AlimTalk, email, or push notifications. But implementing notification delivery as a simple HTTP call quickly runs into limits. Each problem can be solved with another tool: consolidate delivery into one module, enforce a rate limit inside the function, create timing branches with a scheduler, and record delivery…"
+description: "Sending AlimTalk, email, and push as HTTP calls hits limits fast. Why BullMQ takes on rate limits, scheduling, and delivery history."
 pubDate: "2026-05-18T23:35:46+09:00"
 updatedDate: "2026-06-04T22:32:30+09:00"
 socialImage: "../../../assets/blog/bullmq-notification-part-1-what-is-bullmq/01.png"

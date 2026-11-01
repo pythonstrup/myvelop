@@ -18,13 +18,14 @@ pythonstrup은 Astro 7로 빌드하는 정적 다국어 블로그다. 서버 런
 | 소개 | `/about/` | `/ko/about/` | `AboutPortfolio.astro` |
 | 글 RSS | `/rss.xml` | `/ko/rss.xml` | `src/lib/rss.ts`, `src/pages/**/rss.xml.js` |
 | 노트 RSS | `/notes/rss.xml` | `/ko/notes/rss.xml` | `src/lib/rss.ts`, `src/pages/**/notes/rss.xml.js` |
+| LLM용 안내 | `/llms.txt` | 같은 파일에 두 언어의 글을 담는다 | `src/pages/llms.txt.ts` |
 | 오류 안내 | `/404/` | `/ko/404/` | `NotFound.astro` |
 
 영어가 기본 언어이고 한국어만 `/ko` 접두사를 쓴다. 글 목록은 `pubDate` 내림차순이며 한 페이지에 다섯 개, 홈에는 최신 세 개를 표시한다. 홈은 그 세 개 외에, 직접 고른 시작 글과 연재로 묶인 주제, 최근 노트를 함께 보여 준다. 시작 글 목록은 `src/data/home.ts`의 `startHereSlugs`다.
 
 ## 주요 경계
 
-- `src/components/BaseHead.astro`가 canonical URL, description, Open Graph, Twitter Card, RSS, sitemap, hreflang을 한곳에서 만든다. 글은 실제 번역본이 있을 때만 상대 언어 hreflang을 노출한다.
+- `src/components/BaseHead.astro`가 canonical URL, description, Open Graph(`og:locale` 포함), Twitter Card, RSS, sitemap, hreflang, JSON-LD를 한곳에서 만든다. 글은 실제 번역본이 있을 때만 상대 언어 hreflang과 `og:locale:alternate`를 노출한다. 홈은 WebSite, 글은 BlogPosting과 BreadcrumbList를 낸다.
 - `src/content.config.ts`가 글 frontmatter의 단일 스키마다. 원문은 `src/content/blog/{en,ko}`에 있다.
 - `src/data/about.ts`가 두 About 페이지의 콘텐츠 소스다. 레이아웃과 섹션 컴포넌트에는 문구를 복제하지 않는다.
 - `src/content/notes/{en,ko}`가 제텔카스텐 노트의 원본이다. frontmatter 없이 파일명이 제목이자 `[[제목]]` 링크의 식별자이며, `astro.config.mjs`의 `remarkWikilinks`가 언어 폴더 안에서 링크를 만들고 없는 노트는 일반 텍스트로 둔다. 색인 페이지는 전체 목록이 아니라 손으로 쓰는 `index.{en,ko}.md`이며 키워드마다 진입 노트 한둘만 가리킨다. 노트는 번역쌍을 맺지 않으므로 hreflang은 색인 페이지에만 내고, 노트에서 언어를 바꾸면 상대 언어의 색인으로 간다. 사용법은 [노트 README](../src/content/notes/README.md)에 있다.

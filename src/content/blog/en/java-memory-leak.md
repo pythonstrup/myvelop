@@ -1,6 +1,6 @@
 ---
 title: "Is Your Memory Healthy?"
-description: "Have you ever seen a system that appeared perfectly healthy in production suddenly slow down, take longer to respond, and eventually fail? Did you know that a single line of code we commonly overlook can degrade application performance and even cause a server outage? Problems like these usually begin with a small memory-management mistake…"
+description: "A healthy production system can slow down and fail from one overlooked line. How a small memory-management mistake becomes an outage."
 pubDate: "2025-03-16T17:55:50+09:00"
 updatedDate: "2025-09-15T19:49:42+09:00"
 socialImage: "../../../assets/blog/java-memory-leak/01.png"
