@@ -4,6 +4,7 @@ description: "Kubernetes는 Pod의 상태를 판단하기 위해 두 종류의 p
 pubDate: "2026-03-18T00:08:15+09:00"
 socialImage: "../../../assets/blog/why-kubernetes-kills-my-pod-health-probes/01.png"
 tags: ["Health Check","k8s","kubernetes","terminus","nestjs","redis"]
+series: "Kubernetes가 내 Pod를 죽일 때"
 ---
 
 ![Kubernetes가 내 Pod를 죽이는 이유: Health Probe 이미지 1](../../../assets/blog/why-kubernetes-kills-my-pod-health-probes/01.png)
