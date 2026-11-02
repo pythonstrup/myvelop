@@ -4,6 +4,7 @@ description: "OCR splits into two stages: detection, which finds text, and recog
 pubDate: "2026-10-27T21:00:00+09:00"
 tags: ["ocr", "clova", "vlm", "llm"]
 socialImage: "../../../assets/blog/how-ocr-works/og.png"
+series: "OCR from Principles to Training"
 ---
 import DetectRecognizeDiagram from "@/materials/how-ocr-works/DetectRecognizeDiagram";
 import ProjectionProfileDiagram from "@/materials/how-ocr-works/ProjectionProfileDiagram";
@@ -48,7 +49,7 @@ The JSON from the introduction starts to make sense once you split it this way. 
 
 This split matters most when masking sensitive data. To mask a resident registration number, you need to know both <strong>what</strong> it is and <strong>where</strong> it is. With recognition alone, you can find the number but not where to cover it in the image. With detection alone, you do not know which box is the resident registration number.
 
-The same applies when a result is wrong. Either the text was never found, or it was found and misread. What you fix depends on which stage failed. This is also why the next part fine-tunes the detection model and the recognition model separately.
+The same applies when a result is wrong. Either the text was never found, or it was found and misread. What you fix depends on which stage failed. This is also why the detection model and the recognition model can be fine-tuned separately.
 
 Real OCR engines add more stages before and after. Before detection they straighten a skewed scan, and after recognition they group word fragments into lines and decide the reading order. Still, the skeleton is always the same two stages, finding and reading. Now let's follow, in historical order, how machines have handled them.
 
@@ -120,7 +121,7 @@ This is also where confidence comes from. For each column, the model outputs a p
 
 Deep learning OCR beats classic OCR less because of its architecture than because of how it learns. If the training data has enough characters under seals or touching table lines, the model learns to tell them apart on its own. Nobody has to add exception rules one by one.
 
-The shape of the training data is simple too. Give the detection model images with the vertex coordinates of the text regions, and give the recognition model line images with the correct string for each. Thanks to CTC, you do not need to mark where each character is. That answers the question from the introduction of what exactly gets trained. These two are also what we will prepare when fine-tuning for contracts in the next part.
+The shape of the training data is simple too. Give the detection model images with the vertex coordinates of the text regions, and give the recognition model line images with the correct string for each. Thanks to CTC, you do not need to mark where each character is. That answers the question from the introduction of what exactly gets trained. When the next part fine-tunes a recognition model, line images and correct strings are all it prepares.
 
 With these principles in hand, let's use a real OCR API.
 
@@ -263,6 +264,6 @@ So when do you need local OCR? A local model fits in these cases.
 - When the document volume makes call costs a burden
 - When forms or fonts unique to your documents drag down the API's recognition rate
 
-This is where the fine-tuning from the deep learning section comes in. Give the detection model images and vertex coordinates, and give the recognition model line images and correct strings. The next part fine-tunes PaddleOCR on the fictional contract and compares the result side by side with CLOVA OCR.
+This is where the fine-tuning from the deep learning section comes in. Give the detection model images and vertex coordinates, and give the recognition model line images and correct strings. The next part fine-tunes the recognition models of PaddleOCR and Tesseract on synthetic handwriting and compares how the two engines read and learn.
 
 Once you know the principles, an OCR API is no longer a black box. Detection produces the coordinates, and recognition produces the string and confidence. A VLM skips both stages and reads meaning, but loses the coordinates. Keep this difference in mind, and you can decide for yourself what to hand to each stage.
