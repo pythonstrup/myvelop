@@ -160,7 +160,7 @@ Pod가 꺼지는 순서에 맞추면 처리기는 네 단계가 된다.
 
 1. <strong>계속 받으며 기다린다.</strong> 로드밸런서가 이 Pod를 빼는 동안 들어오는 요청을 평소처럼 처리한다.
 2. <strong>새 연결을 막고 처리 중인 요청을 기다린다.</strong> 끝나지 않는 요청이 있을 수 있으니 상한을 둔다.
-3. <strong>남은 것을 내보낸다.</strong> 아직 보내지 않은 trace나 로그, 큐에 쌓인 작업 같은 것이다.
+3. <strong>남은 것을 내보낸다.</strong> 아직 보내지 않은 trace나 로그, 큐에 쌓인 작업 같은 것이다. 여기에도 상한을 둔다.
 4. <strong>143으로 끝낸다.</strong> SIGTERM으로 끝났다는 표시다(128 + 15).
 
 Bun 서버라면 이렇게 쓸 수 있다. `server.stop()`은 새 연결을 막고, 처리 중인 요청이 모두 끝나면 풀리는 Promise를 돌려준다.
@@ -177,14 +177,21 @@ process.once('SIGTERM', async () => {
     Bun.sleep(10_000).then(() => false),
   ])
   if (!stopped) console.error(`처리 중인 요청 ${server.pendingRequests}건을 기다리지 못했다`)
-  // 3. 보내지 않은 trace를 내보낸다. 실패해도 종료는 막지 않는다
-  await flushTraces().catch((error) => console.error(error))
+  // 3. 보내지 않은 trace를 최대 4초 내보낸다. 실패하거나 늦어도 종료는 막지 않는다
+  await Promise.race([
+    flushTraces().catch((error) => console.error(error)),
+    Bun.sleep(4_000),
+  ])
   // 4. SIGTERM으로 끝났다는 표시
   process.exit(143)
 })
 ```
 
-숫자는 유예 시간에 맞춰 골랐다. 15초 기다리고 10초 더 기다려도 25초라서, 기본 유예 시간 30초 안에 남은 것을 내보내고 끝낼 수 있다. 10초보다 오래 걸리는 요청이 있는 서버라면 기다리는 상한과 `terminationGracePeriodSeconds`를 같이 늘려야 한다. 한쪽만 늘리면 SIGKILL이 먼저 온다.
+숫자는 유예 시간에 맞춰 골랐다. 15초, 10초, 4초를 모두 기다려도 29초라서 기본 유예 시간 30초 안에 스스로 끝난다.
+
+내보내기에도 상한을 둔 것은 내보내는 쪽의 timeout이 생각보다 길기 때문이다. OpenTelemetry의 OTLP exporter는 기본 timeout이 10초다. 수집기가 느리면 내보내기만으로 남은 5초를 넘긴다. 그러면 SIGKILL을 받아 137로 끝나고, 기다리던 trace도 결국 버려진다. 단계마다 상한이 있어야 그 합을 유예 시간 안에 맞출 수 있다.
+
+여유가 1초뿐이라는 점도 기억하자. 10초보다 오래 걸리는 요청이 있는 서버라면 기다리는 상한과 `terminationGracePeriodSeconds`를 같이 늘려야 한다. 한쪽만 늘리면 SIGKILL이 먼저 온다.
 
 실제로 SIGTERM을 보내 보면 순서대로 움직인다. 신호를 보내고 12초 뒤에 보낸 요청도 정상으로 응답했고, 15초째에 trace가 수집기에 도착했고, 프로세스는 143으로 끝났다. 같은 조건에서 3단계를 뺐더니 trace는 하나도 도착하지 않았다.
 
@@ -209,7 +216,7 @@ lifecycle:
 - 순서는 preStop 훅, SIGTERM, 유예 시간이 지나면 SIGKILL이다. 같은 때 EndpointSlice에서 트래픽이 빠진다. 두 일은 동시에 일어나므로 SIGTERM 뒤에도 요청이 들어온다.
 - 대부분은 Pod의 유예 시간을 지키지만, 노드 자원 부족은 지키지 않는다. OOM은 커널이 바로 SIGKILL을 보낸다.
 - 컨테이너의 PID 1은 처리기가 없는 SIGTERM을 무시한다. 30초 뒤 137로 끝난다면 먼저 처리기부터 확인하자.
-- SIGTERM 처리기는 바로 끝내지 말고, 계속 받다가, 닫고 기다리고, 남은 것을 내보낸 뒤 끝낸다. 이 모든 시간의 합이 유예 시간 안에 들어와야 한다.
+- SIGTERM 처리기는 바로 끝내지 말고, 계속 받다가, 닫고 기다리고, 남은 것을 내보낸 뒤 끝낸다. 단계마다 상한을 두고, 그 합이 유예 시간 안에 들어와야 한다.
 
 종료 코드로 거꾸로 읽으면 이렇다.
 
