@@ -1,6 +1,6 @@
 ---
 title: "Solving a Concurrency Problem with a Single UPDATE"
-description: "Suppose we are designing a first-come, first-served event system. The requirements are listed below. If 1,000 people request 100 available items at the same time, how can we ensure that exactly 100 people receive one? The solutions commonly proposed in this situation are listed below."
+description: "1,000 people request 100 items at once. How a single UPDATE gives one to exactly 100 of them, instead of the locks usually proposed for a first-come event."
 pubDate: "2025-08-13T22:40:09+09:00"
 updatedDate: "2025-10-16T21:49:00+09:00"
 socialImage: "../../../assets/blog/concurrency-single-update/01.png"

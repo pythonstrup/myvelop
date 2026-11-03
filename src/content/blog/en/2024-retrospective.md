@@ -1,6 +1,6 @@
 ---
 title: "2024 Retrospective"
-description: "Once again, I successfully maintained my one-commit-a-day streak throughout the year. It no longer feels like, \"I develop because I have to make one commit a day.\" Instead, it feels more like, \"I develop every day, and one commit a day naturally records that process.\" It is almost like keeping a diary for development. I see this as a clearly positive change. My experience in Geultto Cohort 9…"
+description: "Looking back on 2024: a one-commit-a-day streak that now records daily work, Geultto Cohort 10, an open-source award, Toss Runner's High, and a turn as PM."
 pubDate: "2025-02-02T14:50:03+09:00"
 updatedDate: "2025-04-13T15:20:55+09:00"
 socialImage: "../../../assets/blog/2024-retrospective/01.png"

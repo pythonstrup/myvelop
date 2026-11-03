@@ -1,6 +1,6 @@
 ---
 title: "Querying S3 without Parquet"
-description: "An experiment in whether plain JSONL on S3 can be queried efficiently without Parquet. Range binary search, an index binary search, a B-tree and an LSM tree, built directly on a real bucket, with round trips and time measured. Querying works — but the verdict is still Parquet, for maintainability rather than speed."
+description: "Can JSONL on S3 be queried without Parquet? Range search, a B-tree, and an LSM tree, timed on a real bucket. It works. Parquet still wins on upkeep."
 pubDate: "2026-08-24T21:00:00+09:00"
 tags: ["parquet", "jsonl", "s3", "b-tree", "lsm"]
 series: "Parquet and S3"

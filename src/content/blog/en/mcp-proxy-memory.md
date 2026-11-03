@@ -1,6 +1,6 @@
 ---
 title: "MCP Servers Were Eating 6.7GB of My RAM, So I Built a Proxy"
-description: "stdio MCP servers duplicated per session added up to 169 processes and 6.7GB of RSS. I built a proxy to share one process across sessions — and finished with a bigger question. Do these servers still need to be MCP at all?"
+description: "Per-session stdio MCP servers reached 169 processes and 6.7GB. A proxy shares one process, then asks whether these servers still need to be MCP."
 pubDate: "2026-08-12T21:00:00+09:00"
 tags: ["mcp", "claude", "llm"]
 socialImage: "../../../assets/blog/mcp-proxy-memory/mcp.png"

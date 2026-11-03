@@ -1,6 +1,6 @@
 ---
 title: "Between Technology and Management: My Nexters Cohort 26 Retrospective"
-description: "I did not even know how Nexters operated, yet I boldly submitted an idea. Taking on the PM role would give me countless details to manage, but I believed that pushing myself through a genuinely difficult experience would help me grow. I wanted to become the center of collaboration and gain experience leading a team and solving problems. Rather than simply completing my assigned work…"
+description: "I submitted a Nexters idea before I knew the program. As PM I wanted to lead from the center of the team and grow by doing the hard parts."
 pubDate: "2025-03-02T14:04:47+09:00"
 socialImage: "../../../assets/blog/nexters-26-retrospective/05.jpg"
 tags: ["Nexters","PM","Developer","Nexters Cohort 26"]

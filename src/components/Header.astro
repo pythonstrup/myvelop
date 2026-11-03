@@ -2,7 +2,7 @@
 import { getCollection } from 'astro:content';
 import { SITE_TITLE } from '../consts';
 import { getBlogPageCount, getBlogTags } from '../lib/blog';
-import { externalLinks, navLinks } from '../lib/nav';
+import { externalLinks, navLinks, withTrailingSlash } from '../lib/nav';
 import HeaderLink from './HeaderLink.astro';
 import MobileNav from './MobileNav.astro';
 
@@ -10,7 +10,7 @@ const { pathname } = Astro.url;
 const isKo = pathname === '/ko' || pathname.startsWith('/ko/');
 const langLabel = isKo ? 'EN' : 'KO';
 const links = navLinks(isKo);
-const homeHref = isKo ? '/ko' : '/';
+const homeHref = isKo ? '/ko/' : '/';
 const githubUrl = externalLinks.find((link) => link.label === 'GitHub')?.href;
 const linkedinUrl = externalLinks.find((link) => link.label === 'LinkedIn')?.href;
 
@@ -47,8 +47,9 @@ if (pathname === '/404' || pathname === '/404/') {
 } else if (isKo) {
 	langSwitchHref = pathname.replace(/^\/ko/, '') || '/';
 } else {
-	langSwitchHref = pathname === '/' ? '/ko' : `/ko${pathname}`;
+	langSwitchHref = pathname === '/' ? '/ko/' : `/ko${pathname}`;
 }
+langSwitchHref = withTrailingSlash(langSwitchHref);
 ---
 
 <header class="site-header">
@@ -65,7 +66,7 @@ if (pathname === '/404' || pathname === '/404/') {
 			<a
 				class="lang-switch"
 				href={langSwitchHref}
-				aria-label={isKo ? '영어로 보기' : '한국어로 보기'}
+				aria-label={isKo ? 'EN, 영어로 보기' : 'KO, 한국어로 보기'}
 			>{langLabel}</a>
 
 			<button

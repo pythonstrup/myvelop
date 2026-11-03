@@ -1,6 +1,6 @@
 ---
 title: "처음부터 다시 배우는 Java 동시성 제어"
-description: "이 글에서는 synchronized 키워드의 JVM 모니터 락이 실제로 어떻게 동작하는지 살펴보고, ReentrantLock이 제공하는 동시성 처리 기능을 알아본 뒤, 동시성 프로그래밍을 할 때 발생할 수 있는 생산자-소비자 문제를 해결해본다. 그리고 사용자별 키 값을 활용한 락 분리 전략으로 성능을 개선하는…"
+description: "synchronized의 JVM 모니터 락이 실제로 어떻게 동작하는지 보고, ReentrantLock으로 생산자-소비자 문제를 푼 뒤, 사용자별 키로 락을 나눠 성능을 높인다."
 pubDate: "2025-09-23T20:49:00+09:00"
 updatedDate: "2025-10-12T16:26:46+09:00"
 socialImage: "../../../assets/blog/java-concurrency-control-from-scratch/01.png"

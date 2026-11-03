@@ -1,6 +1,6 @@
 ---
 title: "Reducing CDN Costs with Browser Caching"
-description: "Have you ever introduced a CDN only to find the monthly cost burdensome? Our team cut more than one million won in annual CDN costs through browser-cache configuration alone. All it took was setting the Cache-Control header correctly. This article explains the fundamentals of CDNs and Cache-Control, then shares how we used browser caching to reduce costs in practice."
+description: "Browser cache settings alone cut more than a million won a year of CDN cost. How a CDN works, and which Cache-Control header keeps responses in the browser."
 pubDate: "2025-11-22T18:05:57+09:00"
 updatedDate: "2025-11-22T18:07:48+09:00"
 socialImage: "../../../assets/blog/reduce-cdn-cost-browser-cache/02.png"

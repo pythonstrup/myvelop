@@ -9,7 +9,7 @@ type Props = {
 
 const { currentPath, isKo, langSwitchHref } = Astro.props;
 const links = navLinks(isKo);
-const homeHref = isKo ? '/ko' : '/';
+const homeHref = isKo ? '/ko/' : '/';
 const menuId = 'mobile-menu';
 ---
 

@@ -1,6 +1,6 @@
 ---
 title: "Understanding Pessimistic Locks Through a Like Feature"
-description: "This article follows the process of solving the concurrency problems in a like feature with database locks. It explains how pessimistic locking works and examines the performance degradation caused by next-key locks."
+description: "Like-button races, solved with database locks. How pessimistic locking works, and how next-key locks slow the check for whether a review was already liked."
 pubDate: "2025-09-28T20:36:03+09:00"
 updatedDate: "2025-10-13T16:26:31+09:00"
 socialImage: "../../../assets/blog/pessimistic-lock-like-feature/01.png"

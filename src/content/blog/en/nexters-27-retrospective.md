@@ -1,6 +1,6 @@
 ---
 title: "Nexters 27th Cohort Retrospective: Experiments Over Theory, and the Users Had the Answers"
-description: "During Nexters' 26th cohort, I was fixated on scenarios in my own head rather than on users. As the PM, I started the project with the slogan below. Our team built Loopy, a self-discovery app based on Schwartz's theory of basic human values."
+description: "As PM of Loopy in Nexters 26, I chased scenarios in my head, not users. In cohort 27 I joined Emotia, an AI for exploring emotions, as a backend developer."
 pubDate: "2025-09-14T12:22:06+09:00"
 updatedDate: "2025-09-16T14:00:10+09:00"
 socialImage: "../../../assets/blog/nexters-27-retrospective/01.png"

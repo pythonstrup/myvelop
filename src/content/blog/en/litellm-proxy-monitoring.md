@@ -1,6 +1,6 @@
 ---
 title: "Monitoring a LiteLLM Proxy - What the Admin UI Covers, and What Only Grafana and Langfuse Show"
-description: "I attached Prometheus, Grafana and Langfuse to a LiteLLM proxy and ran the same mock traffic through all of them for 14 minutes. The built-in Admin UI goes as far as who spent how much; time series and alerts need Grafana, and request bodies, sessions, traces and scores need Langfuse. Here is where the Admin UI is enough and the order to add the rest."
+description: "Prometheus, Grafana, and Langfuse on a LiteLLM proxy, same mock traffic for 14 minutes. What the Admin UI shows, and when to add the other two."
 pubDate: "2026-09-15T21:00:00+09:00"
 tags: ["litellm", "llm", "observability", "grafana", "prometheus", "langfuse"]
 series: "Running LLM APIs"

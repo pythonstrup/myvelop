@@ -1,6 +1,6 @@
 ---
 title: "외부 API가 서비스를 마비시킬 뻔한 이야기: 가상스레드 도입기"
-description: "이 글은 Network I/O로 인한 스레드 블로킹 문제를 진단하고, JDK 21의 가상 스레드(Virtual Thread)를 활용해 근본적인 해결책을 찾아가는 과정을 담고 있다. 단순히 문제를 해결하는 것을 넘어, 가상 스레드 도입 과정에서 마주친 Thread Pinning과 Overwhelming 같은 예상치…"
+description: "Network I/O가 스레드를 막던 문제를 JDK 21 가상 스레드로 풀었다. 도입 중에 나타난 Thread Pinning과 Overwhelming의 원인과, 각각을 넘긴 방법을 함께 정리했다."
 pubDate: "2025-09-20T16:05:37+09:00"
 updatedDate: "2025-09-20T16:29:19+09:00"
 socialImage: "../../../assets/blog/external-api-virtual-threads/03.png"

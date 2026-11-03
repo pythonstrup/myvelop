@@ -1,6 +1,6 @@
 ---
 title: "Why Kubernetes Kills My Pod: Health Probes"
-description: "Kubernetes provides two kinds of probes for determining a Pod's state. A liveness probe asks, \"Is this container alive?\" The kubelet periodically calls a configured endpoint and restarts the container if the call fails or receives no response. This automatically recovers an application that has become unresponsive because of a deadlock or memory leak."
+description: "Kubernetes judges a Pod with liveness and readiness probes: when each restarts a container or holds back traffic, Spring and NestJS setup, and pitfalls."
 pubDate: "2026-03-18T00:08:15+09:00"
 socialImage: "../../../assets/blog/why-kubernetes-kills-my-pod-health-probes/01.png"
 tags: ["Health Check","k8s","kubernetes","terminus","nestjs","redis"]

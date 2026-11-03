@@ -1,6 +1,6 @@
 ---
 title: "My Final Geultto"
-description: "I liked the person I was becoming: part of a community, connecting with others, writing, and growing. That was why I joined Cohort 10 as well. As I began my final Geultto cohort, I set several goals. Unlike during Cohort 9, I was no longer working overtime every day, so I thought I would have more room to enjoy the experience this time."
+description: "I joined Geultto Cohort 10 for the community, the writing, and the growth. Less overtime than Cohort 9, so I set goals for a final cohort with more room."
 pubDate: "2025-03-30T15:14:21+09:00"
 updatedDate: "2025-04-13T15:15:12+09:00"
 socialImage: "../../../assets/blog/my-final-geultto/06.svg"

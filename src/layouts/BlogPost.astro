@@ -30,7 +30,8 @@ const {
 	headings = [],
 	nav,
 } = Astro.props;
-const backHref = lang === 'ko' ? '/ko/blog' : '/blog';
+const blogBase = lang === 'ko' ? '/ko/blog' : '/blog';
+const backHref = `${blogBase}/`;
 const backLabel = lang === 'ko' ? '← 목록으로' : '← Back to blog';
 const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 const tagsLabel = lang === 'ko' ? '태그' : 'Tags';
@@ -391,7 +392,7 @@ const relatedLabel = lang === 'ko' ? '관련 글' : 'Related posts';
 						<ul class="tag-list" aria-label={tagsLabel}>
 							{tags.map((tag) => (
 								<li>
-									<a class="tag" href={`${backHref}/tags/${tagSlug(tag)}/`}>
+									<a class="tag" href={`${blogBase}/tags/${tagSlug(tag)}/`}>
 										{tag}
 									</a>
 								</li>
@@ -425,7 +426,7 @@ const relatedLabel = lang === 'ko' ? '관련 글' : 'Related posts';
 								<h2>{relatedLabel}</h2>
 								<div class="related-grid">
 									{nav.related.map((p) => (
-										<a class="related-card" href={`${backHref}/${p.id.replace(/^(en|ko)\//, '')}/`}>
+										<a class="related-card" href={`${blogBase}/${p.id.replace(/^(en|ko)\//, '')}/`}>
 											<Image
 												class="related-thumb"
 												src={p.data.heroImage ?? p.data.socialImage}

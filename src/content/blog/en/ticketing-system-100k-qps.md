@@ -1,6 +1,6 @@
 ---
 title: "A Ticketing System That Can Theoretically Handle 100,000 QPS"
-description: "An event is being held to celebrate a celebrity's visit, with tickets available only to the first 1,000 people. Applications will be accepted through a web application. Suppose you protect the system with a distributed lock. Are you confident that concurrency is now completely under control?"
+description: "The first 1,000 tickets go through a web app behind a distributed lock. Does that lock actually keep concurrency under control when the rush hits?"
 pubDate: "2025-11-05T22:04:44+09:00"
 updatedDate: "2025-11-05T22:07:56+09:00"
 socialImage: "../../../assets/blog/ticketing-system-100k-qps/01.png"

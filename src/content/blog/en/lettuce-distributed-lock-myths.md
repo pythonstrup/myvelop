@@ -1,6 +1,6 @@
 ---
 title: "Myths and Facts About Lettuce Distributed Locks (feat. RedisLockRegistry)"
-description: "This article continues from the previous post, \"Understanding Pessimistic Locks Through a Like Feature.\" It corrects the misconception that \"Lettuce supports only spin locks\" and explains how Spring RedisLockRegistry's Pub/Sub lock mode can implement an efficient distributed lock without Redisson."
+description: "Lettuce is not limited to spin locks. How Spring RedisLockRegistry's Pub/Sub lock mode builds an efficient distributed lock without Redisson."
 pubDate: "2025-09-29T13:41:16+09:00"
 updatedDate: "2025-10-13T16:23:38+09:00"
 socialImage: "../../../assets/blog/lettuce-distributed-lock-myths/01.png"

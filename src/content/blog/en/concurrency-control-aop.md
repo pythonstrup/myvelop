@@ -1,6 +1,6 @@
 ---
 title: "Separating Concurrency Control Code with AOP"
-description: "This article shows how to use Spring AOP to separate distributed-lock handling completely from business logic. When you use the Lock interface for concurrency control, try-finally blocks and lock-management code can overwhelm the business logic. Just as Spring's @Transactional simplifies transaction management, we will solve this problem with a DistributedLock aspect and extend @DistributedLock with a SpEL evaluator modeled after Spring Cache."
+description: "Spring AOP pulls distributed-lock code out of business logic. A DistributedLock aspect modeled on @Transactional, with a SpEL key evaluator like Spring Cache."
 pubDate: "2025-10-12T16:23:49+09:00"
 updatedDate: "2025-10-12T20:35:27+09:00"
 socialImage: "../../../assets/blog/concurrency-control-aop/01.png"

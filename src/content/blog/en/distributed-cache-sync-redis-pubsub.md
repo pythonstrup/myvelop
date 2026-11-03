@@ -1,6 +1,6 @@
 ---
 title: "Solving Distributed Cache Synchronization with Redis Pub/Sub"
-description: "Our team began a project integrating with an external system. The requirement seemed simple: \"We need to use an external API to determine whether an order can be placed on a given date.\" In practice, however, giving customers accurate information required fetching 40–60 date-specific delivery plans at once on a single screen. Even with parallel processing…"
+description: "Loading 40–60 delivery plans per screen from an external API was slow. Redis and local caches made it 50–100x faster, and Redis Pub/Sub kept servers in sync."
 pubDate: "2025-08-09T19:55:20+09:00"
 updatedDate: "2025-09-23T23:43:17+09:00"
 socialImage: "../../../assets/blog/distributed-cache-sync-redis-pubsub/01.png"

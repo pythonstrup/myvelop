@@ -28,7 +28,9 @@ const notesRssLabel = isKo ? '노트 RSS' : 'Notes RSS';
 
 <style>
 	.site-footer {
-		color: rgb(var(--gray));
+		/* --gray (#60739f) on this tinted background is 4.47:1. These colors clear WCAG AA. */
+		--footer-text: 74, 90, 124;
+		color: rgb(var(--footer-text));
 		background: color-mix(in srgb, rgb(var(--gray-light)) 28%, rgb(var(--bg)));
 		border-top: 1px solid rgb(var(--gray-light));
 	}
@@ -59,10 +61,14 @@ const notesRssLabel = isKo ? '노트 RSS' : 'Notes RSS';
 		min-height: 44px;
 		align-items: center;
 		padding: 0 0.65rem;
-		color: rgb(var(--gray));
+		color: rgb(var(--footer-text));
 		font-size: 0.8rem;
 		font-weight: 600;
 		text-decoration: none;
+	}
+	/* Override the variable, not the color, so the hover rule below still wins in dark mode. */
+	:global(html.dark) .site-footer {
+		--footer-text: 176, 188, 210;
 	}
 	.footer-inner a:hover {
 		color: var(--accent);

@@ -1,6 +1,6 @@
 ---
 title: "Setting Up NestJS to Fit Your Preferences"
-description: "\"NestJS boilerplate\" is a search term almost everyone new to NestJS has probably tried at least once. But when you actually inspect the code, it is hard to tell what everything does or whether you need all of it."
+description: "\"NestJS boilerplate\" code is hard to read, and you may not need all of it. Build your own setup: tooling, paths, config, logging, errors, and health checks."
 pubDate: "2025-10-26T15:22:53+09:00"
 socialImage: "../../../assets/blog/nestjs-initial-setup/01.jpg"
 tags: ["Backend","javascript","nest","nestjs","nvm","tsconfig","typescript"]

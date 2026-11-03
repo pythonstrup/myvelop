@@ -1,6 +1,6 @@
 ---
 title: "AOP로 동시성 처리 코드 분리하기"
-description: "이 글에서는 Spring AOP를 활용해 분산 락 처리 코드를 비즈니스 로직에서 완전히 분리하는 방법을 소개한다. 동시성을 제어를 위해 Lock 인터페이스를 사용할 때, try-finally 블록과 락 관리 코드가 비즈니스 로직을 압도하는 문제를 겪게 된다. Spring의 @Transactional이 트랜잭션…"
+description: "분산 락의 try-finally가 비즈니스 로직을 가릴 때, Spring AOP로 그 코드를 빼는 방법이다. @Transactional처럼 쓰는 DistributedLock과 SpEL로 락 키를 고르는 과정까지 담았다."
 pubDate: "2025-10-12T16:23:49+09:00"
 updatedDate: "2025-10-12T20:35:27+09:00"
 socialImage: "../../../assets/blog/concurrency-control-aop/01.png"
