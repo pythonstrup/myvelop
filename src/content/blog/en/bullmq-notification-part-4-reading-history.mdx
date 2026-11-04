@@ -43,7 +43,7 @@ This shape is optimal for writing. A single PutObject is atomic, so there is no 
 
 ### 1. There are too many files
 
-One job is one object, so the file count grows with the job count. In peak periods hundreds of thousands of messages go out in a day, so if single-recipient sends make up a large share, a day's partition accumulates thousands to tens of thousands of objects.
+One job is one object, so the file count grows with the job count. In peak periods millions of messages go out in a day, so if single-recipient sends make up a large share, a day's partition accumulates tens of thousands to hundreds of thousands of objects.
 
 S3 needs an HTTP round trip for every file it reads. So <strong>a small total size still queries slowly when the files are many.</strong> Reading 100MB as one file and reading it as ten thousand files are completely different jobs. Part 3 weighed Firehose because of PUT request cost; the same problem shows up on the read side as round-trip latency.
 

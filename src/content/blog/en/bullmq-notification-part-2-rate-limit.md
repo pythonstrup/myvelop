@@ -178,8 +178,6 @@ That leaves three options, to be considered top down.
 
 We could not split the account, so we took the second. Given that a divided quota has to be set below an even split and cannot be verified, the third is the option to keep for last.
 
-<!-- TODO: whether we actually unified the worker, or solved it with an allocation / separate accounts. Anything from onboarding the other team goes here -->
-
 One clarification is worth making. Chapter 10 also mentions rate limiting, but it is a <strong>different kind of limit</strong>. There it means capping how often a single user receives notifications, because sending too often makes people turn notifications off entirely. That is a user-fatigue concern, not an external quota one. The rate limit in this post belongs to chapter 4.
 
 ## Summary

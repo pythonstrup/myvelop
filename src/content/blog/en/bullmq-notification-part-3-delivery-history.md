@@ -206,7 +206,7 @@ Hence a sweep. Every 10 minutes, over the last 24 hours, find rows 30 minutes pa
 
 #### You end up owning another instance
 
-Putting it in the operational DB was the first option on the table. Joins work and foreign keys work. Volume killed it. During the regular tax-filing season we sent an average of 620,000 messages a day, 26 million over the period, clustered unevenly by hour. In a year that is 40–50 million message rows and over 100 million status rows. Those writes compete with operational transactions for buffer pool and IOPS.
+Putting it in the operational DB was the first option on the table. Joins work and foreign keys work. Volume killed it. Say the service sends most of its messages in one busy season. During that season it sends millions of messages a day and tens to hundreds of millions over a few weeks, clustered unevenly by hour. At that scale a year comes to hundreds of millions of message rows and more than twice as many status rows. Those writes compete with operational transactions for buffer pool and IOPS.
 
 There is one more reason to separate. `flush_log=2` in the table above is <strong>an instance-wide setting</strong> and cannot be split per table. History can lose a second of writes — the provider can backfill it — but payments cannot. With both workloads on one instance, relaxing durability only for history is not even an available choice.
 
@@ -267,7 +267,7 @@ This option fits when failure rates must sit on a real-time dashboard or anomali
 
 It sits alongside the previous two but is a slightly different kind of thing. It only changes how data gets into S3, so <strong>it can be inserted in front of either the serial or the fan-out structure.</strong>
 
-The reason to insert it is cost. S3 has no API for uploading multiple objects at once, so with many single-recipient sends, one job becomes one object. At peak that is over 11 million PUTs a month, and the bill follows.
+The reason to insert it is cost. S3 has no API for uploading multiple objects at once, so with many single-recipient sends, one job becomes one object. At the scale assumed above, a peak month passes 11 million PUTs, and the bill follows.
 
 
 | Monthly cost at peak | Direct S3 PUT | Via Firehose |
@@ -303,7 +303,7 @@ This option fits when S3 is pure archive, never queried directly and never the b
 | Monthly cost, peak | \~$360 | \~$79 | \~$92 | \~$7 |
 
 
-Costs all assume direct S3 PUTs. The Firehose column is with it inserted into the serial option; inserted into fan-out it becomes \~$8 baseline and \~$21 at peak.
+Costs all assume direct S3 PUTs, and the peak figures count 11 million PUTs a month. The Firehose column is with it inserted into the serial option; inserted into fan-out it becomes \~$8 baseline and \~$21 at peak.
 
 The flip at peak stands out. At baseline the serial option is six times cheaper than the relational DB. Toward peak, PUT requests dominate the bill and it climbs to $79, close to the relational DB. Insert Firehose in that regime and it drops nearly tenfold again. The relational DB moves the other way: more volume means a bigger instance, and the gap widens.
 
