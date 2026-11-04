@@ -175,7 +175,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					links: [{ href: '/ko/blog/bullmq-notification-part-1-what-is-bullmq/', label: '기술 글 읽기' }],
 					visual: {
 						key: 'notification',
-						alt: 'GitHub Actions가 이미지를 ECR에 게시하고 GitOps 브랜치를 갱신하면 Argo CD가 EKS에 배포하며, 내부 서비스의 Redis·BullMQ 작업과 Pulumi로 배포한 발송 이력 저장 인프라, 관측 파이프라인을 연결한 아키텍처',
+						alt: '여러 서비스가 Redis 기반 BullMQ 큐 하나에 발송 작업을 넣고 수평 확장되는 Worker가 외부 메시징 API로 보내며, 메시지는 운영 DB에서 읽기 전용으로 조회하고 발송 이력은 S3의 Parquet 파일에 남겨 DuckDB를 쓰는 모니터링 앱에서 조회하며 로그·트레이스·메트릭은 따로 수집하는 아키텍처',
 						caption:
 							'발송 처리와 이력 보관·분석을 분리하고, 이력 저장 인프라는 Pulumi로 배포한 구성입니다.',
 						linkLabel: '아키텍처 크게 보기',
@@ -412,7 +412,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 					links: [{ href: '/blog/bullmq-notification-part-1-what-is-bullmq/', label: 'Read the technical write-up' }],
 					visual: {
 						key: 'notification',
-						alt: 'Architecture showing GitHub Actions publishing images to ECR and updating GitOps branches for Argo CD deployment, internal services enqueueing work in Redis and BullMQ, and Pulumi-deployed delivery-history infrastructure alongside observability pipelines',
+						alt: 'Architecture showing producer services enqueueing work in one Redis-backed BullMQ queue, horizontally scaled workers sending through an external messaging API, messages looked up read-only from the operational database, delivery history kept as Parquet files on S3 and queried by a monitoring app with DuckDB, and a separate logs, traces, and metrics pipeline',
 						caption:
 							'The system separates delivery from history archival and analytics, with the history infrastructure deployed through Pulumi.',
 						linkLabel: 'View the architecture',
