@@ -212,7 +212,12 @@ The bar chart compares the probability of picking each candidate at the two temp
 
 A small temperature turns even small score gaps into clear ones, so real training keeps the temperature small. The [sentence-transformers](https://sbert.net/docs/package_reference/sentence_transformer/losses.html) library, which was used to train KURE-v1, sets the default temperature to 0.01 or 0.05 depending on the loss function. Dividing by 0.05 is the same as multiplying by 20, so one loss function exposes it as a setting that "multiplies the scores by 20." The model card does not say which value KURE-v1 actually used.
 
-Training moves the scores in the direction that reduces this penalty. Differentiating the penalty with respect to each score tells how much each score should move. Writing the probability of picking wrong answer $$j$$ as $$P_j^{-}$$, we get:
+Training moves the scores in the direction that reduces this penalty: the correct score goes up and the wrong scores go down. The interesting part is the wrong side. The push on a wrong answer is proportional to the probability of picking it. In the example above, with $$\tau = 0.05$$, the probability of picking the income tax article is about 0.018 and the exemption article about 0.0024. The model pushes the income tax article, which is more easily confused with the correct answer, about 7.4 times harder. A wrong answer like "Lunch menu ideas," on the other hand, has almost zero probability of being picked, so it contributes little to training.
+
+<details>
+<summary>The gradient in detail</summary>
+
+Differentiating the penalty with respect to each score tells how much each score should move. Writing the probability of picking wrong answer $$j$$ as $$P_j^{-}$$, we get:
 
 $$
 \frac{\partial \mathcal{L}}{\partial s(q, p^{+})} = -\frac{1 - P^{+}}{\tau},
@@ -220,7 +225,7 @@ $$
 \frac{\partial \mathcal{L}}{\partial s(q, p_j^{-})} = \frac{P_j^{-}}{\tau}
 $$
 
-In other words, the correct score goes up and the wrong scores go down. The interesting part is the wrong side. The push on a wrong answer is proportional to $$P_j^{-}$$, the probability of picking it. In the example above, with $$\tau = 0.05$$, the probability of picking the income tax article is about 0.018 and the exemption article about 0.0024. The model pushes the income tax article, which is more easily confused with the correct answer, about 7.4 times harder. A wrong answer like "Lunch menu ideas," on the other hand, has almost zero probability of being picked, so it contributes little to training.
+</details>
 
 The thickness of the arrows shows how far the correct and wrong answers move in one training step.
 
@@ -283,21 +288,7 @@ First, picture a graph with a single layer. Each point is linked to a few nearby
 
 This gets slow as points multiply. If the starting point is far from the question, you have to cross a long way one neighbor at a time. HNSW solves this with layers. It is like finding an address in a map app: find Seoul on the country map, Gangnam-gu on the Seoul map, and Yeoksam-dong on the Gangnam-gu map. The upper layers have few points, so each hop covers a long distance; going down, points get denser and movement gets finer. The bottom layer has every point.
 
-<strong>How high a point goes is decided by a roll of the dice.</strong> Each time a point is inserted, the highest layer $$l$$ it reaches is drawn with the formula below, from the [HNSW paper](https://arxiv.org/abs/1603.09320).
-
-$$
-l = \big\lfloor {-\ln(U)} \cdot m_L \big\rfloor,
-\qquad U \sim \mathrm{Uniform}(0, 1),
-\qquad m_L = \frac{1}{\ln M}
-$$
-
-$$M$$ is the number of connections a point makes in one layer. Drawn this way, the probability that a point reaches layer $$\ell$$ or above is $$M^{-\ell}$$.
-
-$$
-P(l \ge \ell) = P\big({-\ln U} \ge \ell \ln M\big) = P\big(U \le M^{-\ell}\big) = M^{-\ell}
-$$
-
-Each layer up keeps only 1 in $$M$$ of the points. With $$M$$ set to pgvector's default of 16 and 1 million points inserted, this many points remain on each layer.
+<strong>How high a point goes is decided by a roll of the dice.</strong> Each time a point is inserted, the highest layer it reaches is drawn at random. Drawn with the formula from the [HNSW paper](https://arxiv.org/abs/1603.09320), each layer up keeps only 1 in $$M$$ of the points. $$M$$ is the number of connections a point makes in one layer. With $$M$$ set to pgvector's default of 16 and 1 million points inserted, this many points remain on each layer.
 
 | Layer | Points |
 | --- | --- |
@@ -309,6 +300,25 @@ Each layer up keeps only 1 in $$M$$ of the points. With $$M$$ set to pgvector's 
 | Layer 5 | about 1 |
 
 A million points stack up into about six layers. The paper explains that the structure follows the same principle as a skip list, and recommends allowing up to $$M$$ connections per layer, except layer 0, where every point lives, which gets up to $$2M$$.
+
+<details>
+<summary>The layer formula in detail</summary>
+
+The paper draws the highest layer $$l$$ a point reaches with this formula.
+
+$$
+l = \big\lfloor {-\ln(U)} \cdot m_L \big\rfloor,
+\qquad U \sim \mathrm{Uniform}(0, 1),
+\qquad m_L = \frac{1}{\ln M}
+$$
+
+Drawn this way, the probability that a point reaches layer $$\ell$$ or above is $$M^{-\ell}$$.
+
+$$
+P(l \ge \ell) = P\big({-\ln U} \ge \ell \ln M\big) = P\big(U \le M^{-\ell}\big) = M^{-\ell}
+$$
+
+</details>
 
 <strong>Search starts at the top layer and goes down one layer at a time.</strong>
 
@@ -472,7 +482,12 @@ An embedding score says "how similar," not "is this the answer." It is also hard
 
 The weaknesses of embeddings line up with the strengths of keyword search. So the two are used together, which is called <strong>hybrid search</strong>. The pgvector docs also show how to use it together with Postgres full-text search.
 
-The standard score for keyword search is BM25, and Elasticsearch uses it by default too. The score of a question $$q$$ and a document $$d$$ is as follows, written in the commonly used form of the formula from [Robertson and Zaragoza's review](https://www.staff.city.ac.uk/~sbrp622/papers/foundations_bm25_review.pdf).
+The standard score for keyword search is BM25, and Elasticsearch uses it by default too. BM25 adds up only the words that appear in the question, and each word scores higher the more often it appears in the document and the rarer it is across all documents. If the question's "VAT" is not in the document, that word scores 0. On the other hand, it is strong on questions where the letters must match exactly, such as "Article 49" or "simplified taxpayer." For languages like Korean, results also depend on how a morphological analyzer splits words.
+
+<details>
+<summary>The BM25 formula in detail</summary>
+
+The score of a question $$q$$ and a document $$d$$ is as follows, written in the commonly used form of the formula from [Robertson and Zaragoza's review](https://www.staff.city.ac.uk/~sbrp622/papers/foundations_bm25_review.pdf).
 
 $$
 \mathrm{BM25}(q, d) = \sum_{t \in q} \mathrm{IDF}(t) \cdot \frac{f_{t,d} \, (k_1 + 1)}{f_{t,d} + k_1 \left(1 - b + b \cdot \dfrac{|d|}{\mathrm{avgdl}}\right)}
@@ -488,7 +503,7 @@ $$
 
 Elasticsearch's defaults are $$k_1 = 1.2$$ and $$b = 0.75$$.
 
-As the formula shows, BM25 adds up only the words that appear in the question. If the question's "VAT" is not in the document, that word scores 0. On the other hand, it is strong on questions where the letters must match exactly, such as "Article 49" or "simplified taxpayer." For languages like Korean, results also depend on how a morphological analyzer splits words.
+</details>
 
 <strong>Merge the two lists by rank.</strong> BM25 scores have no upper bound, while cosine similarity lies between -1 and 1. Scores of different scales cannot simply be added. So they are often merged with Reciprocal Rank Fusion, or RRF, which uses ranks instead of scores. If document $$d$$ is ranked $$r(d)$$ in list $$r$$, its score is:
 
