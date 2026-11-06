@@ -157,6 +157,8 @@ When the same character really does repeat, like the two e's in "agree" or the z
 
 Think back to the Hangul case in classic OCR, where the syllable 계 split in two at a zero column. To a CRNN, that zero column is just one more column. The model looks at the neighboring columns and picks 계, so it never needs to know the character boundaries in advance. Tesseract also switched to an LSTM-based recognizer in version 4.0 in 2018, moving from matching one character at a time to reading a whole line at once.
 
+This is also where confidence comes from. For each column, the model outputs a probability for each candidate character. Combine the probabilities of the characters that survive in the final string, and you can tell how sure the model is about that string. PaddleOCR, for example, averages the probabilities of the columns that remain after merging repeats and dropping blanks, and returns that as the score. The confidence in the JSON from the introduction is this kind of value. NAVER has not published exactly how CLOVA OCR computes it.
+
 #### CTC learns by summing every path to the answer
 
 So how does the model learn which letter to pick in each column? All the training data holds is the line image and the answer string "agree". Nothing says which of the nine columns are a and which are blank.
@@ -168,8 +170,6 @@ CTC solves this by never committing to a single assignment of columns to letters
 *The path probabilities in the figure are made up for illustration.*
 
 There is no need to walk through the paths one by one. Dynamic programming computes the sum by carrying forward the running total from the previous column, so it stays fast even as the columns and letters multiply. That is why the training data needs nothing more than line images and their answer strings.
-
-This is also where confidence comes from. For each column, the model outputs a probability for each candidate character. Combine the probabilities of the characters that survive in the final string, and you can tell how sure the model is about that string. PaddleOCR, for example, averages the probabilities of the columns that remain after merging repeats and dropping blanks, and returns that as the score. The confidence in the JSON from the introduction is this kind of value. NAVER has not published exactly how CLOVA OCR computes it.
 
 ### Rules learned from data, not written by hand
 
