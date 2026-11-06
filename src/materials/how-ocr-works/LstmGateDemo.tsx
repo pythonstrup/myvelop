@@ -3,14 +3,34 @@ import { clamp01, type Colors, FONT, lerp, palette, useCanvasScene } from "@/mat
 // LSTM 셀 하나에서 게이트 세 개가 차례로 일하는 과정을 반복 재생한다.
 // 위쪽 굵은 선이 셀 상태(장기 기억), 아래쪽 선이 은닉 상태 h다. 파란 점은 셀 상태에 실린 기억, 주황 점은 이번 칸의 새 후보, 초록 점은 내보내는 h(t)다.
 // 게이트 상자의 채움 높이는 0~1 게이트 값을 보인 것이고, 값 자체(0.8·0.7·0.9)는 설명용으로 정했다.
-const STEPS = [
-	{ title: "① 망각 게이트", desc: "이전 기억 중 무엇을 남길지 0~1 사이 값으로 고른다", value: 0.8 },
-	{ title: "② 입력 게이트", desc: "이번 칸에서 새로 적을 내용과 그 양을 고른다", value: 0.7 },
-	{ title: "③ 출력 게이트", desc: "쌓인 기억 중 지금 내보낼 부분을 골라 h(t)로 넘긴다", value: 0.9 },
-] as const;
-const HOLD = { title: "세 게이트가 칸마다 이 과정을 되풀이한다", desc: "그래서 멀리 떨어진 칸의 정보도 흐려지지 않고 전달된다" };
-const ARIA =
-	"LSTM 셀 하나에서 게이트 세 개가 차례로 일하는 애니메이션. 위쪽의 셀 상태는 칸에서 칸으로 이어지는 장기 기억이다. 망각 게이트가 이전 기억 중 남길 몫을 0에서 1 사이 값으로 곱하고, 입력 게이트가 이번 칸의 새 후보 중 적을 몫을 골라 셀 상태에 더하고, 출력 게이트가 셀 상태 중 내보낼 몫을 골라 다음 칸으로 넘길 은닉 상태 h(t)를 만든다.";
+const VALUES = [0.8, 0.7, 0.9];
+const LABELS = {
+	ko: {
+		steps: [
+			{ title: "① 망각 게이트", desc: "이전 기억 중 무엇을 남길지 0~1 사이 값으로 고른다" },
+			{ title: "② 입력 게이트", desc: "이번 칸에서 새로 적을 내용과 그 양을 고른다" },
+			{ title: "③ 출력 게이트", desc: "쌓인 기억 중 지금 내보낼 부분을 골라 h(t)로 넘긴다" },
+		],
+		hold: { title: "세 게이트가 칸마다 이 과정을 되풀이한다", desc: "그래서 멀리 떨어진 칸의 정보도 흐려지지 않고 전달된다" },
+		gates: { forget: "망각", input: "입력", cand: "새 후보", out: "출력" },
+		cell: "셀 상태 · 장기 기억이 흐르는 컨베이어",
+		x: "x(t) · 이번 칸의 특징",
+		aria: "LSTM 셀 하나에서 게이트 세 개가 차례로 일하는 애니메이션. 위쪽의 셀 상태는 칸에서 칸으로 이어지는 장기 기억이다. 망각 게이트가 이전 기억 중 남길 몫을 0에서 1 사이 값으로 곱하고, 입력 게이트가 이번 칸의 새 후보 중 적을 몫을 골라 셀 상태에 더하고, 출력 게이트가 셀 상태 중 내보낼 몫을 골라 다음 칸으로 넘길 은닉 상태 h(t)를 만든다.",
+	},
+	en: {
+		steps: [
+			{ title: "① Forget gate", desc: "Picks how much old memory to keep, from 0 to 1" },
+			{ title: "② Input gate", desc: "Picks what to write from this column, and how much" },
+			{ title: "③ Output gate", desc: "Picks the part of memory to send out as h(t)" },
+		],
+		hold: { title: "All three gates repeat this at every column", desc: "so information from distant columns does not fade" },
+		gates: { forget: "forget", input: "input", cand: "candidate", out: "output" },
+		cell: "cell state · the conveyor for long-term memory",
+		x: "x(t) · this column's features",
+		aria: "Animation of the three gates in one LSTM cell working in turn. The cell state along the top is the long-term memory that runs from column to column. The forget gate multiplies the old memory by a value between 0 and 1 to choose how much to keep, the input gate chooses how much of this column's new candidate to add to the cell state, and the output gate chooses how much of the cell state to send out as the hidden state h(t) for the next column.",
+	},
+} as const;
+type Lang = keyof typeof LABELS;
 
 const STEP_MS = 3200;
 const CYCLE = STEP_MS * 3 + 1600;
@@ -115,6 +135,8 @@ function gateBox(ctx: CanvasRenderingContext2D, g: Geo, u: number, symbol: strin
 	ctx.font = `700 ${symbol === "σ" ? 15 : 11}px ${FONT}`;
 	ctx.fillText(symbol, g.x(u), GY + 14);
 	ctx.font = `500 10px ${FONT}`;
+	// 좁은 화면에서 "candidate"처럼 긴 이름이 상자를 넘으면 글자를 줄인다
+	if (ctx.measureText(label).width > g.boxW - 4) ctx.font = `500 8.5px ${FONT}`;
 	ctx.fillStyle = c.sub;
 	ctx.fillText(label, g.x(u), GY + 32);
 }
@@ -141,7 +163,7 @@ function dot(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, col
 	ctx.globalAlpha = 1;
 }
 
-function drawScene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) {
+function drawScene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean, L: (typeof LABELS)[Lang]) {
 	const c = palette(dark);
 	const inner = Math.min(560, w - 24);
 	const left = (w - inner) / 2;
@@ -180,11 +202,11 @@ function drawScene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: bo
 		}
 	});
 
-	const fillOf = (k: number) => (k === s ? STEPS[k].value * clamp01(u * 2) : 0);
-	gateBox(ctx, g, U.forget, "σ", "망각", s === 0, fillOf(0), c);
-	gateBox(ctx, g, U.input, "σ", "입력", s === 1, fillOf(1), c);
-	gateBox(ctx, g, U.cand, "tanh", "새 후보", s === 1, 0, c);
-	gateBox(ctx, g, U.out, "σ", "출력", s === 2, fillOf(2), c);
+	const fillOf = (k: number) => (k === s ? VALUES[k] * clamp01(u * 2) : 0);
+	gateBox(ctx, g, U.forget, "σ", L.gates.forget, s === 0, fillOf(0), c);
+	gateBox(ctx, g, U.input, "σ", L.gates.input, s === 1, fillOf(1), c);
+	gateBox(ctx, g, U.cand, "tanh", L.gates.cand, s === 1, 0, c);
+	gateBox(ctx, g, U.out, "σ", L.gates.out, s === 2, fillOf(2), c);
 	op(ctx, x(U.forget), CY, "×", s === 0, c);
 	op(ctx, x(U.mix), MY, "×", s === 1, c);
 	op(ctx, x(U.mix), CY, "+", s === 1, c);
@@ -202,11 +224,11 @@ function drawScene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: bo
 	ctx.fillStyle = c.sub;
 	ctx.textBaseline = "alphabetic";
 	ctx.textAlign = "center";
-	ctx.fillText("셀 상태 · 장기 기억이 흐르는 컨베이어", x(0.5), CY - 14);
+	ctx.fillText(L.cell, x(0.5), CY - 14);
 	ctx.textAlign = "left";
 	ctx.fillText("c(t−1)", x(0), CY + 18);
 	ctx.fillText("h(t−1)", x(0), HY + 16);
-	ctx.fillText("x(t) · 이번 칸의 특징", x(U.xin) + 8, HY + 36);
+	ctx.fillText(L.x, x(U.xin) + 8, HY + 36);
 	ctx.textAlign = "right";
 	ctx.fillText("c(t)", x(1), CY + 18);
 	ctx.fillText("h(t)", x(1), HY + 16);
@@ -240,7 +262,7 @@ function drawScene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: bo
 	}
 	dot(ctx, mem.x, CY, mem.r, c.blue, mem.a);
 
-	const cap = hold ? HOLD : STEPS[s];
+	const cap = hold ? L.hold : L.steps[s];
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
 	ctx.font = `700 12.5px ${FONT}`;
@@ -251,11 +273,17 @@ function drawScene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: bo
 	ctx.fillText(cap.desc, w / 2, HEIGHT - 16);
 }
 
-export default function LstmGateDemo() {
-	const { containerRef, canvasRef } = useCanvasScene(HEIGHT, CYCLE, drawScene);
+// 언어별 drawScene을 모듈 수준에서 고정해 훅이 안정된 참조를 캡처하게 한다.
+const SCENES = {
+	ko: (ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) => drawScene(ctx, w, t, dark, LABELS.ko),
+	en: (ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) => drawScene(ctx, w, t, dark, LABELS.en),
+};
+
+export default function LstmGateDemo({ lang = "ko" }: { lang?: Lang }) {
+	const { containerRef, canvasRef } = useCanvasScene(HEIGHT, CYCLE, SCENES[lang]);
 	return (
 		<div ref={containerRef} style={{ margin: "1.5rem 0" }}>
-			<canvas ref={canvasRef} role="img" aria-label={ARIA} style={{ display: "block", width: "100%" }} />
+			<canvas ref={canvasRef} role="img" aria-label={LABELS[lang].aria} style={{ display: "block", width: "100%" }} />
 		</div>
 	);
 }
