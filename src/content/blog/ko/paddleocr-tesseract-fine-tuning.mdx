@@ -6,6 +6,10 @@ tags: ["ocr", "paddleocr", "tesseract", "fine-tuning"]
 socialImage: "../../../assets/blog/paddleocr-tesseract-fine-tuning/og.png"
 series: "OCR 원리부터 학습까지"
 ---
+import DbDetectionDiagram from "@/materials/paddleocr-tesseract-fine-tuning/DbDetectionDiagram";
+import RecoderDemo from "@/materials/paddleocr-tesseract-fine-tuning/RecoderDemo";
+import SvtrLcnetDiagram from "@/materials/paddleocr-tesseract-fine-tuning/SvtrLcnetDiagram";
+import TesseractLayersDiagram from "@/materials/paddleocr-tesseract-fine-tuning/TesseractLayersDiagram";
 
 ## 들어가며
 
@@ -42,7 +46,7 @@ DB는 이 문제를 두 가지로 푼다.
 
 정답을 만드는 방식에도 요령이 있다. 글자 영역을 그대로 정답으로 주지 않고 안쪽으로 줄여서 준다. 줄이는 거리는 D = A(1 − r²) / L이다. A는 영역의 넓이, L은 둘레이고, PP-OCRv5 설정에서 r은 0.4다. 줄을 가늘게 줄여 두면 위아래로 붙은 두 줄이 한 덩어리로 엉기지 않는다.
 
-{/* 그림 1: DB 검출 — 확률 지도 P, 기준값 지도 T, S자 곡선으로 만든 이진 지도 B, 줄였다가 다시 넓히는 상자 */}
+<DbDetectionDiagram />
 
 재미있게도 학습이 끝나면 T와 B를 쓰지 않는다. 실제로 읽을 때 모델은 확률 지도 P만 내놓는다. PaddleOCR은 P를 고정값 0.3으로 잘라 영역을 얻고, 영역 안 평균 확률이 0.6보다 낮은 것은 버린다. 남은 영역은 정답을 줄였던 만큼, PP-OCRv5 설정에서는 1.5배로 다시 넓혀 상자로 돌려준다. T와 B는 학습하는 동안 P가 글자 경계를 또렷하게 배우도록 돕는 장치였던 셈이다.
 
@@ -58,7 +62,7 @@ DB는 이 문제를 두 가지로 푼다.
 
 여기까지가 실제로 글자를 읽을 때 쓰는 모델이다. 학습할 때는 하나가 더 붙는다.
 
-{/* 그림 2: SVTR_LCNet — CNN 뒤에서 CTC 갈래와 NRTR 갈래로 나뉘고, NRTR 갈래는 학습 때만 붙는다 */}
+<SvtrLcnetDiagram />
 
 학습할 때는 CNN이 낸 특징이 두 갈래로 나뉜다. 한 갈래는 위의 SVTR 블록과 CTC로 가고, 다른 갈래는 NRTR이라는 트랜스포머 디코더로 간다. NRTR은 칸을 한꺼번에 고르지 않고, 앞에서 읽은 글자를 보며 다음 글자를 하나씩 맞힌다. 글자 수만큼 계산을 되풀이해야 해서 CTC보다 느리다.
 
@@ -102,7 +106,7 @@ PaddleOCR이 글자 영역 찾기를 신경망에 맡긴 것과 달리, Tesserac
 | `Lfx512` | 다시 왼쪽에서 오른쪽으로 읽는 큰 LSTM | W/3 × 512 |
 | `Fc150` | 칸마다 출력 150개의 확률을 낸다 | W/3 × 150 |
 
-{/* 그림 3: Tesseract kor 모델의 층 — 높이 48 줄 이미지가 합성곱·풀링을 지나 세로 LSTM에서 높이 1로 접히고, 가로 LSTM 세 층을 거쳐 150칸 출력이 된다 */}
+<TesseractLayersDiagram />
 
 뼈대는 지난 편의 CRNN과 같다. 합성곱으로 모양을 보고, LSTM으로 앞뒤 맥락을 보고, CTC로 정리한다. 다른 점은 높이를 접는 방법이다. PaddleOCR의 CNN은 평균을 내서 높이를 줄이지만, Tesseract는 세로 방향 LSTM이 열을 위에서 아래로 읽으며 요약한다. 가중치는 학습시킨 모델 기준으로 모두 148만 개이고, 그중 84%가 마지막 `Lfx512` 한 층에 몰려 있다.
 
@@ -119,7 +123,9 @@ PaddleOCR이 글자 영역 찾기를 신경망에 맡긴 것과 달리, Tesserac
 | 주 | ㅈ | ㅜ | (없음) |
 | 민 | ㅁ | ㅣ | ㄴ |
 
-{/* 그림 4: recoder 데모 — "주민"이 코드 여섯 개로 나뉘었다가 빔 탐색을 거쳐 다시 두 글자로 합쳐지는 과정 */}
+칸마다 고른 코드와 후보 경로는 설명을 위해 정한 값이다.
+
+<RecoderDemo client:visible />
 
 그래서 Tesseract는 출력을 바로 글자로 읽지 않는다. 빔 탐색이 칸마다 가능성 높은 코드 경로를 여러 개 들고 가며, 초성 다음에 중성이 오는 식으로 말이 되는 경로만 글자로 합친다. 이때 단어 사전(DAWG)도 함께 보고, 사전에 있는 단어가 되는 경로를 더 믿는다. PaddleOCR에 없던 사전이 Tesseract에는 읽는 과정 안에 들어 있다. 이 차이는 뒤의 학습 함정에서 다시 나온다.
 
