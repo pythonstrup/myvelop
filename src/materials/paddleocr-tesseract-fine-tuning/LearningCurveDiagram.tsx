@@ -25,7 +25,7 @@ const TESS_BAND = { from: TESSERACT_PICK, lo: 69.7, hi: 71.8 };
 const LABELS = {
 	paddleTitle: "PaddleOCR · 학습 중 검증 정확도",
 	paddleNote: "학습용 평가 기준이라 위 결과 표와 숫자가 다르다",
-	paddleUnit: "걸음 (한 걸음 = 이미지 128장 묶음 하나)",
+	paddleUnit: "걸음 (한 걸음 = 이미지 묶음 하나)",
 	tessTitle: "Tesseract · 저장된 모델 10개의 val 줄 일치",
 	tessUnit: "걸음 (한 걸음 = 줄 하나)",
 	pick: "고른 모델",
