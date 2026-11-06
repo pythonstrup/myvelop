@@ -321,7 +321,8 @@ This measurement has clear limits.
 - Haiku went through Claude Code, and extra instructions about the answer format were added to its input. So on the same resume, Haiku's input was 4,584 tokens against Jev's 2,768. The two companies' different tokenizers are mixed into that gap as well.
 - This was not an experiment that fixed correct answers and measured accuracy. The numbers in this section speak only to time and cost.
 
-### The resume and questions used
+<details>
+<summary>The resume and questions used, in detail</summary>
 
 The resume is made up, and every company name in it is fictional. Jev and Haiku both received the resume below in `state.resume` and the job posting from the "How to ask Jev" example in `state.job`. The experiment ran in Korean. The resume, questions, options, and prompt below are translations.
 
@@ -414,6 +415,8 @@ Answer each question in JSON only. Output a single JSON object with no explanati
 - If type is score: {"level": the chosen level text, "p": probability of that level, 0 to 1}
 Use the question id as the key.
 ```
+
+</details>
 
 ## Example: a resume reader
 
