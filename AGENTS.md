@@ -39,6 +39,7 @@ Always start the development server in background mode. `npm run check` type-che
 - Keep content images in `src/assets/blog/<slug>` so Astro can optimize them. Use `public` only for files that must retain a fixed URL.
 - Preserve the performance choices recorded in `docs/lighthouse-performance.md` unless a new measurement justifies changing them.
 - Never store credentials in the repository. `.mcp.json` may contain tool configuration, but not tokens or secrets.
+- This repository is public. Never write anything that lets a reader infer the author's employer or its scale, business, or organization: names, identifiers, exact counts of nodes or services, internal tools, or incident dates. This covers posts, images, comments, commit messages, and PR text. Details: `.claude/rules/confidentiality.md`.
 - Do not commit or push unless the user explicitly asks.
 
 ## Verification
