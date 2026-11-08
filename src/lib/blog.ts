@@ -1,4 +1,5 @@
 import { type CollectionEntry, getCollection } from 'astro:content';
+import { upcomingSeriesPosts } from '../data/upcoming-series-posts';
 import { tagSlug } from './slug';
 
 export const BLOG_PAGE_SIZE = 5;
@@ -20,10 +21,17 @@ export interface PostLink {
 	href: string;
 }
 
+/** 시리즈 상자의 한 줄. 아직 올리지 않은 편은 href가 null이다. */
+export interface SeriesEntry {
+	title: string;
+	href: string | null;
+	current: boolean;
+}
+
 export interface PostNav {
 	prev?: PostLink;
 	next?: PostLink;
-	series?: { name: string; index: number; posts: (PostLink & { current: boolean })[] };
+	series?: { name: string; index: number; posts: SeriesEntry[] };
 	related: CollectionEntry<'blog'>[];
 }
 
@@ -48,11 +56,29 @@ function toLink(post: CollectionEntry<'blog'>): PostLink {
 	return { title: post.data.title, href: postHref(post) };
 }
 
+/** 시리즈 상자에 보일 줄. 같은 번호의 실제 글이 있으면 앞으로 나올 글 항목은 쓰지 않는다. */
+function seriesEntries(
+	lang: 'en' | 'ko',
+	name: string,
+	seriesPosts: CollectionEntry<'blog'>[],
+	currentId: string,
+): SeriesEntry[] {
+	const written = seriesPosts.map((p, i) => ({
+		order: p.data.seriesOrder ?? i + 1,
+		entry: { ...toLink(p), current: p.id === currentId },
+	}));
+	const upcoming = (upcomingSeriesPosts[lang][name] ?? [])
+		.filter((u) => !written.some((w) => w.order === u.order))
+		.map((u) => ({ order: u.order, entry: { title: u.title, href: null, current: false } }));
+	return [...written, ...upcoming].sort((a, b) => a.order - b.order).map((e) => e.entry);
+}
+
 export async function getPostNav(post: CollectionEntry<'blog'>): Promise<PostNav> {
 	const lang = post.id.startsWith('ko/') ? 'ko' : 'en';
 	const posts = await getBlogPosts(lang); // newest first
 	const seriesName = post.data.series;
 	const seriesPosts = seriesName ? sortSeries(posts.filter((p) => p.data.series === seriesName)) : [];
+	const entries = seriesName ? seriesEntries(lang, seriesName, seriesPosts, post.id) : [];
 
 	// 시리즈 글은 시리즈 안에서, 나머지 글은 전체에서 이전/다음을 찾는다.
 	const pool = seriesPosts.length > 0 ? [...seriesPosts].reverse() : posts;
@@ -78,8 +104,8 @@ export async function getPostNav(post: CollectionEntry<'blog'>): Promise<PostNav
 		series: seriesName
 			? {
 					name: seriesName,
-					index: seriesPosts.findIndex((p) => p.id === post.id) + 1,
-					posts: seriesPosts.map((p) => ({ ...toLink(p), current: p.id === post.id })),
+					index: entries.findIndex((e) => e.current) + 1,
+					posts: entries,
 				}
 			: undefined,
 		related,
