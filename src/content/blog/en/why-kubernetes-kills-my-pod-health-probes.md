@@ -4,6 +4,7 @@ description: "Kubernetes judges a Pod with liveness and readiness probes: when e
 pubDate: "2026-03-18T00:08:15+09:00"
 socialImage: "../../../assets/blog/why-kubernetes-kills-my-pod-health-probes/01.png"
 tags: ["Health Check","k8s","kubernetes","terminus","nestjs","redis"]
+series: "When Kubernetes Kills My Pod"
 ---
 
 ![Why Kubernetes Kills My Pod: Health Probes](../../../assets/blog/why-kubernetes-kills-my-pod-health-probes/01.png)

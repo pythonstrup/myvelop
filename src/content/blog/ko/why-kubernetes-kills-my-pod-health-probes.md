@@ -4,6 +4,7 @@ description: "Kubernetes는 liveness와 readiness 두 probe로 Pod 상태를 판
 pubDate: "2026-03-18T00:08:15+09:00"
 socialImage: "../../../assets/blog/why-kubernetes-kills-my-pod-health-probes/01.png"
 tags: ["Health Check","k8s","kubernetes","terminus","nestjs","redis"]
+series: "Kubernetes가 내 Pod를 죽일 때"
 ---
 
 ![Kubernetes가 내 Pod를 죽이는 이유: Health Probe 이미지 1](../../../assets/blog/why-kubernetes-kills-my-pod-health-probes/01.png)
