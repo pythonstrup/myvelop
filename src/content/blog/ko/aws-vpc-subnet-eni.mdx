@@ -9,8 +9,10 @@ import CidrBitsDemo from "@/materials/aws-vpc-subnet-eni/CidrBitsDemo";
 import CniEniDemo from "@/materials/aws-vpc-subnet-eni/CniEniDemo";
 import IgwNatDemo from "@/materials/aws-vpc-subnet-eni/IgwNatDemo";
 import ImagePullDemo from "@/materials/aws-vpc-subnet-eni/ImagePullDemo";
+import LaunchNetworkSettingsDiagram from "@/materials/aws-vpc-subnet-eni/LaunchNetworkSettingsDiagram";
 import LongestPrefixDemo from "@/materials/aws-vpc-subnet-eni/LongestPrefixDemo";
 import NatZoneDemo from "@/materials/aws-vpc-subnet-eni/NatZoneDemo";
+import PitfallsDemo from "@/materials/aws-vpc-subnet-eni/PitfallsDemo";
 import SecurityGroupDemo from "@/materials/aws-vpc-subnet-eni/SecurityGroupDemo";
 import SnatDemo from "@/materials/aws-vpc-subnet-eni/SnatDemo";
 import VpcOverviewDiagram from "@/materials/aws-vpc-subnet-eni/VpcOverviewDiagram";
@@ -21,7 +23,11 @@ import VpcOverviewDiagram from "@/materials/aws-vpc-subnet-eni/VpcOverviewDiagra
 
 EC2를 띄우면 콘솔은 VPC와 서브넷을 고르라고 한다. 무엇인지 몰라도 기본값을 누르고 넘어가면 서버는 잘 뜬다.
 
+<LaunchNetworkSettingsDiagram />
+
 문제는 그 위에 무언가를 얹을 때 드러난다. EKS에서는 Pod마다 서브넷 IP를 하나씩 가져간다. 서브넷을 작게 잘라 두면 CPU와 메모리가 남아도 Pod가 IP를 받지 못한다. 프라이빗 서브넷의 노드는 NAT 게이트웨이를 거쳐 밖으로 나가는데, 다른 길을 만들어 두지 않았다면 NAT가 멈추는 순간 새 Pod는 이미지를 받지 못한다. 처음 VPC를 만들 때 정한 주소 범위는 나중에 고칠 수도 없다.
+
+<PitfallsDemo client:visible />
 
 모두 네트워크를 모르고 고른 값에서 시작되는 문제다. 하나씩 짚어보자.
 
@@ -145,17 +151,15 @@ Pod IP도 노드 IP도 아니다. <strong>NAT 게이트웨이의 공인 IP</stro
 
 #### 1\. Pod를 떠날 때
 
-패킷의 출발 주소는 Pod IP `10.0.10.25`다.
+Pod IP가 `10.0.10.25`라고 하자. 패킷은 이 주소를 출발 주소로 달고 Pod를 떠난다.
 
 #### 2\. 노드를 떠날 때
 
-목적지가 VPC 범위 밖이면 VPC CNI가 출발 주소를 노드의 주 IP `10.0.10.7`로 바꾼다. EKS의 기본 동작이다. 목적지가 VPC 안이면 바꾸지 않고 Pod IP 그대로 보낸다.
+목적지가 VPC 범위 밖이면 VPC CNI가 출발 주소를 노드의 주 IP로 바꾼다. EKS의 기본 동작이다. 노드 IP가 `10.0.10.7`이라면 출발 주소는 이제 `10.0.10.7`이다. 목적지가 VPC 안이면 바꾸지 않고 Pod IP 그대로 보낸다.
 
 #### 3\. NAT 게이트웨이를 떠날 때
 
-NAT 게이트웨이가 출발 주소를 자기 공인 IP `203.0.113.10`으로 바꿔 인터넷으로 내보낸다. 응답은 이 주소로 돌아오고, NAT 게이트웨이와 노드가 바꿨던 주소를 거꾸로 되돌려 Pod까지 전달한다.
-
-세 단계를 이어 보면 이렇다.
+NAT 게이트웨이가 출발 주소를 자기 공인 IP로 바꿔 인터넷으로 내보낸다. 공인 IP가 `203.0.113.10`이라면 상대 서버가 보는 출발 주소는 `203.0.113.10`이다. 응답은 이 주소로 돌아오고, NAT 게이트웨이와 노드가 바꿨던 주소를 거꾸로 되돌려 Pod까지 전달한다.
 
 <SnatDemo client:visible />
 
@@ -181,31 +185,18 @@ ECR도 S3도 VPC 밖에 있는 서비스라 주소가 VPC 범위에 들지 않�
 
 ### 엔드포인트 두 가지
 
-VPC 엔드포인트는 NAT를 거치지 않고 AWS 서비스에 바로 닿는 길이다. 두 종류가 있다.
+VPC 엔드포인트는 NAT를 거치지 않고 AWS 서비스에 바로 닿는 길이다. 게이트웨이 엔드포인트와 인터페이스 엔드포인트, 두 종류가 있다.
 
-#### 게이트웨이 엔드포인트
-
-S3와 DynamoDB에만 쓸 수 있다. 라우팅 테이블에 S3 주소를 엔드포인트로 보내는 줄을 하나 더한다.
-
-✅ 추가 요금이 없다
-
-✅ 라우팅 테이블에 줄 하나만 더하면 된다
-
-❌ <strong>S3와 DynamoDB만 지원</strong>한다
-
-#### 인터페이스 엔드포인트
-
-ECR API를 비롯한 대부분의 AWS 서비스에 쓴다. 서브넷에 ENI를 꽂고 그 사설 IP로 서비스에 닿는다.
-
-✅ 대부분의 AWS 서비스를 지원한다
-
-❌ <strong>시간당 요금과 데이터 처리 요금</strong>이 붙는다
-
-❌ 서브넷 IP를 쓴다
+| 구분 | 게이트웨이 | 인터페이스 |
+| --- | --- | --- |
+| 지원 서비스 | ❌ <strong>S3, DynamoDB만</strong> | ✅ ECR 등 대부분의 서비스 |
+| 연결 방식 | ✅ 라우팅 테이블에 줄 하나 추가 | 서브넷에 꽂은 ENI의 사설 IP |
+| 요금 | ✅ 추가 요금 없음 | ❌ <strong>시간당 요금과 데이터 처리 요금</strong> |
+| IP 소모 | ✅ 없음 | ❌ 서브넷 IP 사용 |
 
 ### 줄 하나로 낸 지름길
 
-게이트웨이 엔드포인트가 더하는 줄은 S3의 주소 목록만 가리킨다. 모든 주소를 가리키는 `0.0.0.0/0`보다 좁으니, 앞에서 본 규칙대로 S3로 가는 패킷은 이 줄을 따른다. NAT로 가는 줄을 지우지 않아도 S3 트래픽만 지름길로 빠진다. 엔드포인트를 붙이기 전과 후에 이미지가 오는 길을 견줘 보자.
+게이트웨이 엔드포인트가 더하는 줄은 S3의 주소 목록만 가리킨다. 모든 주소를 가리키는 `0.0.0.0/0`보다 좁으니, 앞에서 본 규칙대로 S3로 가는 패킷은 이 줄을 따른다. NAT로 가는 줄을 지우지 않아도 S3 트래픽만 지름길로 빠진다.
 
 <ImagePullDemo client:visible />
 
@@ -223,8 +214,6 @@ S3 게이트웨이 엔드포인트 하나만 붙여도 이미지 용량의 대�
 
 > <strong>네트워크 ACL이란?</strong>  
 > 서브넷 단위로 트래픽을 거르는 또 다른 방화벽이다. 연결을 기억하지 않아서 응답이 나갈 길도 규칙으로 열어야 한다. 기본값이 모두 허용이라 손대지 않는 경우가 많다.
-
-인바운드 443만 허용하고 아웃바운드 규칙은 비워 둔 보안 그룹과 네트워크 ACL에 같은 요청을 보내 보면 차이가 보인다.
 
 <SecurityGroupDemo client:visible />
 
@@ -298,8 +287,6 @@ aws ec2 describe-network-interfaces \
 - <strong>컨트롤 플레인 ENI</strong> — EKS의 API 서버는 AWS가 관리하는 다른 계정에서 돈다. 그 API 서버가 노드의 kubelet에 닿을 수 있도록 EKS가 내 서브넷에 이 카드를 꽂아 둔다. `kubectl exec`와 `kubectl logs`가 이 카드를 지난다.
 - <strong>VPC CNI의 ENI</strong> — VPC CNI는 노드에 카드를 더 꽂고 그 보조 IP를 Pod에 하나씩 나눠 준다. Pod가 VPC 안에서 진짜 IP를 갖는 것은 이 때문이다.
 
-VPC CNI가 Pod에 IP를 나눠 주는 모습을 숫자를 줄여 그렸다.
-
 <CniEniDemo client:visible />
 
 실제로 VPC CNI는 Pod가 뜨기 전에 카드와 IP를 미리 잡아 둔다. 앞의 서브넷 절에서 노드가 미리 잡아 둔다고 한 IP가 바로 이것이다.
@@ -307,8 +294,6 @@ VPC CNI가 Pod에 IP를 나눠 주는 모습을 숫자를 줄여 그렸다.
 이 두 카드가 어떻게 쓰이는지는 다음 글에서 자세히 본다.
 
 ## 한 장으로 보기
-
-지금까지 본 것을 그림 한 장에 모았다.
 
 <VpcOverviewDiagram />
 
