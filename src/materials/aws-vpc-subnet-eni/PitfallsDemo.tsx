@@ -9,17 +9,70 @@ const B0 = 10800;
 const B = [3200, 5400, 8200] as const;
 const CYCLE = 20500;
 const PANEL_B_Y = 272;
-const A_CAPTIONS = [
-	"① 새 Pod를 띄우면 노드는 NAT를 거쳐 이미지를 받아 온다",
-	"② NAT 게이트웨이가 멈추면",
-	"③ 이미지를 이미 받은 Pod는 계속 돌지만 새 Pod는 이미지를 받지 못한다",
-	"④ NAT를 거치지 않는 다른 길을 만들어 두었다면 이미지를 받는다",
-];
-const B_CAPTIONS = [
-	"⑤ 서브넷을 자를 때마다 VPC 범위에서 주소를 떼어 간다",
-	"⑥ 범위를 다 쓰면 서브넷을 더 자를 수 없다",
-	"⑦ VPC를 만들 때 정한 범위는 나중에 고칠 수 없다",
-];
+const LABELS = {
+	ko: {
+		aCaptions: [
+			"① 새 Pod를 띄우면 노드는 NAT를 거쳐 이미지를 받아 온다",
+			"② NAT 게이트웨이가 멈추면",
+			"③ 이미지를 이미 받은 Pod는 계속 돌지만 새 Pod는 이미지를 받지 못한다",
+			"④ NAT를 거치지 않는 다른 길을 만들어 두었다면 이미지를 받는다",
+		],
+		bCaptions: [
+			"⑤ 서브넷을 자를 때마다 VPC 범위에서 주소를 떼어 간다",
+			"⑥ 범위를 다 쓰면 서브넷을 더 자를 수 없다",
+			"⑦ VPC를 만들 때 정한 범위는 나중에 고칠 수 없다",
+		],
+		pulling: "받는 중",
+		failed: "못 받음",
+		running: "실행 중",
+		aTitle: "새 Pod가 이미지를 받는 길",
+		pub: "퍼블릭 서브넷",
+		pri: "프라이빗 서브넷",
+		node: "노드",
+		endpoint: "VPC 엔드포인트",
+		registry: "VPC 밖 이미지 저장소",
+		nat: "NAT 게이트웨이",
+		stopped: "멈춤",
+		image: "이미지",
+		bTitle: "VPC 주소 범위",
+		subnet: "서브넷",
+		noRoom: "서브넷 5: 남은 주소 없음",
+		noWiden: "범위 넓히기: 고칠 수 없음",
+		aria: "두 장면을 차례로 보여 주는 애니메이션. 위 장면은 프라이빗 서브넷의 노드가 퍼블릭 서브넷의 NAT 게이트웨이를 거쳐 VPC 밖의 ECR에서 이미지를 받아 새 Pod를 띄운다. NAT 게이트웨이가 멈추면 이미 뜬 Pod는 계속 돌지만 새 Pod는 이미지를 받지 못한다. NAT를 거치지 않는 VPC 엔드포인트 길을 만들어 두면 새 Pod도 이미지를 받는다. 아래 장면은 10.0.0.0/16 VPC 범위를 서브넷 네 개가 다 채워 다섯 번째 서브넷을 자를 자리가 없고, 범위를 넓히려 해도 고칠 수 없다는 것을 보여 준다.",
+	},
+	en: {
+		aCaptions: [
+			"① When a new Pod starts, the node pulls the image through the NAT",
+			"② When the NAT gateway stops",
+			"③ Pods that already have the image keep running, but new Pods cannot pull it",
+			"④ If you built a path that skips the NAT, the image still arrives",
+		],
+		bCaptions: [
+			"⑤ Each new subnet takes addresses from the VPC range",
+			"⑥ Once the range is used up, you cannot carve more subnets",
+			"⑦ The range chosen when creating the VPC cannot be changed later",
+		],
+		pulling: "Pulling",
+		failed: "Failed",
+		running: "Running",
+		aTitle: "How a new Pod gets its image",
+		pub: "Public subnet",
+		pri: "Private subnet",
+		node: "Node",
+		endpoint: "VPC endpoint",
+		registry: "Outside the VPC",
+		nat: "NAT gateway",
+		stopped: "Stopped",
+		image: "Image",
+		bTitle: "VPC address range",
+		subnet: "Subnet",
+		noRoom: "Subnet 5: no addresses left",
+		noWiden: "Widen the range: not possible",
+		aria: "An animation showing two scenes in turn. In the top scene, a node in a private subnet pulls an image from ECR outside the VPC through a NAT gateway in a public subnet to start a new Pod. When the NAT gateway stops, running Pods keep running but new Pods cannot pull the image. With a VPC endpoint path that skips the NAT, new Pods can pull the image too. The bottom scene shows four subnets filling the 10.0.0.0/16 VPC range, leaving no room for a fifth, and that the range cannot be widened.",
+	},
+};
+type Lang = keyof typeof LABELS;
+type Labels = (typeof LABELS)[Lang];
 
 type PodState = "none" | "pulling" | "failed" | "running";
 
@@ -31,18 +84,18 @@ function title(ctx: CanvasRenderingContext2D, c: Colors, text: string, y: number
 	ctx.fillText(text, 10, y);
 }
 
-function podChip(ctx: CanvasRenderingContext2D, c: Colors, x: number, y: number, name: string, state: PodState) {
+function podChip(L: Labels, ctx: CanvasRenderingContext2D, c: Colors, x: number, y: number, name: string, state: PodState) {
 	if (state === "none") return;
 	const look = {
-		pulling: [c.blue, c.blueFill, "받는 중"],
-		failed: [c.red, c.redFill, "못 받음"],
-		running: [c.green, c.greenFill, "실행 중"],
+		pulling: [c.blue, c.blueFill, L.pulling],
+		failed: [c.red, c.redFill, L.failed],
+		running: [c.green, c.greenFill, L.running],
 	} as const;
 	const [stroke, fill, sub] = look[state];
 	box(ctx, c, x, y, 64, 32, name, sub, stroke, fill);
 }
 
-function panelA(ctx: CanvasRenderingContext2D, c: Colors, w: number, t: number) {
+function panelA(L: Labels, ctx: CanvasRenderingContext2D, c: Colors, w: number, t: number) {
 	const step = A.findIndex((u) => t < u);
 	const s = step === -1 ? 3 : step;
 	const cx = w / 2;
@@ -58,12 +111,12 @@ function panelA(ctx: CanvasRenderingContext2D, c: Colors, w: number, t: number) 
 	const natDown = t >= A[0];
 	const epOn = seg(t, A[2], A[2] + 400);
 
-	title(ctx, c, "새 Pod가 이미지를 받는 길", 4);
+	title(ctx, c, L.aTitle, 4);
 	region(ctx, c, 8, 64, w - 16, 162, "VPC");
 	const pubX = rightX - natW / 2 - 40;
-	region(ctx, c, pubX, 80, w - 20 - pubX, 56, "퍼블릭 서브넷", { fill: c.boxFill });
-	region(ctx, c, 20, 140, w - 40, 78, "프라이빗 서브넷", { fill: c.boxFill });
-	region(ctx, c, 28, nodeTop, w - 56, 54, "노드");
+	region(ctx, c, pubX, 80, w - 20 - pubX, 56, L.pub, { fill: c.boxFill });
+	region(ctx, c, 20, 140, w - 40, 78, L.pri, { fill: c.boxFill });
+	region(ctx, c, 28, nodeTop, w - 56, 54, L.node);
 
 	const viaNat: Pt[] = [
 		[rightX, nodeTop],
@@ -82,18 +135,18 @@ function panelA(ctx: CanvasRenderingContext2D, c: Colors, w: number, t: number) 
 	path(ctx, viaNat.slice(2), natDown ? c.red : c.line, natDown);
 	if (epOn > 0) {
 		path(ctx, viaEp, c.green, true, epOn);
-		pill(ctx, w, leftX, natY, "VPC 엔드포인트", c.green, c.greenFill, epOn);
+		pill(ctx, w, leftX, natY, L.endpoint, c.green, c.greenFill, epOn);
 	}
 
-	box(ctx, c, cx, storeY, storeW, 30, "ECR", "VPC 밖 이미지 저장소");
-	box(ctx, c, rightX, natY, natW, 32, "NAT 게이트웨이", natDown ? "멈춤" : "", natDown ? c.red : c.boxStroke, natDown ? c.redFill : c.boxFill);
+	box(ctx, c, cx, storeY, storeW, 30, "ECR", L.registry);
+	box(ctx, c, rightX, natY, natW, 32, L.nat, natDown ? L.stopped : "", natDown ? c.red : c.boxStroke, natDown ? c.redFill : c.boxFill);
 
 	// Pod 1은 처음부터 돌고 있다. Pod 2는 ①에서, Pod 3은 ③에서 새로 뜬다.
 	const pod2: PodState = t < 2900 ? "pulling" : "running";
 	const pod3: PodState = t < A[1] ? "none" : t < A[1] + 1200 ? "pulling" : t < A[2] + 2400 ? "failed" : "running";
-	podChip(ctx, c, cx - 72, podY, "Pod 1", "running");
-	podChip(ctx, c, cx, podY, "Pod 2", pod2);
-	podChip(ctx, c, cx + 72, podY, "Pod 3", pod3);
+	podChip(L, ctx, c, cx - 72, podY, "Pod 1", "running");
+	podChip(L, ctx, c, cx, podY, "Pod 2", pod2);
+	podChip(L, ctx, c, cx + 72, podY, "Pod 3", pod3);
 
 	if (s === 0) {
 		if (t < 1500) {
@@ -101,7 +154,7 @@ function panelA(ctx: CanvasRenderingContext2D, c: Colors, w: number, t: number) 
 			dot(ctx, x, y, c.blue);
 		} else if (t < 2900) {
 			const [x, y] = along([...viaNat].reverse(), seg(t, 1700, 2900));
-			pill(ctx, w, x, y, "이미지", c.green, c.greenFill);
+			pill(ctx, w, x, y, L.image, c.green, c.greenFill);
 		}
 	} else if (s === 2) {
 		const p = seg(t, A[1] + 200, A[1] + 1200);
@@ -116,14 +169,14 @@ function panelA(ctx: CanvasRenderingContext2D, c: Colors, w: number, t: number) 
 			dot(ctx, x, y, c.blue);
 		} else if (t < A[2] + 2400) {
 			const [x, y] = along([...viaEp].reverse(), seg(t, A[2] + 1400, A[2] + 2400));
-			pill(ctx, w, x, y, "이미지", c.green, c.greenFill);
+			pill(ctx, w, x, y, L.image, c.green, c.greenFill);
 		}
 	}
 
-	caption(ctx, c, A_CAPTIONS[s], w, 244);
+	caption(ctx, c, L.aCaptions[s], w, 244);
 }
 
-function panelB(ctx: CanvasRenderingContext2D, c: Colors, w: number, t: number) {
+function panelB(L: Labels, ctx: CanvasRenderingContext2D, c: Colors, w: number, t: number) {
 	const u = t - B0;
 	const step = B.findIndex((v) => u < v);
 	const s = step === -1 ? 2 : step;
@@ -134,7 +187,7 @@ function panelB(ctx: CanvasRenderingContext2D, c: Colors, w: number, t: number) 
 	const blocked = u >= B[1];
 	const vw = w - 30 + stretch;
 
-	title(ctx, c, "VPC 주소 범위", y0 + 4);
+	title(ctx, c, L.bTitle, y0 + 4);
 	region(ctx, c, 8, y0 + 24, vw, 64, "VPC 10.0.0.0/16", blocked ? { stroke: c.red } : {});
 
 	const gap = 4;
@@ -144,23 +197,23 @@ function panelB(ctx: CanvasRenderingContext2D, c: Colors, w: number, t: number) 
 		if (a <= 0) continue;
 		ctx.save();
 		ctx.globalAlpha = a;
-		box(ctx, c, 16 + bw / 2 + i * (bw + gap), y0 + 62, bw, 36, `서브넷 ${i + 1}`, "", c.blue, c.blueFill);
+		box(ctx, c, 16 + bw / 2 + i * (bw + gap), y0 + 62, bw, 36, `${L.subnet} ${i + 1}`, "", c.blue, c.blueFill);
 		ctx.restore();
 	}
 
-	if (s === 1) pill(ctx, w, cx, y0 + 106, "서브넷 5: 남은 주소 없음", c.red, c.redFill, seg(u, B[0], B[0] + 300));
+	if (s === 1) pill(ctx, w, cx, y0 + 106, L.noRoom, c.red, c.redFill, seg(u, B[0], B[0] + 300));
 	if (s === 2) {
 		const a = seg(u, B[1] + 900, B[1] + 1200);
-		pill(ctx, w, cx, y0 + 106, "범위 넓히기: 고칠 수 없음", c.red, c.redFill, a);
+		pill(ctx, w, cx, y0 + 106, L.noWiden, c.red, c.redFill, a);
 		if (stretch > 0) cross(ctx, w - 12, y0 + 56, c.red);
 	}
 
-	caption(ctx, c, B_CAPTIONS[s], w, y0 + 126);
+	caption(ctx, c, L.bCaptions[s], w, y0 + 126);
 }
 
-function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) {
+function scene(L: Labels, ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) {
 	const c = palette(dark);
-	panelA(ctx, c, w, t);
+	panelA(L, ctx, c, w, t);
 	ctx.beginPath();
 	ctx.moveTo(8, PANEL_B_Y - 8);
 	ctx.lineTo(w - 8, PANEL_B_Y - 8);
@@ -170,17 +223,12 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 	// 아래 판은 위 판이 끝날 때까지 흐리게 기다린다.
 	ctx.save();
 	ctx.globalAlpha = t < B0 ? 0.35 : 1;
-	panelB(ctx, c, w, Math.max(t, B0));
+	panelB(L, ctx, c, w, Math.max(t, B0));
 	ctx.restore();
 }
 
-export default function PitfallsDemo() {
-	return (
-		<CanvasFigure
-			height={HEIGHT}
-			cycle={CYCLE}
-			scene={scene}
-			label="두 장면을 차례로 보여 주는 애니메이션. 위 장면은 프라이빗 서브넷의 노드가 퍼블릭 서브넷의 NAT 게이트웨이를 거쳐 VPC 밖의 ECR에서 이미지를 받아 새 Pod를 띄운다. NAT 게이트웨이가 멈추면 이미 뜬 Pod는 계속 돌지만 새 Pod는 이미지를 받지 못한다. NAT를 거치지 않는 VPC 엔드포인트 길을 만들어 두면 새 Pod도 이미지를 받는다. 아래 장면은 10.0.0.0/16 VPC 범위를 서브넷 네 개가 다 채워 다섯 번째 서브넷을 자를 자리가 없고, 범위를 넓히려 해도 고칠 수 없다는 것을 보여 준다."
-		/>
-	);
+const SCENES = { ko: scene.bind(null, LABELS.ko), en: scene.bind(null, LABELS.en) };
+
+export default function PitfallsDemo({ lang = "ko" }: { lang?: Lang }) {
+	return <CanvasFigure height={HEIGHT} cycle={CYCLE} scene={SCENES[lang]} label={LABELS[lang].aria} />;
 }

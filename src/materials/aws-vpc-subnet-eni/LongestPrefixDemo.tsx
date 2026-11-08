@@ -6,19 +6,43 @@ const HEIGHT = 232;
 const ROUND = 5000;
 const CYCLE = ROUND * 2;
 const ROWS = [
-	{ dest: "10.0.0.0/16", target: "local", exit: "VPC 안", exitSub: "local" },
-	{ dest: "0.0.0.0/0", target: "nat-0a1b2c3d", exit: "NAT", exitSub: "nat-0a1b2c3d" },
+	{ dest: "10.0.0.0/16", target: "local", exitSub: "local" },
+	{ dest: "0.0.0.0/0", target: "nat-0a1b2c3d", exitSub: "nat-0a1b2c3d" },
 ] as const;
 const PACKETS = [
-	{ label: "목적지 10.0.5.10", match: [true, true], win: 0, ask: "10.0.5.10은 어느 줄에 걸릴까?", answer: "두 줄에 다 걸리면 더 좁은 /16 줄을 따른다" },
-	{ label: "목적지 203.0.113.50", match: [false, true], win: 1, ask: "203.0.113.50은 어느 줄에 걸릴까?", answer: "/0 줄에만 걸리니 NAT로 간다" },
+	{ match: [true, true], win: 0 },
+	{ match: [false, true], win: 1 },
 ] as const;
+const LABELS = {
+	ko: {
+		dest: "목적지",
+		target: "대상",
+		exits: ["VPC 안", "NAT"],
+		packets: [
+			{ label: "목적지 10.0.5.10", ask: "10.0.5.10은 어느 줄에 걸릴까?", answer: "두 줄에 다 걸리면 더 좁은 /16 줄을 따른다" },
+			{ label: "목적지 203.0.113.50", ask: "203.0.113.50은 어느 줄에 걸릴까?", answer: "/0 줄에만 걸리니 NAT로 간다" },
+		],
+		aria: "라우팅 테이블 두 줄, 10.0.0.0/16은 local로, 0.0.0.0/0은 NAT 게이트웨이로 보내는 표에 패킷 두 개를 차례로 넣는 애니메이션. 목적지가 10.0.5.10인 패킷은 두 줄에 모두 걸리고, 범위가 더 좁은 /16 줄을 따라 VPC 안으로 간다. 목적지가 203.0.113.50인 패킷은 /0 줄에만 걸려 NAT 게이트웨이로 간다.",
+	},
+	en: {
+		dest: "Destination",
+		target: "Target",
+		exits: ["Inside VPC", "NAT"],
+		packets: [
+			{ label: "To 10.0.5.10", ask: "Which row does 10.0.5.10 match?", answer: "It matches both, so the narrower /16 row wins" },
+			{ label: "To 203.0.113.50", ask: "Which row does 203.0.113.50 match?", answer: "It matches only the /0 row, so it goes to the NAT" },
+		],
+		aria: "An animation feeding two packets in turn into a two-row route table, where 10.0.0.0/16 goes to local and 0.0.0.0/0 goes to a NAT gateway. The packet destined for 10.0.5.10 matches both rows and follows the narrower /16 row into the VPC. The packet destined for 203.0.113.50 matches only the /0 row and goes to the NAT gateway.",
+	},
+};
+type Lang = keyof typeof LABELS;
 
-function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) {
+function scene(L: (typeof LABELS)[Lang], ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) {
 	const c = palette(dark);
 	const round = t < ROUND ? 0 : 1;
 	const u = t % ROUND;
 	const pk = PACKETS[round];
+	const text = L.packets[round];
 
 	// 표와 출구를 한 덩어리로 가운데에 둔다. 표 왼쪽 24px은 ✓/✗ 자리다.
 	const tableW = Math.min(w * 0.6, 300);
@@ -37,8 +61,8 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 	ctx.textBaseline = "middle";
 	ctx.font = `600 10.5px ${FONT}`;
 	ctx.fillStyle = c.sub;
-	ctx.fillText("목적지", tx + 10, headY + 10);
-	ctx.fillText("대상", split + 10, headY + 10);
+	ctx.fillText(L.dest, tx + 10, headY + 10);
+	ctx.fillText(L.target, split + 10, headY + 10);
 
 	const checked = [seg(u, 700, 1400), seg(u, 1400, 2100)];
 	const decided = u >= 2100;
@@ -82,7 +106,7 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 		ctx.moveTo(tx + tableW, rowMid(i));
 		ctx.lineTo(exitL - 4, rowMid(i));
 		ctx.stroke();
-		box(ctx, c, exitX, rowMid(i), exitW, rowH - 6, row.exit, row.exitSub, winner && u >= 3900 ? c.green : c.boxStroke);
+		box(ctx, c, exitX, rowMid(i), exitW, rowH - 6, L.exits[i], row.exitSub, winner && u >= 3900 ? c.green : c.boxStroke);
 		ctx.restore();
 	});
 	// 이긴 줄 테두리는 다음 줄에 덮이지 않게 마지막에 그린다
@@ -98,18 +122,13 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 	const wait: [number, number] = [cx, headY - 8];
 	let pos = along([start, wait], seg(u, 0, 700));
 	if (u >= 2900) pos = along([wait, [cx, rowMid(pk.win)], [exitX, rowMid(pk.win)]], seg(u, 2900, 3900));
-	pill(ctx, w, pos[0], pos[1], pk.label, c.blue, c.blueFill, 1 - seg(u, 3500, 3900));
+	pill(ctx, w, pos[0], pos[1], text.label, c.blue, c.blueFill, 1 - seg(u, 3500, 3900));
 
-	caption(ctx, c, `${round === 0 ? "①" : "②"} ${decided ? pk.answer : pk.ask}`, w, HEIGHT - 24);
+	caption(ctx, c, `${round === 0 ? "①" : "②"} ${decided ? text.answer : text.ask}`, w, HEIGHT - 24);
 }
 
-export default function LongestPrefixDemo() {
-	return (
-		<CanvasFigure
-			height={HEIGHT}
-			cycle={CYCLE}
-			scene={scene}
-			label="라우팅 테이블 두 줄, 10.0.0.0/16은 local로, 0.0.0.0/0은 NAT 게이트웨이로 보내는 표에 패킷 두 개를 차례로 넣는 애니메이션. 목적지가 10.0.5.10인 패킷은 두 줄에 모두 걸리고, 범위가 더 좁은 /16 줄을 따라 VPC 안으로 간다. 목적지가 203.0.113.50인 패킷은 /0 줄에만 걸려 NAT 게이트웨이로 간다."
-		/>
-	);
+const SCENES = { ko: scene.bind(null, LABELS.ko), en: scene.bind(null, LABELS.en) };
+
+export default function LongestPrefixDemo({ lang = "ko" }: { lang?: Lang }) {
+	return <CanvasFigure height={HEIGHT} cycle={CYCLE} scene={SCENES[lang]} label={LABELS[lang].aria} />;
 }

@@ -17,16 +17,64 @@ const TRIP = 1400;
 // 마지막 단계에서 이미지를 다 받은 뒤 외부 요청이 나가는 시각
 const EXTERNAL_AT = 5000;
 const EXTERNAL_SIZE = 0.03;
-const CAPTIONS = [
-	"① 엔드포인트가 없으면 목록도 층 파일도 NAT를 지난다",
-	"② S3 게이트웨이 엔드포인트를 붙이면",
-	"③ 층 파일은 엔드포인트로 오고, NAT에는 목록만 지난다",
-	"④ ECR 인터페이스 엔드포인트까지 붙이면",
-	"⑤ 이제 목록도 층 파일도 NAT를 지나지 않는다",
-	"⑥ 외부 요청은 그대로 NAT로 나간다",
-];
+const LABELS = {
+	ko: {
+		captions: [
+			"① 엔드포인트가 없으면 목록도 층 파일도 NAT를 지난다",
+			"② S3 게이트웨이 엔드포인트를 붙이면",
+			"③ 층 파일은 엔드포인트로 오고, NAT에는 목록만 지난다",
+			"④ ECR 인터페이스 엔드포인트까지 붙이면",
+			"⑤ 이제 목록도 층 파일도 NAT를 지나지 않는다",
+			"⑥ 외부 요청은 그대로 NAT로 나간다",
+		],
+		layer: "층",
+		manifest: "목록",
+		node: "노드",
+		nodeSub: "이미지 받는 중",
+		natSub: "게이트웨이",
+		external: "외부 서비스",
+		externalSub: "인터넷",
+		ecrSub: "이미지 목록",
+		s3Sub: "층 파일",
+		endpoint: "엔드포인트",
+		s3Endpoint: "S3 게이트웨이",
+		ecrEndpoint: "ECR 인터페이스",
+		s3Route: "S3 주소 → 엔드포인트",
+		externalRequest: "외부 요청",
+		bar: "NAT를 지난 용량(비율은 예시)",
+		aria: "프라이빗 서브넷의 노드가 컨테이너 이미지를 받는 길을 세 번 보여 주는 애니메이션. 처음에는 ECR에서 오는 이미지 목록과 S3에서 오는 층 파일이 모두 NAT 게이트웨이를 지나, 아래 막대의 NAT를 지난 용량이 가득 찬다. S3 게이트웨이 엔드포인트를 붙이면 층 파일이 엔드포인트로 바로 오고, NAT에는 작은 목록만 지나 막대가 조금만 찬다. ECR 인터페이스 엔드포인트까지 붙이면 목록도 엔드포인트로 와서 목록과 층 파일 모두 NAT를 지나지 않는다. 마지막으로 외부 서비스로 가는 요청은 엔드포인트가 아니라 그대로 NAT 게이트웨이로 나가고, 그만큼만 막대가 찬다. 막대의 비율은 예시다.",
+	},
+	en: {
+		captions: [
+			"① Without endpoints, both the manifest and the layers pass through the NAT",
+			"② Add an S3 gateway endpoint",
+			"③ Layers come through the endpoint, and only the manifest passes through the NAT",
+			"④ Add ECR interface endpoints too",
+			"⑤ Now neither the manifest nor the layers pass through the NAT",
+			"⑥ External requests still go out through the NAT",
+		],
+		layer: "Layer",
+		manifest: "Manifest",
+		node: "Node",
+		nodeSub: "Pulling image",
+		natSub: "Gateway",
+		external: "External",
+		externalSub: "Internet service",
+		ecrSub: "Manifest",
+		s3Sub: "Layer files",
+		endpoint: "Endpoint",
+		s3Endpoint: "S3 gateway",
+		ecrEndpoint: "ECR interface",
+		s3Route: "S3 addresses → endpoint",
+		externalRequest: "External request",
+		bar: "Data through NAT (example ratio)",
+		aria: "An animation showing three times how a node in a private subnet pulls a container image. First, the manifest from ECR and the layer files from S3 all pass through the NAT gateway, and the bar for data through the NAT fills up. With an S3 gateway endpoint, layer files come straight through the endpoint, only the small manifest passes through the NAT, and the bar barely fills. With ECR interface endpoints added, the manifest also comes through an endpoint, and neither passes through the NAT. Finally, a request to an external service still goes out through the NAT gateway rather than an endpoint, and the bar fills only by that much. The bar's ratios are examples.",
+	},
+};
+type Lang = keyof typeof LABELS;
+type Labels = (typeof LABELS)[Lang];
 
-function drawItem(ctx: CanvasRenderingContext2D, c: Colors, [x, y]: Pt, layer: boolean) {
+function drawItem(L: Labels, ctx: CanvasRenderingContext2D, c: Colors, [x, y]: Pt, layer: boolean) {
 	const s = layer ? 16 : 10;
 	ctx.beginPath();
 	ctx.roundRect(x - s / 2, y - s / 2, s, s, 3);
@@ -39,7 +87,7 @@ function drawItem(ctx: CanvasRenderingContext2D, c: Colors, [x, y]: Pt, layer: b
 	ctx.textBaseline = "bottom";
 	ctx.font = `500 9.5px ${FONT}`;
 	ctx.fillStyle = layer ? c.blue : c.amber;
-	ctx.fillText(layer ? "층" : "목록", x, y - s / 2 - 2);
+	ctx.fillText(layer ? L.layer : L.manifest, x, y - s / 2 - 2);
 }
 
 function captionIndex(phase: number, u: number) {
@@ -49,7 +97,7 @@ function captionIndex(phase: number, u: number) {
 	return u < EXTERNAL_AT ? 4 : 5;
 }
 
-function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) {
+function scene(L: Labels, ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) {
 	const c = palette(dark);
 	const phase = t < PHASE_START[1] ? 0 : t < PHASE_START[2] ? 1 : 2;
 	const u = t - PHASE_START[phase];
@@ -97,20 +145,20 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 		path(ctx, [[midL, ecrY], nodeRight], c.green, false, ecrOn);
 	}
 
-	box(ctx, c, nodeX, nodeY, bw, bh, "노드", "이미지 받는 중");
-	box(ctx, c, midX, natY, bw, bh, "NAT", "게이트웨이", external > 0 ? c.blue : c.boxStroke);
-	box(ctx, c, outX, natY, bw, bh, "외부 서비스", "인터넷", external >= 1 ? c.blue : c.boxStroke);
-	box(ctx, c, outX, ecrY, bw, bh, "ECR", "이미지 목록");
-	box(ctx, c, outX, s3Y, bw, bh, "S3", "층 파일");
+	box(ctx, c, nodeX, nodeY, bw, bh, L.node, L.nodeSub);
+	box(ctx, c, midX, natY, bw, bh, "NAT", L.natSub, external > 0 ? c.blue : c.boxStroke);
+	box(ctx, c, outX, natY, bw, bh, L.external, L.externalSub, external >= 1 ? c.blue : c.boxStroke);
+	box(ctx, c, outX, ecrY, bw, bh, "ECR", L.ecrSub);
+	box(ctx, c, outX, s3Y, bw, bh, "S3", L.s3Sub);
 	ctx.save();
 	ctx.globalAlpha = s3On;
-	box(ctx, c, midX, s3Y, bw, bh, "엔드포인트", "S3 게이트웨이", c.green);
+	box(ctx, c, midX, s3Y, bw, bh, L.endpoint, L.s3Endpoint, c.green);
 	ctx.restore();
 	ctx.save();
 	ctx.globalAlpha = ecrOn;
-	box(ctx, c, midX, ecrY, bw, bh, "엔드포인트", "ECR 인터페이스", c.green);
+	box(ctx, c, midX, ecrY, bw, bh, L.endpoint, L.ecrEndpoint, c.green);
 	ctx.restore();
-	pill(ctx, w, midX, s3Y + bh / 2 + 14, "S3 주소 → 엔드포인트", c.green, c.greenFill, phase === 0 ? 0 : phase === 1 ? seg(u, 300, 900) : 1);
+	pill(ctx, w, midX, s3Y + bh / 2 + 14, L.s3Route, c.green, c.greenFill, phase === 0 ? 0 : phase === 1 ? seg(u, 300, 900) : 1);
 	pill(ctx, w, midX, ecrY + bh / 2 + 13, "ecr.api · ecr.dkr", c.green, c.greenFill, phase === 2 ? seg(u, 300, 900) : 0);
 
 	// NAT를 지난 용량 막대. 외부 요청도 NAT를 지나므로 함께 센다.
@@ -121,24 +169,23 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 		// 엔드포인트로 오는 것은 NAT 막대에 더하지 않는다
 		if (!viaEndpoint) passed += it.size * p;
 		const route = it.layer ? (viaEndpoint ? viaEpS3 : viaNatS3) : viaEndpoint ? viaEpEcr : viaNatEcr;
-		if (p > 0 && p < 1) drawItem(ctx, c, along(route, p), it.layer);
+		if (p > 0 && p < 1) drawItem(L, ctx, c, along(route, p), it.layer);
 	}
 
 	// 외부 요청은 NAT로 나가 도착한 뒤 NAT와 외부 서비스 사이에 남는다. 어두운 테마에서 선이 비치지 않게 바닥을 칠한다.
 	if (external > 0) {
 		const [x, y] = external < 1 ? along(toExternal, external) : [(midR + outL) / 2, natY];
-		pill(ctx, w, x, y, "외부 요청", c.blue, dark ? "#212529" : "#f1f3f5");
-		pill(ctx, w, x, y, "외부 요청", c.blue, c.blueFill);
+		pill(ctx, w, x, y, L.externalRequest, c.blue, dark ? "#212529" : "#f1f3f5");
+		pill(ctx, w, x, y, L.externalRequest, c.blue, c.blueFill);
 	}
 
 	const barY = 276;
-	const barLabel = "NAT를 지난 용량";
 	ctx.textAlign = "left";
 	ctx.textBaseline = "middle";
 	ctx.font = `500 10.5px ${FONT}`;
 	ctx.fillStyle = c.sub;
-	ctx.fillText(barLabel, 8, barY);
-	const barX = 8 + ctx.measureText(barLabel).width + 10;
+	ctx.fillText(L.bar, 8, barY);
+	const barX = 8 + ctx.measureText(L.bar).width + 10;
 	const barW = w - 8 - barX;
 	ctx.beginPath();
 	ctx.roundRect(barX, barY - 6, barW, 12, 3);
@@ -147,21 +194,18 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 	ctx.strokeStyle = c.boxStroke;
 	ctx.lineWidth = 1;
 	ctx.stroke();
-	ctx.beginPath();
-	ctx.roundRect(barX, barY - 6, Math.max(2, barW * passed), 12, 3);
-	ctx.fillStyle = c.amber;
-	ctx.fill();
+	if (passed > 0) {
+		ctx.beginPath();
+		ctx.roundRect(barX, barY - 6, Math.max(2, barW * passed), 12, 3);
+		ctx.fillStyle = c.amber;
+		ctx.fill();
+	}
 
-	caption(ctx, c, CAPTIONS[captionIndex(phase, u)], w, HEIGHT - 22);
+	caption(ctx, c, L.captions[captionIndex(phase, u)], w, HEIGHT - 22);
 }
 
-export default function ImagePullDemo() {
-	return (
-		<CanvasFigure
-			height={HEIGHT}
-			cycle={CYCLE}
-			scene={scene}
-			label="프라이빗 서브넷의 노드가 컨테이너 이미지를 받는 길을 세 번 보여 주는 애니메이션. 처음에는 ECR에서 오는 이미지 목록과 S3에서 오는 층 파일이 모두 NAT 게이트웨이를 지나, 아래 막대의 NAT를 지난 용량이 가득 찬다. S3 게이트웨이 엔드포인트를 붙이면 층 파일이 엔드포인트로 바로 오고, NAT에는 작은 목록만 지나 막대가 조금만 찬다. ECR 인터페이스 엔드포인트까지 붙이면 목록도 엔드포인트로 와서 목록과 층 파일 모두 NAT를 지나지 않는다. 마지막으로 외부 서비스로 가는 요청은 엔드포인트가 아니라 그대로 NAT 게이트웨이로 나가고, 그만큼만 막대가 찬다."
-		/>
-	);
+const SCENES = { ko: scene.bind(null, LABELS.ko), en: scene.bind(null, LABELS.en) };
+
+export default function ImagePullDemo({ lang = "ko" }: { lang?: Lang }) {
+	return <CanvasFigure height={HEIGHT} cycle={CYCLE} scene={SCENES[lang]} label={LABELS[lang].aria} />;
 }

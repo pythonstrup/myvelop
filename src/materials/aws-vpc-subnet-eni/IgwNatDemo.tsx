@@ -5,15 +5,51 @@ import { palette } from "@/materials/shared";
 const HEIGHT = 348;
 const UNTIL = [2600, 5200, 7000, 8800, 11400] as const;
 const CYCLE = UNTIL[UNTIL.length - 1];
-const CAPTIONS = [
-	"① 공인 IP가 있는 서버는 인터넷 게이트웨이로 나간다",
-	"② 밖에서 먼저 들어올 수도 있다. 양방향이다",
-	"③ 프라이빗 서브넷의 표가 패킷을 NAT로 보낸다",
-	"④ NAT가 있는 퍼블릭 서브넷의 표가 다시 인터넷 게이트웨이로 보낸다",
-	"⑤ 밖에서 먼저 들어오는 연결은 NAT가 받지 않는다",
-];
+const LABELS = {
+	ko: {
+		captions: [
+			"① 공인 IP가 있는 서버는 인터넷 게이트웨이로 나간다",
+			"② 밖에서 먼저 들어올 수도 있다. 양방향이다",
+			"③ 프라이빗 서브넷의 표가 패킷을 NAT로 보낸다",
+			"④ NAT가 있는 퍼블릭 서브넷의 표가 다시 인터넷 게이트웨이로 보낸다",
+			"⑤ 밖에서 먼저 들어오는 연결은 NAT가 받지 않는다",
+		],
+		pub: "퍼블릭 서브넷",
+		pri: "프라이빗 서브넷",
+		internet: "인터넷",
+		igw: "인터넷 게이트웨이",
+		web: "웹 서버",
+		webSub: "공인 IP 있음",
+		nat: "NAT 게이트웨이",
+		server: "서버",
+		serverSub: "사설 IP만",
+		blocked: "들어오는 연결 차단",
+		aria: "VPC 위쪽에 인터넷 게이트웨이, 그 아래 퍼블릭 서브넷에 공인 IP가 있는 웹 서버와 NAT 게이트웨이, 맨 아래 프라이빗 서브넷에 사설 IP만 있는 서버를 둔 애니메이션. 웹 서버는 인터넷 게이트웨이로 나갈 수도 있고 밖에서 들어온 연결을 받을 수도 있다. 프라이빗 서버의 패킷은 프라이빗 서브넷의 라우팅 테이블을 따라 NAT 게이트웨이로 가고, 퍼블릭 서브넷의 라우팅 테이블을 따라 인터넷 게이트웨이로 나간다. 밖에서 먼저 들어오려는 연결은 NAT 게이트웨이에서 막힌다.",
+	},
+	en: {
+		captions: [
+			"① A server with a public IP goes out through the internet gateway",
+			"② Connections can also start from outside. It works both ways",
+			"③ The private subnet's route table sends the packet to the NAT",
+			"④ The route table of the NAT's public subnet sends it on to the internet gateway",
+			"⑤ The NAT does not accept connections started from outside",
+		],
+		pub: "Public subnet",
+		pri: "Private subnet",
+		internet: "Internet",
+		igw: "Internet gateway",
+		web: "Web server",
+		webSub: "Has a public IP",
+		nat: "NAT gateway",
+		server: "Server",
+		serverSub: "Private IP only",
+		blocked: "Inbound connection blocked",
+		aria: "An animation with an internet gateway at the top of a VPC, a public subnet below it holding a web server with a public IP and a NAT gateway, and a private subnet at the bottom holding a server with only a private IP. The web server can go out through the internet gateway and can accept connections from outside. The private server's packets follow the private subnet's route table to the NAT gateway, then the public subnet's route table out through the internet gateway. A connection started from outside is blocked at the NAT gateway.",
+	},
+};
+type Lang = keyof typeof LABELS;
 
-function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) {
+function scene(L: (typeof LABELS)[Lang], ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) {
 	const c = palette(dark);
 	const step = UNTIL.findIndex((u) => t < u);
 	const cx = w / 2;
@@ -27,8 +63,8 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 	const priY = 262;
 
 	region(ctx, c, 8, igwY, w - 16, 228, "VPC");
-	region(ctx, c, 20, 112, w - 40, 84, "퍼블릭 서브넷", { fill: c.boxFill });
-	region(ctx, c, 20, 210, w - 40, 88, "프라이빗 서브넷", { fill: c.boxFill });
+	region(ctx, c, 20, 112, w - 40, 84, L.pub, { fill: c.boxFill });
+	region(ctx, c, 20, 210, w - 40, 88, L.pri, { fill: c.boxFill });
 
 	const igwTop: Pt = [cx, igwY - 16];
 	const igwBottom: Pt = [cx, igwY + 16];
@@ -49,11 +85,11 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 	const webOn = step <= 1;
 	const natOn = step === 2 || step === 3;
 	const blocked = step === 4 && t >= UNTIL[3] + 1500;
-	box(ctx, c, cx, netY, 120, 32, "인터넷");
-	box(ctx, c, cx, igwY, Math.min(150, w - 40), 32, "인터넷 게이트웨이", "", webOn || step === 3 ? c.green : c.boxStroke);
-	box(ctx, c, leftX, pubY, bw, bh, "웹 서버", "공인 IP 있음", webOn ? c.blue : c.boxStroke);
-	box(ctx, c, rightX, pubY, bw, bh, "NAT 게이트웨이", "Elastic IP", blocked ? c.red : natOn ? c.blue : c.boxStroke);
-	box(ctx, c, rightX, priY, bw, bh, "서버", "사설 IP만", step === 2 ? c.blue : c.boxStroke);
+	box(ctx, c, cx, netY, 120, 32, L.internet);
+	box(ctx, c, cx, igwY, Math.min(150, w - 40), 32, L.igw, "", webOn || step === 3 ? c.green : c.boxStroke);
+	box(ctx, c, leftX, pubY, bw, bh, L.web, L.webSub, webOn ? c.blue : c.boxStroke);
+	box(ctx, c, rightX, pubY, bw, bh, L.nat, "Elastic IP", blocked ? c.red : natOn ? c.blue : c.boxStroke);
+	box(ctx, c, rightX, priY, bw, bh, L.server, L.serverSub, step === 2 ? c.blue : c.boxStroke);
 
 	if (step === 0) {
 		const [x, y] = along([web, igwBottom, igwTop, net], seg(t, 300, 2000));
@@ -76,20 +112,15 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 			dot(ctx, x, y, c.amber);
 		} else {
 			cross(ctx, natTop[0], natTop[1] - 8, c.red);
-			pill(ctx, w, rightX, pubY + bh / 2 + 14, "들어오는 연결 차단", c.red, c.redFill);
+			pill(ctx, w, rightX, pubY + bh / 2 + 14, L.blocked, c.red, c.redFill);
 		}
 	}
 
-	caption(ctx, c, CAPTIONS[step], w, HEIGHT - 22);
+	caption(ctx, c, L.captions[step], w, HEIGHT - 22);
 }
 
-export default function IgwNatDemo() {
-	return (
-		<CanvasFigure
-			height={HEIGHT}
-			cycle={CYCLE}
-			scene={scene}
-			label="VPC 위쪽에 인터넷 게이트웨이, 그 아래 퍼블릭 서브넷에 공인 IP가 있는 웹 서버와 NAT 게이트웨이, 맨 아래 프라이빗 서브넷에 사설 IP만 있는 서버를 둔 애니메이션. 웹 서버는 인터넷 게이트웨이로 나갈 수도 있고 밖에서 들어온 연결을 받을 수도 있다. 프라이빗 서버의 패킷은 프라이빗 서브넷의 라우팅 테이블을 따라 NAT 게이트웨이로 가고, 퍼블릭 서브넷의 라우팅 테이블을 따라 인터넷 게이트웨이로 나간다. 밖에서 먼저 들어오려는 연결은 NAT 게이트웨이에서 막힌다."
-		/>
-	);
+const SCENES = { ko: scene.bind(null, LABELS.ko), en: scene.bind(null, LABELS.en) };
+
+export default function IgwNatDemo({ lang = "ko" }: { lang?: Lang }) {
+	return <CanvasFigure height={HEIGHT} cycle={CYCLE} scene={SCENES[lang]} label={LABELS[lang].aria} />;
 }

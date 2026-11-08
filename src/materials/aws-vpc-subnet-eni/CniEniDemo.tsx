@@ -21,12 +21,39 @@ const PODS: { at: number; slot: readonly [number, number] | null }[] = [
 	{ at: 8000, slot: null },
 ];
 const TRIP = 800;
-const CAPTIONS = [
-	"① Pod는 카드의 보조 IP를 하나씩 받는다. 주 IP는 카드 몫이다",
-	"② IP가 떨어지면 VPC CNI가 카드를 한 장 더 꽂는다",
-	"③ 꽂을 수 있는 장수까지 늘려 간다",
-	"④ 카드도 IP도 다 쓰면 새 Pod는 IP를 받지 못한다",
-];
+const LABELS = {
+	ko: {
+		captions: [
+			"① Pod는 카드의 보조 IP를 하나씩 받는다. 주 IP는 카드 몫이다",
+			"② IP가 떨어지면 VPC CNI가 카드를 한 장 더 꽂는다",
+			"③ 꽂을 수 있는 장수까지 늘려 간다",
+			"④ 카드도 IP도 다 쓰면 새 Pod는 IP를 받지 못한다",
+		],
+		node: "노드 (EC2)",
+		example: "예시: 카드 3장 · 장마다 IP 3개",
+		primary: "주 IP",
+		secondary: "보조 IP",
+		empty: "빈 자리",
+		noIp: "IP 없음",
+		aria: "노드 하나에 ENI를 세 장까지 꽂을 수 있고, 장마다 주 IP 하나와 보조 IP 두 개가 있다고 줄여 그린 애니메이션. 새 Pod가 뜰 때마다 eth0의 보조 IP를 하나씩 받는다. eth0의 보조 IP가 떨어지면 VPC CNI가 eth1을 꽂고, 다음에 eth2를 꽂는다. 주 IP는 Pod에 주지 않는다. 세 장의 보조 IP를 다 쓴 뒤에 온 일곱 번째 Pod는 IP를 받지 못한다.",
+	},
+	en: {
+		captions: [
+			"① Each Pod takes one secondary IP from a card. The primary IP stays with the card",
+			"② When IPs run out, the VPC CNI attaches another card",
+			"③ It keeps adding cards up to the allowed number",
+			"④ With every card and IP used, a new Pod cannot get an IP",
+		],
+		node: "Node (EC2)",
+		example: "Example: 3 cards · 3 IPs per card",
+		primary: "Primary IP",
+		secondary: "Secondary IP",
+		empty: "Empty",
+		noIp: "no IP",
+		aria: "An animation simplified to a node that can hold up to three ENIs, each with one primary IP and two secondary IPs. Each new Pod takes one secondary IP on eth0. When eth0 runs out of secondary IPs, the VPC CNI attaches eth1, then eth2. Primary IPs are not given to Pods. The seventh Pod, arriving after the secondary IPs on all three cards are used, cannot get an IP.",
+	},
+};
+type Lang = keyof typeof LABELS;
 
 function slotBox(ctx: CanvasRenderingContext2D, c: Colors, x: number, y: number, w: number, h: number, top: string, ip: string, kind: "primary" | "empty" | "pod") {
 	ctx.beginPath();
@@ -49,7 +76,7 @@ function slotBox(ctx: CanvasRenderingContext2D, c: Colors, x: number, y: number,
 	ctx.fillText(ip, x + w / 2, y + h / 2 + 7);
 }
 
-function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) {
+function scene(L: (typeof LABELS)[Lang], ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) {
 	const c = palette(dark);
 	const labelW = 44;
 	const x0 = 20 + labelW + 8;
@@ -58,12 +85,12 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 	const slotX = (k: number) => x0 + k * (slotW + 6);
 	const spawn: Pt = [w / 2, 262];
 
-	region(ctx, c, 8, 30, w - 16, 196, "노드 (EC2)");
+	region(ctx, c, 8, 30, w - 16, 196, L.node);
 	ctx.textAlign = "right";
 	ctx.textBaseline = "top";
 	ctx.font = `400 10px ${FONT}`;
 	ctx.fillStyle = c.sub;
-	ctx.fillText("예시: 카드 3장 · 장마다 IP 3개", w - 16, 36);
+	ctx.fillText(L.example, w - 16, 36);
 
 	CARDS.forEach((card, r) => {
 		const on = card.attach < 0 ? 1 : seg(t, card.attach, card.attach + 600);
@@ -86,8 +113,8 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 			const pod = PODS.findIndex((p) => p.slot?.[0] === r && p.slot?.[1] === k);
 			const filled = pod >= 0 && t >= PODS[pod].at + TRIP;
 			const kind = k === 0 ? "primary" : filled ? "pod" : "empty";
-			const top = k === 0 ? "주 IP" : filled ? `Pod ${pod + 1}` : "보조 IP";
-			slotBox(ctx, c, slotX(k), y, slotW, 44, top, on > 0 ? ip : "빈 자리", on > 0 ? kind : "empty");
+			const top = k === 0 ? L.primary : filled ? `Pod ${pod + 1}` : L.secondary;
+			slotBox(ctx, c, slotX(k), y, slotW, 44, top, on > 0 ? ip : L.empty, on > 0 ? kind : "empty");
 		});
 		ctx.restore();
 	});
@@ -102,21 +129,16 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 			const [x, y] = along([spawn, target], p);
 			pill(ctx, w, x, y, `Pod ${i + 1}`, c.green, c.greenFill);
 		} else {
-			pill(ctx, w, spawn[0], spawn[1], `Pod ${i + 1} · IP 없음`, c.red, c.redFill, p);
+			pill(ctx, w, spawn[0], spawn[1], `Pod ${i + 1} · ${L.noIp}`, c.red, c.redFill, p);
 		}
 	});
 
 	const step = t < 2600 ? 0 : t < 5200 ? 1 : t < 8000 ? 2 : 3;
-	caption(ctx, c, CAPTIONS[step], w, HEIGHT - 22);
+	caption(ctx, c, L.captions[step], w, HEIGHT - 22);
 }
 
-export default function CniEniDemo() {
-	return (
-		<CanvasFigure
-			height={HEIGHT}
-			cycle={CYCLE}
-			scene={scene}
-			label="노드 하나에 ENI를 세 장까지 꽂을 수 있고, 장마다 주 IP 하나와 보조 IP 두 개가 있다고 줄여 그린 애니메이션. 새 Pod가 뜰 때마다 eth0의 보조 IP를 하나씩 받는다. eth0의 보조 IP가 떨어지면 VPC CNI가 eth1을 꽂고, 다음에 eth2를 꽂는다. 주 IP는 Pod에 주지 않는다. 세 장의 보조 IP를 다 쓴 뒤에 온 일곱 번째 Pod는 IP를 받지 못한다."
-		/>
-	);
+const SCENES = { ko: scene.bind(null, LABELS.ko), en: scene.bind(null, LABELS.en) };
+
+export default function CniEniDemo({ lang = "ko" }: { lang?: Lang }) {
+	return <CanvasFigure height={HEIGHT} cycle={CYCLE} scene={SCENES[lang]} label={LABELS[lang].aria} />;
 }
