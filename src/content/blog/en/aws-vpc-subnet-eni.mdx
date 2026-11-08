@@ -15,13 +15,14 @@ import LaunchNetworkSettingsDiagram from "@/materials/aws-vpc-subnet-eni/LaunchN
 import LongestPrefixDemo from "@/materials/aws-vpc-subnet-eni/LongestPrefixDemo";
 import NatZoneDemo from "@/materials/aws-vpc-subnet-eni/NatZoneDemo";
 import PitfallsDemo from "@/materials/aws-vpc-subnet-eni/PitfallsDemo";
+import RequestFlowDemo from "@/materials/aws-vpc-subnet-eni/RequestFlowDemo";
 import SecurityGroupDemo from "@/materials/aws-vpc-subnet-eni/SecurityGroupDemo";
 import SnatDemo from "@/materials/aws-vpc-subnet-eni/SnatDemo";
 import VpcOverviewDiagram from "@/materials/aws-vpc-subnet-eni/VpcOverviewDiagram";
 
 This post looks at what VPCs and subnets are, follows where a packet goes according to the route table, and then covers what an ENI is and where EKS uses it.
 
-## Are the defaults enough?
+## Limits of the default settings
 
 When you launch an EC2 instance, the console asks you to pick a VPC and a subnet. Even if you don't know what they are, you can click through with the defaults and the server comes up fine.
 
@@ -59,7 +60,7 @@ The direction is easy to mix up. The larger the number after `/`, the longer the
 
 <CidrBitsDemo client:visible lang="en" />
 
-### You can't change the range, only add to it
+### Adding an address range
 
 A VPC's range can't be grown or shrunk after creation. If you run short, you have to attach another range.
 
@@ -72,7 +73,7 @@ You can run out of range even with plenty of IPs. Each subnet may have thousands
 
 ## Subnets
 
-### Slices per Availability Zone
+### Subnets and Availability Zones
 
 A subnet is a slice cut from the VPC's range. Each subnet belongs to exactly one Availability Zone and can't span several. So to spread servers across two Availability Zones, you need at least two subnets.
 
@@ -85,7 +86,7 @@ Let's take a `10.0.0.0/16` VPC as an example and divide it.
 | `10.0.10.0/24` | a | Private |
 | `10.0.11.0/24` | b | Private |
 
-### The five addresses AWS keeps
+### Addresses reserved by AWS
 
 You can't use every address in a subnet. Even on an ordinary network, the first address in a range (the network address) and the last (the broadcast address) aren't given to devices. AWS keeps three more on top of those. For `10.0.0.0/24`, they look like this.
 
@@ -101,15 +102,27 @@ So how many Pods can a `/19` subnet hold? Subtract five from 8,192 and you get 8
 
 But Pods can't take all of those IPs. The node itself uses IPs, and so do load balancers and NAT gateways in the same subnet. Nodes also hold some IPs in advance to start Pods quickly. We'll come back to what uses IPs in the ENI section.
 
-### What separates public and private
+### Public and private subnets
 
 Subnets are often named with public or private, but the name doesn't decide what a subnet is. <strong>Routing</strong> is what separates public from private. If there is a route to an internet gateway, it's a public subnet. If not, it's a private subnet.
 
 Being in a public subnet doesn't mean you can reach the internet right away, either. The instance needs a public IP. Subnets have a separate setting that decides whether new instances automatically get one. An instance launched in a public subnet with this setting off can't go out unless you attach a public IP to it yourself.
 
+Resources that need to talk directly to the internet go in public subnets, and everything else goes in private subnets. A private subnet has no route to an internet gateway, so even if a security group is accidentally opened to everyone, no one can come in directly from the internet.
+
+| Public subnet | Private subnet |
+| --- | --- |
+| Holds resources that talk directly to the internet | Holds resources that shouldn't be reached directly from the internet |
+| Usually holds internet-facing load balancers and NAT gateways | Usually holds EKS nodes, app servers, and databases |
+| Can be reached directly from the internet with a public IP and a security group that allows it | Can't be reached directly from the internet |
+
+User requests reach a load balancer in a public subnet, which forwards them to the app in a private subnet.
+
+<RequestFlowDemo client:visible lang="en" />
+
 ## Route tables
 
-### Every subnet has a route table
+### Subnets and route tables
 
 Each subnet has one route table attached. A packet leaving the subnet checks this table to decide where to go. A row in the table means "send packets headed for this address range over here."
 
@@ -124,7 +137,7 @@ The first row is the path for packets staying inside the VPC. Every route table 
 
 A public subnet's table differs in only the last row. Its target is an internet gateway (`igw-…`) instead of a NAT gateway. That one row is exactly what separates public from private.
 
-### The narrowest row wins
+### Route selection rule
 
 A packet headed for `10.0.5.10` matches both rows. `0.0.0.0/0` covers every address, so of course it matches, and `10.0.0.0/16` matches too. In this case, the packet follows <strong>the row with the narrowest range</strong>. `/16` is narrower than `/0`, so this packet goes to `local`.
 
@@ -134,7 +147,7 @@ That's why `0.0.0.0/0` becomes the row that catches everything else. A packet go
 
 ## Internet gateways and NAT gateways
 
-### The two exits point in different directions
+### Differences between the two gateways
 
 Both are ways out of the VPC, but they differ in direction.
 
@@ -145,7 +158,7 @@ When a server in a private subnet calls an external API, the packet goes through
 
 <IgwNatDemo client:visible lang="en" />
 
-### Who do you look like from outside?
+### Source address translation
 
 Say a Pod on a node in a private subnet calls another company's API. Which IP shows up in that server's log?
 
@@ -167,7 +180,7 @@ The NAT gateway changes the source address to its own public IP and sends the pa
 
 So if another company manages an IP allowlist, the address to give them is the NAT gateway's public IP. If you have several NAT gateways, the outgoing IP depends on which subnet the node is in, so you have to give them all.
 
-### If you have only one NAT gateway
+### NAT gateways and Availability Zone failures
 
 A NAT gateway belongs to the single Availability Zone you chose when creating it. What happens if subnets in several Availability Zones share one NAT and its zone fails? Servers in the other zones can't reach the internet either. AWS documentation also recommends having one NAT per Availability Zone and routing to the NAT in the same zone.
 
@@ -179,13 +192,13 @@ How many NATs to run is a choice between stability and cost. NAT gateways are bi
 
 ## VPC endpoints
 
-### Which path does an image take?
+### How nodes pull container images
 
 When a new Pod starts, the node pulls a container image from ECR. The node visits two places for this. It gets the image's manifest from ECR and the actual layer files from S3. Most of an image's size is in the layer files.
 
 ECR and S3 are services outside the VPC, so their addresses aren't in the VPC range. That leaves `0.0.0.0/0` as the only matching row in the route table, and the image comes in through the NAT gateway. Traffic equal to the image's size passes through the NAT, and when the NAT stops, new Pods can't pull images.
 
-### Two kinds of endpoints
+### Types of endpoints
 
 A VPC endpoint is a path that reaches AWS services directly without going through the NAT. There are two kinds, gateway endpoints and interface endpoints.
 
@@ -196,7 +209,7 @@ A VPC endpoint is a path that reaches AWS services directly without going throug
 | Pricing | ✅ No additional charge | ❌ <strong>Hourly and data processing charges</strong> |
 | IP usage | ✅ None | ❌ Uses subnet IPs |
 
-### A shortcut made from one row
+### How gateway endpoints work
 
 The row a gateway endpoint adds points only to S3's address list. That's narrower than `0.0.0.0/0`, which covers every address, so by the rule above, packets headed for S3 follow this row. Without removing the row to the NAT, only S3 traffic takes the shortcut.
 
@@ -222,7 +235,7 @@ As long as external requests remain, so does the NAT gateway. What endpoints red
 
 ## Security groups
 
-### They remember the connections they let in
+### How security groups work
 
 A security group is a firewall attached to an ENI. It has only allow rules and blocks traffic that no rule covers.
 
@@ -235,7 +248,7 @@ This means you only need to write rules in the direction a connection starts. If
 
 <SecurityGroupDemo client:visible lang="en" />
 
-### Using a security group as the source
+### Referencing another security group
 
 A rule's source can be another security group instead of an IP. Say the DB security group has one rule, "allow port 5432 from the node security group." When nodes are added or replaced and their IPs change, you don't have to touch the rule as long as those nodes have the same security group.
 
@@ -256,7 +269,7 @@ An ENI (Elastic Network Interface) is a virtual network card inside a VPC. Think
 
 An ENI can be attached to and detached from instances in the same Availability Zone. But the default card created with the instance (eth0) can't be detached.
 
-### The number of cards depends on the instance type
+### ENI limits by instance type
 
 Each instance type has a set number of ENIs it can hold and a set number of IPs per ENI.
 
@@ -273,7 +286,7 @@ m7i.xlarge	4	15
 
 Both have 4 vCPUs and 16GiB of memory, but the IPs per card differ by a factor of two. On EKS, these values decide how many Pods a node can run. The next post covers how to calculate it.
 
-### ENIs aren't just for EC2
+### Resources that use ENIs
 
 Everything that uses an IP inside a VPC is attached to a subnet through an ENI. That includes load balancers, NAT gateways, Lambda, and interface endpoints. List a VPC's ENIs by type, and you can see at a glance what's inside the VPC.
 
@@ -298,7 +311,7 @@ The type and description tell you whose card it is.
 
 When subnet IPs run short, start with this list too. It shows who besides Pods is using IPs.
 
-### EKS uses ENIs in two places
+### Where EKS uses ENIs
 
 The last two rows of the table are EKS's cards.
 
@@ -311,7 +324,7 @@ In practice, the VPC CNI holds cards and IPs in advance, before Pods start. Thos
 
 The next post looks closely at how these two kinds of cards are used.
 
-## The whole picture
+## Overall VPC structure
 
 <VpcOverviewDiagram lang="en" />
 
@@ -320,21 +333,6 @@ A node in a private subnet going to the internet passes through the NAT gateway 
 ## Wrapping up
 
 A VPC is an address range, and a subnet is a slice of that range per Availability Zone. A packet picks its path from the route table attached to its subnet and follows the narrowest row. The exits to the outside are internet gateways and NAT gateways, and the shortcut to AWS services is the VPC endpoint. A security group is attached to each ENI and remembers the connections it let in. Everything that uses an IP in a VPC is attached to a subnet through an ENI.
-
-Here's how it maps to an apartment complex.
-
-| AWS | Apartment complex |
-| --- | --- |
-| VPC | The complex inside its fence |
-| Subnet | A building in the complex. Each stands in one section (Availability Zone) |
-| Route table | The direction sign at a building entrance |
-| Internet gateway | The main gate, open both ways |
-| NAT gateway | An exit-only side gate. People who leave appear outside at the side gate's address |
-| VPC endpoint | A walkway straight to the neighboring building |
-| Security group | A guard at each home. Guests let in are remembered and not stopped on the way out |
-| ENI | A home's front door |
-
-Only the ENI stretches the analogy a little, since one front door ends up with several unit numbers. The VPC CNI uses those extra unit numbers to give each Pod an IP.
 
 <strong>Before you click a default, look at what that default decides.</strong>
 
