@@ -52,7 +52,7 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 	box(ctx, c, cx, netY, 120, 32, "인터넷");
 	box(ctx, c, cx, igwY, Math.min(150, w - 40), 32, "인터넷 게이트웨이", "", webOn || step === 3 ? c.green : c.boxStroke);
 	box(ctx, c, leftX, pubY, bw, bh, "웹 서버", "공인 IP 있음", webOn ? c.blue : c.boxStroke);
-	box(ctx, c, rightX, pubY, bw, bh, "NAT 게이트웨이", "탄력적 IP", blocked ? c.red : natOn ? c.blue : c.boxStroke);
+	box(ctx, c, rightX, pubY, bw, bh, "NAT 게이트웨이", "Elastic IP", blocked ? c.red : natOn ? c.blue : c.boxStroke);
 	box(ctx, c, rightX, priY, bw, bh, "서버", "사설 IP만", step === 2 ? c.blue : c.boxStroke);
 
 	if (step === 0) {
