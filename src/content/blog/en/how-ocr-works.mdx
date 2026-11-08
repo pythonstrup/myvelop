@@ -7,9 +7,14 @@ socialImage: "../../../assets/blog/how-ocr-works/og.png"
 ---
 import DetectRecognizeDiagram from "@/materials/how-ocr-works/DetectRecognizeDiagram";
 import ProjectionProfileDiagram from "@/materials/how-ocr-works/ProjectionProfileDiagram";
+import ConvolutionDemo from "@/materials/how-ocr-works/ConvolutionDemo";
+import RnnMemoryDemo from "@/materials/how-ocr-works/RnnMemoryDemo";
+import LstmGateDemo from "@/materials/how-ocr-works/LstmGateDemo";
 import CtcDecodeDemo from "@/materials/how-ocr-works/CtcDecodeDemo";
+import CtcPathsDemo from "@/materials/how-ocr-works/CtcPathsDemo";
 import MaskingDiagram from "@/materials/how-ocr-works/MaskingDiagram";
 import VlmPatchDiagram from "@/materials/how-ocr-works/VlmPatchDiagram";
+import VlmAttentionDemo from "@/materials/how-ocr-works/VlmAttentionDemo";
 
 ## Introduction
 
@@ -99,7 +104,45 @@ The recognition model receives the line image cropped to the detection box. A ty
 2. <strong>RNN</strong> — reads the columns in order, taking the context of neighboring columns into account.
 3. <strong>CTC</strong> — turns the character candidates from each column into a single string.
 
-The key here is CTC. Column widths do not line up with character widths. Several columns can fall on a single character, and some columns fall on the gaps between characters. So for each column the model picks either a character or `-`, which stands for blank, and CTC cleans up the result with two rules.
+Let's look at what each of the three parts does.
+
+#### CNN — small filters sweep the image for shapes
+
+The basic operation of a CNN is convolution. Lay a small 3×3 filter over the image, multiply each of the nine pixels underneath by the matching filter value, and add them all up. That sum becomes one cell of the output. Slide the filter one pixel at a time and repeat, and you get an output map laid out like the image. The more a spot resembles the filter's pattern, the larger the sum.
+
+The demo below runs two filters, one after the other, over "agree" from the line we binarized earlier. The vertical-stroke filter has +2 down its middle column and −1 on either side, so it gives large values on upright strokes. The horizontal-stroke filter gives large values on flat strokes.
+
+<ConvolutionDemo client:visible lang="en" />
+
+The filter values in the demo were set by hand for illustration. In a real CNN, nobody sets them; they start out random and are found through training. What people decided in classic OCR, which features to look at, is now something the model learns from data.
+
+One filter finds only one kind of shape, so each layer has tens to hundreds of filters. As layers stack up, each layer sweeps over the previous layer's output maps and finds progressively larger features, from strokes to letter parts and from letter parts to whole letter shapes. At the end, a CRNN squeezes the height down so that each vertical column gets a single feature vector. The next stage, the RNN, receives these vectors in column order.
+
+#### RNN — passing memory from one column to the next
+
+A vector from the CNN is the result of looking at one column alone. A letter that spans several columns, like the a in "agree", is hard to identify from a single column. An RNN reads the columns one at a time from the left and carries what it has read so far to the next column as memory, called the hidden state h. At each column, it looks at that column's vector together with the memory of the columns before it and picks a letter. Every column goes through the same RNN with the same weights.
+
+<RnnMemoryDemo client:visible lang="en" />
+
+Even a column that shows only the right edge of the a can pick a, thanks to the memory from the column before it. OCR usually reads in both directions. Read once from left to right and once from right to left, combine the two memories, and every column can use the context on both sides.
+
+#### LSTM — three gates choose and protect the memory
+
+A plain RNN has a weakness. The more columns there are, the more the memory of the early columns fades. The same happens in training. The learning signal that says how much to correct the weights shrinks as it travels back through the columns, and it never properly reaches the early ones.
+
+LSTM (Long Short-Term Memory) carries memory on a separate path called the cell state. The cell state runs from column to column like a conveyor belt, and three gates choose what to erase from the belt, what to add, and what to send out.
+
+1. <strong>Forget gate</strong> — chooses, with a value between 0 and 1, how much of the old memory to keep.
+2. <strong>Input gate</strong> — chooses what new content to write from this column, and how much.
+3. <strong>Output gate</strong> — chooses which part of the stored memory to send out now as the hidden state h.
+
+<LstmGateDemo client:visible lang="en" />
+
+The cell state reaches the next column through nothing but multiplication by gate values and addition of new content, so information from distant columns does not fade easily. In a CRNN, the RNN slot usually holds a bidirectional LSTM.
+
+#### CTC — turning each column's pick into a string
+
+CTC, the last part, is the heart of this design. Column widths do not line up with character widths. Several columns can fall on a single character, and some columns fall on the gaps between characters. So for each column the model picks either a character or `-`, which stands for blank, and CTC cleans up the result with two rules.
 
 1. Merge runs of the same character into one.
 2. Drop the blanks.
@@ -115,6 +158,18 @@ When the same character really does repeat, like the two e's in "agree" or the z
 Think back to the Hangul case in classic OCR, where the syllable 계 split in two at a zero column. To a CRNN, that zero column is just one more column. The model looks at the neighboring columns and picks 계, so it never needs to know the character boundaries in advance. Tesseract also switched to an LSTM-based recognizer in version 4.0 in 2018, moving from matching one character at a time to reading a whole line at once.
 
 This is also where confidence comes from. For each column, the model outputs a probability for each candidate character. Combine the probabilities of the characters that survive in the final string, and you can tell how sure the model is about that string. PaddleOCR, for example, averages the probabilities of the columns that remain after merging repeats and dropping blanks, and returns that as the score. The confidence in the JSON from the introduction is this kind of value. NAVER has not published exactly how CLOVA OCR computes it.
+
+#### CTC learns by summing every path to the answer
+
+So how does the model learn which letter to pick in each column? All the training data holds is the line image and the answer string "agree". Nothing says which of the nine columns are a and which are blank.
+
+CTC solves this by never committing to a single assignment of columns to letters. Of all the ways to put a letter or a blank in each of the nine columns, 286 become "agree" once repeats are merged and blanks dropped. Multiply the probabilities the model gives each column along one of these paths, and you get that path's probability. Add up the probabilities of all 286 paths, and you get the probability that the model reads this line as "agree". Training adjusts the weights to make this value larger.
+
+<CtcPathsDemo client:visible lang="en" />
+
+*The path probabilities in the figure are made up for illustration.*
+
+There is no need to walk through the paths one by one. Dynamic programming computes the sum by carrying forward the running total from the previous column, so it stays fast even as the columns and letters multiply. That is why the training data needs nothing more than line images and their answer strings.
 
 ### Rules learned from data, not written by hand
 
@@ -182,6 +237,14 @@ The figure below shows the steps the masked contract goes through inside a VLM, 
 *The contract and numbers in the figure are fictional values made up for this post.*
 
 There is no detection or recognition here. No step finds where the text is or crops boxes to read them; the model looks at the whole image and writes the answer directly. That is why a VLM can do what OCR cannot. It answers questions about meaning beyond the characters, such as who Party A is or when the contract term starts and ends.
+
+While the answer is being written, attention decides where in the image to look. Each time the LLM writes a token, it weighs how much to draw on each of the tokens before it. When it writes "The name", the weight piles up on "the name" in the question and on the patch with the "Name" label; when it writes "Jane Doe", it piles up on the patches holding the value next to that label.
+
+<VlmAttentionDemo client:visible lang="en" />
+
+*Which tokens the attention lands on is simplified for illustration. In reality, every token gets a little of the weight.*
+
+Where the model looked stays in these weights, but all the model puts out is the next token. No box coordinates come out.
 
 Something is lost in exchange, though. Here are the limits the three providers state in their own docs.
 
