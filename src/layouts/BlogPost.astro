@@ -36,6 +36,7 @@ const backLabel = lang === 'ko' ? '← 목록으로' : '← Back to blog';
 const updatedLabel = lang === 'ko' ? '수정됨' : 'Updated';
 const tagsLabel = lang === 'ko' ? '태그' : 'Tags';
 const seriesLabel = lang === 'ko' ? '시리즈' : 'Series';
+const upcomingLabel = lang === 'ko' ? '(준비중)' : '(coming soon)';
 const prevLabel = lang === 'ko' ? '← 이전 글' : '← Previous';
 const nextLabel = lang === 'ko' ? '다음 글 →' : 'Next →';
 const postNavLabel = lang === 'ko' ? '이전/다음 글' : 'Previous and next posts';
@@ -367,9 +368,13 @@ const relatedLabel = lang === 'ko' ? '관련 글' : 'Related posts';
 								{nav.series.posts.map((p) =>
 									p.current ? (
 										<li aria-current="page">{p.title}</li>
-									) : (
+									) : p.href ? (
 										<li>
 											<a href={p.href}>{p.title}</a>
+										</li>
+									) : (
+										<li>
+											{p.title} {upcomingLabel}
 										</li>
 									),
 								)}
