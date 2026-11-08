@@ -202,6 +202,22 @@ VPC 엔드포인트는 NAT를 거치지 않고 AWS 서비스에 바로 닿는 �
 
 S3 게이트웨이 엔드포인트 하나만 붙여도 이미지 용량의 대부분인 층 파일은 NAT를 지나지 않는다. 목록까지 NAT 밖으로 빼려면 ECR용 인터페이스 엔드포인트(`ecr.api`, `ecr.dkr`)를 더한다.
 
+### NAT와 엔드포인트의 요금 차이
+
+같은 이미지라도 어느 길로 받느냐에 따라 요금이 다르다. 2026년 11월 서울 리전 기준으로 이렇다.
+
+| 길 | 시간당 요금 | GB당 처리 요금 |
+| --- | --- | --- |
+| NAT 게이트웨이 | $0.059 | $0.059 |
+| 게이트웨이 엔드포인트 | 없음 | 없음 |
+| 인터페이스 엔드포인트 | $0.013 (가용 영역마다) | $0.01 |
+
+층 파일을 한 달에 1,000GB 받는다고 하자. NAT 게이트웨이로 받으면 처리 요금만 $59가 붙고, S3 게이트웨이 엔드포인트로 받으면 $0이다.
+
+다만 인터페이스 엔드포인트는 쓰지 않아도 시간당 요금이 나간다. `ecr.api`와 `ecr.dkr`을 가용 영역 두 곳에 두면 한 달(730시간)에 약 $38이다. 층 파일이 S3로 빠지고 나면 ECR로 오는 것은 작은 목록뿐이라, 처리 요금을 아껴 이 값을 메우기는 어렵다. 요금만 보면 S3 게이트웨이 엔드포인트가 먼저이고, ECR 인터페이스 엔드포인트는 NAT가 멈춰도 이미지를 받으려고 더하는 쪽이다.
+
+외부 요청이 남아 있으면 NAT 게이트웨이도 남는다. 엔드포인트로 줄어드는 것은 NAT의 시간당 요금이 아니라 처리 요금이다. 인터넷으로 나가는 데이터에는 전송 요금이 따로 붙는다.
+
 ## 보안 그룹
 
 ### 들여보낸 연결은 기억한다
@@ -334,6 +350,8 @@ ENI만은 비유가 조금 어긋난다. 현관문 하나에 호수가 여러 �
 -   AWS, [Enable outbound internet access for Pods](https://docs.aws.amazon.com/eks/latest/userguide/external-snat.html)
 -   AWS, [Amazon ECR interface VPC endpoints](https://docs.aws.amazon.com/AmazonECR/latest/userguide/vpc-endpoints.html)
 -   AWS, [Gateway endpoints](https://docs.aws.amazon.com/vpc/latest/privatelink/gateway-endpoints.html)
+-   AWS, [Amazon VPC pricing](https://aws.amazon.com/vpc/pricing/)
+-   AWS, [AWS PrivateLink pricing](https://aws.amazon.com/privatelink/pricing/)
 -   AWS, [Compare security groups and network ACLs](https://docs.aws.amazon.com/vpc/latest/userguide/infrastructure-security.html#VPC_Security_Comparison)
 -   AWS, [View Amazon EKS security group requirements for clusters](https://docs.aws.amazon.com/eks/latest/userguide/sec-group-reqs.html)
 -   AWS, [Elastic network interfaces](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html)

@@ -16,12 +16,13 @@ const ITEMS = [
 const TRIP = 1400;
 // 마지막 단계에서 이미지를 다 받은 뒤 외부 요청이 나가는 시각
 const EXTERNAL_AT = 5000;
+const EXTERNAL_SIZE = 0.03;
 const CAPTIONS = [
 	"① 엔드포인트가 없으면 목록도 층 파일도 NAT를 지난다",
 	"② S3 게이트웨이 엔드포인트를 붙이면",
 	"③ 층 파일은 엔드포인트로 오고, NAT에는 목록만 지난다",
 	"④ ECR 인터페이스 엔드포인트까지 붙이면",
-	"⑤ 목록도 엔드포인트로 오고, 이미지는 NAT를 지나지 않는다",
+	"⑤ 이제 목록도 층 파일도 NAT를 지나지 않는다",
 	"⑥ 외부 요청은 그대로 NAT로 나간다",
 ];
 
@@ -112,8 +113,8 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 	pill(ctx, w, midX, s3Y + bh / 2 + 14, "S3 주소 → 엔드포인트", c.green, c.greenFill, phase === 0 ? 0 : phase === 1 ? seg(u, 300, 900) : 1);
 	pill(ctx, w, midX, ecrY + bh / 2 + 13, "ecr.api · ecr.dkr", c.green, c.greenFill, phase === 2 ? seg(u, 300, 900) : 0);
 
-	// NAT를 지난 이미지 용량 막대
-	let passed = 0;
+	// NAT를 지난 용량 막대. 외부 요청도 NAT를 지나므로 함께 센다.
+	let passed = EXTERNAL_SIZE * external;
 	for (const it of ITEMS) {
 		const p = seg(u, it.at + lag, it.at + lag + TRIP);
 		const viaEndpoint = it.layer ? phase >= 1 : phase === 2;
@@ -131,7 +132,7 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 	}
 
 	const barY = 276;
-	const barLabel = "NAT를 지난 이미지 용량";
+	const barLabel = "NAT를 지난 용량";
 	ctx.textAlign = "left";
 	ctx.textBaseline = "middle";
 	ctx.font = `500 10.5px ${FONT}`;
@@ -160,7 +161,7 @@ export default function ImagePullDemo() {
 			height={HEIGHT}
 			cycle={CYCLE}
 			scene={scene}
-			label="프라이빗 서브넷의 노드가 컨테이너 이미지를 받는 길을 세 번 보여 주는 애니메이션. 처음에는 ECR에서 오는 이미지 목록과 S3에서 오는 층 파일이 모두 NAT 게이트웨이를 지나, 아래 막대의 NAT를 지난 이미지 용량이 거의 가득 찬다. S3 게이트웨이 엔드포인트를 붙이면 층 파일이 엔드포인트로 바로 오고, NAT에는 작은 목록만 지나 막대가 조금만 찬다. ECR 인터페이스 엔드포인트까지 붙이면 목록도 엔드포인트로 와서 이미지는 NAT를 지나지 않는다. 마지막으로 외부 서비스로 가는 요청은 엔드포인트가 아니라 그대로 NAT 게이트웨이로 나간다."
+			label="프라이빗 서브넷의 노드가 컨테이너 이미지를 받는 길을 세 번 보여 주는 애니메이션. 처음에는 ECR에서 오는 이미지 목록과 S3에서 오는 층 파일이 모두 NAT 게이트웨이를 지나, 아래 막대의 NAT를 지난 용량이 가득 찬다. S3 게이트웨이 엔드포인트를 붙이면 층 파일이 엔드포인트로 바로 오고, NAT에는 작은 목록만 지나 막대가 조금만 찬다. ECR 인터페이스 엔드포인트까지 붙이면 목록도 엔드포인트로 와서 목록과 층 파일 모두 NAT를 지나지 않는다. 마지막으로 외부 서비스로 가는 요청은 엔드포인트가 아니라 그대로 NAT 게이트웨이로 나가고, 그만큼만 막대가 찬다."
 		/>
 	);
 }
