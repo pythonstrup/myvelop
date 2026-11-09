@@ -4,7 +4,7 @@ description: "VPC와 서브넷, 라우팅 테이블과 NAT, VPC 엔드포인트,
 pubDate: "2026-11-16T21:00:00+09:00"
 tags: ["aws", "vpc", "subnet", "eni", "nat", "eks"]
 socialImage: "../../../assets/blog/aws-vpc-subnet-eni/og.png"
-series: "EKS 노드 운영하기"
+series: "AWS 네트워크"
 seriesOrder: 1
 ---
 import CidrBitsDemo from "@/materials/aws-vpc-subnet-eni/CidrBitsDemo";
@@ -284,7 +284,7 @@ m8i.xlarge	4	30
 m7i.xlarge	4	15
 ```
 
-둘 다 vCPU 4개에 메모리 16GiB인데, 한 장에 붙일 수 있는 IP 수는 두 배 차이가 난다. EKS에서는 이 값이 노드 하나에 띄울 수 있는 Pod 수를 정한다. 계산법은 다음 글에서 다룬다.
+둘 다 vCPU 4개에 메모리 16GiB인데, 한 장에 붙일 수 있는 IP 수는 두 배 차이가 난다. EKS에서는 이 값이 노드 하나에 띄울 수 있는 Pod 수를 정한다. 계산법은 [EKS 노드와 클러스터](/ko/blog/eks-nodes-and-clusters/)에서 다룬다.
 
 ### ENI를 쓰는 자원
 
@@ -322,7 +322,7 @@ aws ec2 describe-network-interfaces \
 
 실제로 VPC CNI는 Pod가 뜨기 전에 카드와 IP를 미리 잡아 둔다. 앞의 서브넷 절에서 노드가 미리 잡아 둔다고 한 IP가 바로 이것이다.
 
-이 두 카드가 어떻게 쓰이는지는 다음 글에서 자세히 본다.
+이 두 카드가 어떻게 쓰이는지는 [EKS 노드와 클러스터](/ko/blog/eks-nodes-and-clusters/)에서 자세히 본다.
 
 ## VPC 전체 구조
 
@@ -336,7 +336,7 @@ VPC는 주소 범위이고 서브넷은 그 범위를 가용 영역마다 자른
 
 <strong>기본값을 누르기 전에, 그 기본값이 무엇을 정하는지부터 보자.</strong>
 
-다음 글 [EKS 노드와 클러스터](/ko/blog/eks-nodes-and-clusters/)에서는 이 카드들이 컨트롤 플레인과 노드, Pod를 어떻게 잇는지 따라간다.
+다음 글에서는 Lambda와 Fargate를 VPC에 어떻게 연결하고 나가는 IP를 어떻게 고정하는지 따라간다.
 
 ## 참고 자료
 

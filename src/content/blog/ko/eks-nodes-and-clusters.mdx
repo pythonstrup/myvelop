@@ -5,7 +5,7 @@ pubDate: "2026-11-23T21:00:00+09:00"
 tags: ["k8s", "kubernetes", "eks", "ec2", "aws"]
 socialImage: "../../../assets/blog/eks-nodes-and-clusters/og.png"
 series: "EKS 노드 운영하기"
-seriesOrder: 2
+seriesOrder: 1
 ---
 import AllocatableDemo from "@/materials/eks-nodes-and-clusters/AllocatableDemo";
 import EndpointDemo from "@/materials/eks-nodes-and-clusters/EndpointDemo";
@@ -159,7 +159,7 @@ AL2023의 `nodeadm`도 같은 공식을 쓰고, 메모리 축출 임계값으로
 
 <MaxPodsDemo client:visible />
 
-−1은 ENI마다 Pod에 줄 수 없는 주 IP 몫이고, +2는 Pod IP를 쓰지 않는 VPC CNI와 kube-proxy 몫이다. [앞 글](/ko/blog/aws-vpc-subnet-eni/)에서 본 두 인스턴스를 넣어 보자.
+−1은 ENI마다 Pod에 줄 수 없는 주 IP 몫이고, +2는 Pod IP를 쓰지 않는 VPC CNI와 kube-proxy 몫이다. [AWS 네트워크 글](/ko/blog/aws-vpc-subnet-eni/)에서 본 두 인스턴스를 넣어 보자.
 
 | 인스턴스 | 기본 상한 |
 | --- | --- |
