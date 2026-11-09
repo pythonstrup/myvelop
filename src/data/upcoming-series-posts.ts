@@ -6,7 +6,6 @@
 export const upcomingSeriesPosts: Record<'en' | 'ko', Record<string, { order: number; title: string }[]>> = {
 	ko: {
 		'EKS 노드 운영하기': [
-			{ order: 2, title: 'EKS 노드와 클러스터 - EC2, 할당 가능량, 노드 그룹' },
 			{ order: 3, title: 'Kubernetes 노드 포화 - 요청값, 스케줄링, 분산' },
 			{ order: 4, title: 'Kubernetes 노드 모니터링 - node exporter, kube-state-metrics, 경보' },
 		],
