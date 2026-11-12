@@ -10,12 +10,12 @@ const COL_X = [30, 260, 490];
 const AXIS_Y = TOP + BOX_H + 34;
 const H = AXIS_Y + 40;
 const LAYERS = [
-	{ who: "엔지니어", lines: ["빠르고 거칠게", "방향을 본다"] },
+	{ who: "엔지니어", lines: ["빠르고 러프하게", "방향을 본다"] },
 	{ who: "채점자", lines: ["하루쯤 걸려", "더 자세히 평가한다"] },
 	{ who: "실제 사용자", lines: ["마지막 판단을 내린다", "변경 하나에 사흘 넘게"] },
 ];
 const ARIA =
-	"LinkedIn이 품질을 평가한 세 겹. 엔지니어가 빠르고 거칠게 방향을 보고, 채점자가 하루쯤 걸려 더 자세히 평가하고, 실제 사용자가 마지막 판단을 내린다. 사용자 반응으로 보면 변경 하나에 사흘 넘게 걸리기도 했다. 오른쪽으로 갈수록 느리지만 실제에 가깝다.";
+	"LinkedIn이 품질을 평가한 세 겹. 엔지니어가 빠르고 러프하게 방향을 보고, 채점자가 하루쯤 걸려 더 자세히 평가하고, 실제 사용자가 마지막 판단을 내린다. 사용자 반응으로 보면 변경 하나에 사흘 넘게 걸리기도 했다. 오른쪽으로 갈수록 느리지만 실제에 가깝다.";
 
 function Head({ x, y }: { x: number; y: number }) {
 	return <polygon points={`${x - 9},${y - 6} ${x - 9},${y + 6} ${x},${y}`} className="fg-head" />;
@@ -50,7 +50,7 @@ export default function EvalLayersFigure() {
 			<line x1={COL_X[0]} y1={AXIS_Y} x2={axisEnd - 8} y2={AXIS_Y} className="fg-arrow" strokeWidth={2} />
 			<Head x={axisEnd} y={AXIS_Y} />
 			<text x={COL_X[0]} y={AXIS_Y + 24} className="fg-sub" fontSize={13}>
-				빠르고 거칠다
+				빠르고 러프하다
 			</text>
 			<text x={axisEnd} y={AXIS_Y + 24} textAnchor="end" className="fg-sub" fontSize={13}>
 				느리지만 실제에 가깝다
