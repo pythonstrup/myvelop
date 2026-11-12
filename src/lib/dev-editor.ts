@@ -22,7 +22,7 @@ const MAX_BODY = 4 * 1024 * 1024;
 type MdNode = {
 	type: string;
 	children?: MdNode[];
-	position?: { start: { line: number } };
+	position?: { start: { line: number }; end: { line: number } };
 	data?: { hProperties?: Record<string, unknown> };
 	name?: string;
 	attributes?: { type: string; name: string; value: string | null }[];
@@ -44,7 +44,8 @@ export function remarkSourceLines() {
 				// 그림 같은 컴포넌트에는 속성을 넘길 수 없으니 바로 앞에 보이지 않는 표지를 둔다.
 				if (node.type === "mdxJsxFlowElement") return [marker(line), node];
 				if (TAGGED.has(node.type)) {
-					node.data = { ...node.data, hProperties: { ...node.data?.hProperties, dataSrcLine: line } };
+					const end = node.position?.end.line ?? line;
+					node.data = { ...node.data, hProperties: { ...node.data?.hProperties, dataSrcLine: line, dataSrcEnd: end } };
 				}
 				if (CONTAINERS.has(node.type)) walk(node);
 				return [node];

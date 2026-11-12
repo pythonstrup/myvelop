@@ -18,6 +18,8 @@
 	main { display: grid; grid-template-columns: 1fr 1fr; height: calc(100% - 44px); }
 	textarea { width: 100%; height: 100%; resize: none; border: 0; border-right: 1px solid var(--line); padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.7 ui-monospace, "SF Mono", Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; }
 	iframe { width: 100%; height: 100%; border: 0; }
+	main.wide { grid-template-columns: 1fr; }
+	main.wide textarea { display: none; }
 	.list { max-width: 720px; margin: 24px auto; padding: 0 16px; }
 	.list input { width: 100%; padding: 8px; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
 	.list ul { padding-left: 20px; }
@@ -39,6 +41,7 @@
 		<a id="open" target="_blank">새 탭에서 보기</a>
 		<span class="status" id="status"></span>
 		<button id="reload" hidden>내 고침 버리고 다시 불러오기</button>
+		<button id="wide">원문 숨기기</button>
 		<button id="save">저장 ⌘S</button>
 	</header>
 	<main>
@@ -197,7 +200,7 @@ async function openEditor(file) {
 		frame.dataset.attached = String(Date.now());
 		const body = all[0].parentElement;
 		doc.addEventListener("click", (e) => {
-			if (!body.contains(e.target)) return;
+			if (editing || !body.contains(e.target)) return;
 			// 누른 곳을 감싸거나 그 앞에 있는 표지 가운데 가장 가까운 것
 			let best = null;
 			for (const el of tagged()) {
@@ -209,7 +212,144 @@ async function openEditor(file) {
 			jumpToLine(Number(best.dataset.srcLine));
 			flash(visible(best));
 		}, true);
+		doc.addEventListener("dblclick", (e) => {
+			const el = e.target.closest?.("[data-src-line]");
+			if (!el || el.hidden || !body.contains(el)) return;
+			e.preventDefault();
+			beginEdit(doc, el, e);
+		}, true);
 	}, 300);
+
+	// 글 화면에서 바로 고치기. 더블클릭한 블록을 마크다운으로 되돌려 써 보고, 원문과 똑같으면 화면 글자를 그대로 고친다.
+	// 같지 않거나 ⌥ 를 누른 채 더블클릭하면 그 자리에 원문 편집 칸을 띄운다. 어느 쪽이든 원문의 그 줄들만 바꿔 저장한다.
+	$("wide").addEventListener("click", () => {
+		const wide = document.querySelector("main").classList.toggle("wide");
+		$("wide").textContent = wide ? "원문 보이기" : "원문 숨기기";
+	});
+	const INLINE = new Set(["P", "H1", "H2", "H3", "H4", "H5", "H6", "LI"]);
+	const PREFIX = /^(#{1,6} +|\s*(?:[-*+]|\d+[.)]) +)/;
+	function toMarkdown(node) {
+		if (node.nodeType === Node.TEXT_NODE) {
+			// 화면은 따옴표를 둥글게, \~ 를 ~ 로 보인다. 원문 표기로 되돌린다.
+			return node.nodeValue.replace(/\u00a0/g, " ").replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/~/g, "\\~");
+		}
+		if (node.nodeType !== Node.ELEMENT_NODE) return "";
+		const inner = [...node.childNodes].map(toMarkdown).join("");
+		switch (node.tagName) {
+			case "STRONG": case "B": return inner ? `<strong>${inner}</strong>` : "";
+			case "CODE": return node.textContent ? `\`${node.textContent}\`` : "";
+			case "A": return `[${inner}](${node.getAttribute("href")})`;
+			case "EM": case "I": return `*${inner}*`;
+			case "BR": return "\n";
+			default: return inner;
+		}
+	}
+	let editing = null;
+	function beginEdit(doc, el, e) {
+		if (editing) return;
+		if (dirty()) return setStatus("왼쪽에서 고친 내용을 먼저 저장해 주세요", true);
+		const start = Number(el.dataset.srcLine);
+		const end = Number(el.dataset.srcEnd || start);
+		const original = ta.value.split("\n").slice(start - 1, end).join("\n");
+		const prefix = (original.match(PREFIX) ?? [""])[0];
+		const finish = (text) => {
+			if (text === null || text === original) return setStatus(text === null ? "고치기를 취소했습니다" : "바뀐 것 없음");
+			const lines = ta.value.split("\n");
+			lines.splice(start - 1, end - start + 1, ...text.split("\n"));
+			ta.value = lines.join("\n");
+			save();
+		};
+		if (!e.altKey && INLINE.has(el.tagName) && prefix + toMarkdown(el) === original) editInline(doc, el, e, prefix, finish);
+		else editSource(doc, el, original, finish);
+	}
+	function editInline(doc, el, e, prefix, finish) {
+		const html = el.innerHTML;
+		const stop = (commit) => {
+			if (editing?.el !== el) return;
+			editing = null;
+			const text = commit ? prefix + toMarkdown(el).replace(/\n+$/, "") : null;
+			el.contentEditable = "false";
+			el.style.outline = "";
+			if (!commit) el.innerHTML = html;
+			for (const [type, fn] of handlers) doc.removeEventListener(type, fn, true);
+			finish(text);
+		};
+		const handlers = [
+			["keydown", (ev) => {
+				const mod = ev.metaKey || ev.ctrlKey;
+				if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); stop(true); }
+				else if (ev.key === "Escape") { ev.preventDefault(); stop(false); }
+				else if (mod && ev.key === "s") { ev.preventDefault(); stop(true); }
+				else if (mod && ev.key === "b") { ev.preventDefault(); toggleWrap(doc, el, "STRONG"); }
+				else if (mod && ev.key === "e") { ev.preventDefault(); toggleWrap(doc, el, "CODE"); }
+			}],
+			["paste", (ev) => {
+				ev.preventDefault();
+				doc.execCommand("insertText", false, ev.clipboardData.getData("text/plain").replace(/\s*\n\s*/g, " "));
+			}],
+			["focusout", (ev) => { if (ev.target === el) stop(true); }],
+		];
+		editing = { el };
+		el.contentEditable = "true";
+		el.style.outline = "2px solid #f59e0b";
+		el.style.outlineOffset = "4px";
+		for (const [type, fn] of handlers) doc.addEventListener(type, fn, true);
+		el.focus();
+		const range = doc.caretRangeFromPoint?.(e.clientX, e.clientY);
+		if (range) { const sel = doc.getSelection(); sel.removeAllRanges(); sel.addRange(range); }
+		setStatus("화면에서 고치는 중: Enter 저장, Esc 취소, ⌘B 굵게, ⌘E 코드");
+	}
+	// 고른 글자를 <strong>/<code> 로 감싸거나, 이미 그 안이면 풀어낸다.
+	function toggleWrap(doc, root, tag) {
+		const sel = doc.getSelection();
+		if (!sel.rangeCount) return;
+		const range = sel.getRangeAt(0);
+		let node = range.commonAncestorContainer;
+		while (node && node !== root && !(node.nodeType === Node.ELEMENT_NODE && (node.tagName === tag || (tag === "STRONG" && node.tagName === "B")))) node = node.parentNode;
+		if (node && node !== root) {
+			node.replaceWith(...node.childNodes);
+		} else if (!range.collapsed) {
+			const wrap = doc.createElement(tag.toLowerCase());
+			if (tag === "CODE") wrap.textContent = range.toString();
+			else wrap.append(range.extractContents());
+			if (tag === "CODE") range.deleteContents();
+			range.insertNode(wrap);
+			sel.removeAllRanges();
+			const after = doc.createRange();
+			after.selectNodeContents(wrap);
+			sel.addRange(after);
+		}
+		root.normalize();
+	}
+	function editSource(doc, el, original, finish) {
+		const target = visible(el);
+		const rect = target.getBoundingClientRect();
+		const box = doc.createElement("textarea");
+		box.value = original;
+		Object.assign(box.style, {
+			position: "absolute", zIndex: "50", left: `${rect.left + doc.defaultView.scrollX}px`, top: `${rect.top + doc.defaultView.scrollY}px`,
+			width: `${Math.max(rect.width, 320)}px`, minHeight: `${rect.height}px`, padding: "8px", border: "2px solid #f59e0b", borderRadius: "6px",
+			font: "14px/1.7 ui-monospace, Menlo, monospace", background: "Canvas", color: "CanvasText", whiteSpace: "pre-wrap", boxSizing: "border-box",
+		});
+		const fit = () => { box.style.height = "auto"; box.style.height = `${box.scrollHeight + 4}px`; };
+		const stop = (commit) => {
+			if (editing?.el !== el) return;
+			editing = null;
+			box.remove();
+			finish(commit ? box.value : null);
+		};
+		box.addEventListener("input", fit);
+		box.addEventListener("keydown", (ev) => {
+			if ((ev.metaKey || ev.ctrlKey) && (ev.key === "Enter" || ev.key === "s")) { ev.preventDefault(); stop(true); }
+			else if (ev.key === "Escape") { ev.preventDefault(); stop(false); }
+		});
+		box.addEventListener("blur", () => stop(true));
+		editing = { el };
+		doc.body.append(box);
+		fit();
+		box.focus();
+		setStatus("원문으로 고치는 중: ⌘Enter 저장, Esc 취소");
+	}
 
 	function syncPreview() {
 		const line = lineAt(ta.selectionStart);
