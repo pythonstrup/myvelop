@@ -7,7 +7,17 @@ series: "모니터링 설계"
 socialImage: "../../../assets/blog/business-metrics-design/og.png"
 ---
 
+import CardinalityFigure from "@/materials/business-metrics-design/CardinalityFigure";
+import CountVsRateFigure from "@/materials/business-metrics-design/CountVsRateFigure";
+import CounterVsDbFigure from "@/materials/business-metrics-design/CounterVsDbFigure";
+import DimensionHeatmapFigure from "@/materials/business-metrics-design/DimensionHeatmapFigure";
+import GmailActiveFigure from "@/materials/business-metrics-design/GmailActiveFigure";
+import GoalSignalMetricFigure from "@/materials/business-metrics-design/GoalSignalMetricFigure";
+import GuardrailFalseAlarmFigure from "@/materials/business-metrics-design/GuardrailFalseAlarmFigure";
+import MetricTreeFigure from "@/materials/business-metrics-design/MetricTreeFigure";
 import SixTwelveFigure from "@/materials/business-metrics-design/SixTwelveFigure";
+import SmoothingLagFigure from "@/materials/business-metrics-design/SmoothingLagFigure";
+import TableAlertFigure from "@/materials/business-metrics-design/TableAlertFigure";
 import ThresholdFigure from "@/materials/business-metrics-design/ThresholdFigure";
 
 ## 들어가며
@@ -40,6 +50,10 @@ HEART 논문은 Google에서 사용자 경험 지표를 만든 경험을 정리�
 2. <strong>신호</strong> — 목표를 이뤘거나 놓쳤을 때 사용자의 행동이나 태도에 무엇이 드러날지 생각한다. 그 행동이 지금 로그에 남는지, 남길 수 있는지도 이 단계에서 따진다. 신호는 목표에 민감하고 특정해야 한다. 경험이 좋아지거나 나빠질 때만 움직이고, 상관없는 이유로는 움직이지 않아야 한다. 성공보다 실패가 찾기 쉬울 때도 있다. 하던 일을 그만두거나 되돌리기를 누르는 행동이 그런 예다.
 3. <strong>지표</strong> — 신호를 대시보드에서 시간에 따라 볼 숫자로 바꾼다. 개수를 그대로 쓰면 사용자가 늘수록 따라 늘어나므로, 비율이나 백분율이나 사용자당 평균으로 바꾸는 편이 대개 더 쓸모 있다.
 
+시작한 주문이 첫 주 1,000건에서 매주 300건씩 늘어나는데, 5주째부터 끝난 주문의 비율이 60%에서 주마다 3%p씩 떨어진다고 하자. 끝난 주문의 개수와 비율을 위아래로 그리면 다음과 같다. 개수는 계속 오르기만 해서 문제가 보이지 않고, 비율에서야 드러난다.
+
+<CountVsRateFigure />
+
 목표를 떠올릴 때 쓰는 범주가 HEART다.
 
 | 범주 | 뜻 | 논문의 예 |
@@ -54,7 +68,15 @@ HEART 논문은 Google에서 사용자 경험 지표를 만든 경험을 정리�
 
 좋은 지표가 어떤 모양인지는 논문의 Gmail 사례가 보여 준다. 7일 활성 사용자는 지난 일주일에 한 번이라도 들어온 사용자를 셀 뿐이다. Gmail 팀은 그보다 깊은 참여를 보고 싶었다. 참여하는 사용자라면 메일을 매일 확인할 것이라고 보고, 지난주 5일 이상 들어온 사용자가 활성 사용자 가운데 몇 퍼센트인지를 지표로 골랐다. 이 지표는 장기 리텐션을 잘 예측해서 리텐션의 선행 신호로도 쓸 수 있었다고 한다.
 
+사용자 다섯 명이 지난주에 들어온 날이 다음과 같다고 하자. 다섯 명 모두 7일 활성 사용자로 세지만, 5일 이상 들어온 사람은 두 명뿐이라 Gmail 팀이 고른 지표로는 40%다.
+
+<GmailActiveFigure />
+
 주문 서비스라고 하자. 목표는 주문을 쉽게 끝내게 하는 것이다. 이 경우 성공보다 실패가 찾기 쉽다. 주문을 시작했다가 끝내지 못하고 떠나는 것이 신호다. 지표는 시작한 주문 가운데 끝난 주문의 비율이 된다.
+
+세 단계를 주문 서비스 예로 채우면 다음과 같다.
+
+<GoalSignalMetricFigure />
 
 ### 핵심 지표 하나와 그 밑의 입력 지표
 
@@ -75,6 +97,10 @@ Commoncog의 Cedric Chin도 같은 이야기를 한다. 입력 지표는 효과�
 
 주문 서비스에 대어 보면, 주문 완료 비율이나 주문 수는 출력 지표다. 팀이 움직일 수 있는 입력 지표로는 주문 화면의 응답 시간이나 품절 상품의 비율 같은 것을 후보로 둘 수 있다. 다만 이 후보 가운데 무엇이 실제로 주문을 움직이는지는 지켜보며 가려내야 한다.
 
+출력 지표와 입력 지표 후보를 나무로 그리면 다음과 같다. 후보와 출력 사이는 아직 이어지는지 모르는 관계라서 물음표로 그렸다. 오른쪽의 가드레일 지표는 다음 절에서 본다.
+
+<MetricTreeFigure />
+
 ### 나빠지면 안 되는 지표
 
 핵심 지표와 입력 지표는 올리려는 지표다. 반대로 올리지 않아도 되지만 나빠지면 안 되는 지표도 있다. Airbnb는 이것을 가드레일 지표라고 부른다. Airbnb에서는 매주 수천 개의 실험이 함께 돌고, 팀마다 중요하게 보는 지표가 다르다. 그래서 한 팀의 지표를 올린 변경이 다른 팀의 지표를 떨어뜨리기도 한다. 글이 드는 예로, 결제 화면에서 숙소 규칙을 보여 주지 않으면 예약은 늘지만 평점은 낮아질 수 있다.
@@ -86,6 +112,10 @@ Commoncog의 Cedric Chin도 같은 이야기를 한다. 입력 지표는 효과�
 - <strong>전략 지표</strong> — 회사가 전략으로 밀고 있는 영역을 본다. Airbnb의 예로는 체험 상품의 예약 좌석 수가 있다. 전략이 바뀌면 이 지표도 바뀐다.
 
 가드레일 지표를 많이 둔다고 좋은 것은 아니다. 지킬 지표가 많을수록 잘못된 경보가 늘고, 그만큼 개발이 느려진다. 글은 지표 50개를 두고 유의수준 0.05에서 나빠질 때마다 경보를 내면, 아무것도 바꾸지 않은 두 집단을 비교하는 AA 테스트에서도 92%의 확률로 잘못된 경보가 하나 이상 난다고 계산한다.
+
+지표끼리 서로 독립이라고 가정하면 지표 k개 가운데 하나라도 잘못된 경보를 낼 확률은 1 − 0.95^k다. 같은 식으로 지표 개수에 따라 그리면 다음과 같다.
+
+<GuardrailFalseAlarmFigure />
 
 가드레일에 걸렸다고 바로 막지도 않는다. Airbnb는 실험이 가드레일 지표를 나빠지게 하거나, 그렇지 않다고 말할 만큼 데이터가 모이지 않았으면 출시 전에 관련 팀이 모여 결과를 논의하게 한다. 이렇게 걸리는 실험은 한 달에 25개쯤이다. 그 가운데 80%는 논의와 추가 분석을 거쳐 출시되고, 20%는 출시 전에 멈춘다. 어느 정도 나빠지면 논의에 올릴지는 지표마다 정한다. 글은 논의할 만한 크기와 실제로 잡아낼 수 있는 크기 가운데 큰 쪽으로 정하라고 권한다.
 
@@ -101,11 +131,23 @@ Commoncog의 Cedric Chin도 같은 이야기를 한다. 입력 지표는 효과�
 
 <strong>DB를 바로 읽을 때는 읽기 권한만 준다.</strong> Grafana 문서는 데이터 소스에 쓰는 DB 사용자에게 필요한 스키마와 테이블의 `SELECT` 권한만 주라고 한다. Grafana는 쿼리가 안전한지 검사하지 않아서, 대시보드를 고칠 수 있는 사람이 `DROP TABLE` 같은 위험한 SQL을 실행할 수도 있기 때문이다. 그래서 권한을 좁힌 전용 사용자를 따로 만든다.
 
+지금까지 본 두 경로를 그리면 다음과 같다.
+
+<CounterVsDbFigure />
+
 <strong>카운터의 라벨에 끝없는 값을 넣지 않는다.</strong> 라벨 값의 조합마다 시계열이 하나씩 생긴다. Prometheus 문서는 지표 하나의 카디널리티를 대개 10 아래로 두라고 한다. 지표 대부분은 라벨이 없어야 하고, 100을 넘거나 넘을 수 있으면 다른 방법을 찾아보라고 한다. 문서의 예에서는 노드 1만 대에 사용자 1만 명의 할당량을 라벨로 넣으면 금세 시계열이 수천만 개가 된다. 사용자별, 주문별 숫자는 카운터가 아니라 DB나 로그에서 본다.
+
+`orders_completed_total`에 결제 수단 4가지, 지역 5가지, 사용자 ID 10만 명을 차례로 라벨로 더한다고 하자. 시계열은 4개에서 20개로, 다시 200만 개로 늘어난다. 아래 눈금에는 앞에서 본 Prometheus 문서의 권고를 겹쳤다.
+
+<CardinalityFigure />
 
 <strong>센 행동이 실제로 기록되는지 먼저 확인한다.</strong> HEART 논문은 웹 로그로 만든 지표를 정확하게 유지하기가 어렵다고 적는다. 크롤러나 스팸 같은 자동 트래픽을 걸러 내야 하고, 중요한 사용자 행동이 빠짐없이 기록되는지 확인해야 한다. 논문은 특히 AJAX처럼 페이지를 새로 불러오지 않는 화면은 기본 설정으로는 행동이 기록되지 않을 수 있다고 짚는다.
 
 <strong>지표를 만드는 데이터도 지켜본다.</strong> DB나 데이터 파이프라인에서 읽는 지표는 파이프라인 어딘가가 끊기면 조용히 틀어진다. Uber의 글은 이럴 때 행이나 필드가 빠진 데이터가 들어오고, 기간 사이에 행 수가 갑자기 줄어드는 것이 흔한 신호라고 적는다. Uber는 테이블의 열마다 평균, 최솟값, 최댓값, 빠진 값의 개수 같은 통계를 시계열로 만든다. 그리고 Holt-Winters 모형으로 다음 값을 예측해, 실제 값이 예측 범위를 벗어나면 이상으로 본다. 경보는 지표 하나하나에 걸지 않고 테이블 단위 점수로 묶는다. 테이블 단위 경보는 지표 단위 경보보다 훨씬 드물게 나서 경보 피로가 줄어든다. 다만 글은 테이블 단위 경보에 골라 둔 지표 단위 경보를 함께 쓰라고 권한다.
+
+주문 테이블에 열이 네 개 있고, 열마다 통계 네 개를 시계열로 만든다고 하자. 그 가운데 두 칸이 예측 범위를 벗어났다고 가정하면 흐름은 다음과 같다.
+
+<TableAlertFigure />
 
 ## 어떻게 볼까
 
@@ -149,11 +191,19 @@ sum(rate(orders_completed_total[5m] offset 1w))
 
 예측 방법은 정교할수록 좋은 것만은 아니다. Netflix는 이중 지수 평활(double exponential smoothing)로 정상 범위를 그린다. 이 방법은 SPS가 떨어지는 것은 잘 잡지만, 갑자기 회복될 때는 따라가지 못해 잠깐 잘못된 경보를 낸다. 그래도 조치할 만한 경보를 내는 데 효과적이었다고 한다. 더 정교한 베이즈 방식도 시험했지만 계산이 훨씬 무겁고, 변수가 얽혀 사람이 해석하기 어려웠다. 그래서 많은 지표에 실시간으로 쓰지는 못했다.
 
+이중 지수 평활의 약점을 모양만 그린 개념도로 보면 다음과 같다. 장애가 끝나 값이 갑자기 회복하면, 예상 범위가 늦게 따라오는 동안 잘못된 경보가 난다.
+
+<SmoothingLagFigure />
+
 Netflix는 SPS를 장애의 심각도를 가르는 기준으로도 쓴다. 운영 문제는 SPS에 영향이 있는지 없는지로 나뉘고, 서비스 가용성도 예상 SPS와 실제 SPS를 견줘 잰다. 다양한 사람이 함께 알아들을 수 있는 단순한 지표 하나가 필요해서 SPS를 골랐다고 한다.
 
 ### 떨어진 곳을 차원으로 좁힌다
 
 지표가 떨어진 것을 알았으면 어디서 떨어졌는지 찾아야 한다. LinkedIn은 ThirdEye라는 도구로 가입 수나 페이지 조회 수 같은 사업 지표를 지켜본다. LinkedIn의 글은 이런 지표의 작은 변화가 지역 휴일부터 설정 실수까지 무엇 때문이든 생길 수 있다고 적는다. 그래서 지표를 국가, 기기, 유입 경로 같은 차원으로 쪼개 본다. 2019년 글의 예에서는 히트맵으로 하위 차원을 훑다가 미국에서 온 조회 수가 여러 주의 기준선보다 떨어진 것을 찾는다. 2020년 글에서는 무료 체험 가입 수를 유입 경로, 국가, 기기별로 나눠 지켜보고, 규칙이나 모델로 이상을 찾아 잘못된 경보를 줄였다고 한다.
+
+전체 조회 수가 기준선보다 3% 떨어졌고, 이를 국가와 기기로 쪼갠 칸의 변화율이 다음과 같다고 하자. 칸을 하나하나 보면 미국에서 떨어졌다는 것이 바로 드러난다.
+
+<DimensionHeatmapFigure />
 
 이렇게 차원을 많이 나눠 보려면 라벨 수에 제한이 있는 카운터보다 행동을 하나하나 쌓아 둔 DB나 분석 저장소에서 보는 편이 맞다. 앞에서 본 라벨 규칙과 맞물려 나온 내 판단이다.
 
