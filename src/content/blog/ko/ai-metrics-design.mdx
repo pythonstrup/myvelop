@@ -1,0 +1,424 @@
+---
+title: "AI 지표 설계 - 지연, 비용, 품질, 도입 효과"
+description: "OpenTelemetry 규약, LinkedIn과 Anthropic의 평가 경험, Google과 GitHub의 코딩 도구 지표, FinOps Foundation의 비용 지표, DORA와 METR의 2026년 조사를 읽고 AI 기능과 AI 도입의 효과를 무엇으로 잴지 정리한다."
+pubDate: "2027-01-04T21:00:00+09:00"
+tags: ["ai", "llm", "metrics", "monitoring", "observability", "opentelemetry"]
+series: "모니터링 설계"
+socialImage: "../../../assets/blog/ai-metrics-design/og.png"
+---
+
+import AgentCallsFigure from "@/materials/ai-metrics-design/AgentCallsFigure";
+import AutonomyFigure from "@/materials/ai-metrics-design/AutonomyFigure";
+import AvoidedCostFigure from "@/materials/ai-metrics-design/AvoidedCostFigure";
+import BatchTradeoffFigure from "@/materials/ai-metrics-design/BatchTradeoffFigure";
+import CharShareFigure from "@/materials/ai-metrics-design/CharShareFigure";
+import ConventionFigure from "@/materials/ai-metrics-design/ConventionFigure";
+import CostPerSuccessFigure from "@/materials/ai-metrics-design/CostPerSuccessFigure";
+import Dora2024Figure from "@/materials/ai-metrics-design/Dora2024Figure";
+import EvalLayersFigure from "@/materials/ai-metrics-design/EvalLayersFigure";
+import EvalPathFigure from "@/materials/ai-metrics-design/EvalPathFigure";
+import FunnelFigure from "@/materials/ai-metrics-design/FunnelFigure";
+import JCurveFigure from "@/materials/ai-metrics-design/JCurveFigure";
+import JudgeAgreementFigure from "@/materials/ai-metrics-design/JudgeAgreementFigure";
+import JudgeConfusionFigure from "@/materials/ai-metrics-design/JudgeConfusionFigure";
+import KlarnaTimelineFigure from "@/materials/ai-metrics-design/KlarnaTimelineFigure";
+import MetrGapFigure from "@/materials/ai-metrics-design/MetrGapFigure";
+import OutcomeGradingFigure from "@/materials/ai-metrics-design/OutcomeGradingFigure";
+import PassKFigure from "@/materials/ai-metrics-design/PassKFigure";
+import ReasoningWaitFigure from "@/materials/ai-metrics-design/ReasoningWaitFigure";
+import ResolutionFigure from "@/materials/ai-metrics-design/ResolutionFigure";
+import ShadowExperimentFigure from "@/materials/ai-metrics-design/ShadowExperimentFigure";
+import StreamTimelineFigure from "@/materials/ai-metrics-design/StreamTimelineFigure";
+import ThreeAxesFigure from "@/materials/ai-metrics-design/ThreeAxesFigure";
+import TimeReallocationFigure from "@/materials/ai-metrics-design/TimeReallocationFigure";
+import TokenCounterFigure from "@/materials/ai-metrics-design/TokenCounterFigure";
+
+## 들어가며
+
+[모니터링 설계 글](/ko/blog/monitoring-design/)은 서비스가 제대로 응답하는지, [사업 지표 설계 글](/ko/blog/business-metrics-design/)은 사업이 목표대로 가는지 재는 법을 다뤘다. 하지만 AI 기능은 두 글의 지표만으로는 다 보이지 않는다. 응답이 빠르고 오류가 없어도 답이 틀릴 수 있고, 같은 기능이라도 토큰을 얼마나 쓰느냐에 따라 비용이 달라진다. 게다가 AI를 들인 뒤 일이 실제로 나아졌는가 하는 더 큰 질문이 남는다.
+
+그래서 이 글은 AI 기능에서 잴 것을 네 층으로 나눈다. 빨리 응답하는지, 비용이 얼마나 드는지, 답이 맞는지, 사용자가 받아들이는지다. 여기에 지표를 기능마다 같은 이름으로 내보내는 규약을 더하고, 마지막으로 조직이 AI를 들여 일이 나아졌는지 재는 법을 본다. 흔히 AX라고 부르는 도입 효과다.
+층마다 요점을 먼저 모으면 이렇다. 근거로 삼은 자료는 글 끝의 참고 자료에 모았다.
+
+| 층 | 묻는 것 | 요점 |
+| --- | --- | --- |
+| 시스템 | 빨리 응답하는가 | 첫 토큰까지 시간과 토큰당 시간을 나눠 재고, 처리량과 나란히 본다 |
+| 비용 | 얼마나 드는가 | 토큰을 종류별로 세고, 호출당 비용보다 성공한 결과당 비용을 본다 |
+| 규약 | 기능끼리 견줄 수 있는가 | 같은 이름과 속성으로 내보내고, 호출한 기능과 단가는 직접 붙인다 |
+| 품질 | 답이 맞는가 | 사람이 정한 기준에 판정 모델을 맞추고, 운영 중인 응답은 표본으로 채점한다 |
+| 사용자 가치 | 받아들이고 다시 쓰는가 | 사용 단계를 하나씩 세고, 수락률과 해결률은 분모의 정의를 함께 적는다 |
+| 도입 효과 | 일이 나아졌는가 | 느낌 대신 실제로 잰 시간과 배포 성과로 보고, 아낀 시간은 피한 비용으로 센다 |
+
+## 시스템 — 빨리 응답하는가
+
+### 스트리밍 응답의 시간은 셋으로 나눈다
+
+AI의 응답은 한 번에 오지 않고 토큰 단위로 흘러나온다. 그래서 요청 하나의 시간을 숫자 하나로 재면 사용자가 겪는 느림을 놓친다. OpenTelemetry의 생성형 AI 규약도 모델 서버의 시간을 셋으로 나눈다.
+
+1. <strong>첫 토큰까지 시간</strong> — 요청을 받고 첫 토큰을 만들기까지의 시간이다. 대기열에서 기다린 시간과 프롬프트를 읽는 시간이 여기에 드러나므로 스트리밍 응답에서 특히 중요하다. 규약의 이름은 `gen_ai.server.time_to_first_token`이다.
+2. <strong>토큰당 시간</strong> — 첫 토큰 뒤로 토큰 하나를 만드는 데 걸린 시간이다. 전체 시간에서 첫 토큰까지 시간을 빼고, 그 뒤에 만든 토큰 수로 나눠 구한다. 토큰을 만들어 내는 단계의 성능이 여기에 드러난다.
+3. <strong>전체 요청 시간</strong> — 마지막 토큰까지 걸린 시간이다.
+
+<StreamTimelineFigure />
+
+모델을 부르는 쪽에서도 요청 전체, 첫 조각이 오기까지, 조각 사이의 시간으로 똑같이 나눠 잰다. 그리고 모니터링 설계 글에서 본 것처럼 이 값들은 평균이 아니라 히스토그램으로 모아 백분위로 본다. 초당 요청 수와 초당 토큰 수도 함께 둔다.
+
+### 바빠지면 두 시간이 함께 늘어난다
+
+지연과 처리량은 서로 맞바꾸는 값이라서 한쪽만 보면 안 된다. 모델 서버는 여러 요청을 묶어 한 번에 처리할 수 있다. 그런데 묶은 요청이 적을 때는 계산보다 모델의 가중치를 GPU 메모리에서 읽어 오는 데 시간이 더 든다. 그래서 요청을 묶으면 한 번 읽은 가중치로 여러 요청의 토큰을 만들어, 같은 시간에 나오는 토큰이 크게 늘어난다. 대신 요청 하나하나는 끝나기까지 더 오래 걸린다.
+
+혼자 처리하면 한 단계에 토큰 하나를, 요청 4개를 묶으면 한 단계에 요청마다 하나씩 토큰 4개를 만든다고 하자. 묶은 쪽은 한 단계가 1.5배 길어진다고 가정한다. 그러면 같은 시간에 혼자서는 토큰 6개를, 묶어서는 16개를 만든다. 사용자 한 명이 보는 토큰당 시간은 1.5배로 느려지지만, 서버가 만든 토큰은 약 2.7배로 늘어난다. 첫 토큰도 첫 단계가 끝나야 나오므로 함께 늦어진다.
+
+<BatchTradeoffFigure />
+
+실제로 잰 차이는 더 크다. Databricks가 A100 GPU 한 장으로 잰 예에서는 배치 크기를 64로 잡자 지연은 4배, 처리량은 14배가 됐다. 다만 배치가 더 커져 계산이 병목이 되면, 배치를 늘려도 처리량은 그대로이고 지연만 늘어난다. LinkedIn도 사용률이 오르자 두 시간이 함께 늘었고, 두 시간을 조금 양보해 초당 처리하는 토큰을 두세 배로 늘렸다.
+
+그래서 지연 패널 옆에는 처리량을 둔다. 내가 보기에 지연이 늘 때 처리량도 함께 늘었다면 요청이 더 많이 묶이고 있다는 신호다. 반대로 처리량은 그대로인데 지연만 늘었다면 서버가 한계에 닿았을 가능성이 크다.
+
+추론 토큰은 이 기다림을 키운다. 모델이 답하기 전에 생각하는 토큰은 품질을 높이지만 사용자에게는 보이지 않아서, 사용자는 그동안 기다리기만 한다. LinkedIn이 든 예로는 추론 토큰이 200개일 때 토큰당 시간이 10ms만 늘어도 사용자는 2초를 더 기다린다. LinkedIn은 실제로 출시를 넓히던 중에 이 때문에 시간 초과 경보가 나 용량을 늘려야 했다. 그림에서 추론 토큰이 나오는 동안 사용자 화면은 비어 있다.
+
+<ReasoningWaitFigure />
+
+### 에이전트는 한 번에 여러 번 부른다
+
+에이전트가 느리거나 비쌀 때는 모델과 도구를 부른 횟수부터 본다. 모델 호출 한 번이 빨라도 부르는 횟수가 늘면 전체가 느려지고, 토큰도 그만큼 더 쓰기 때문이다. 규약도 에이전트를 한 번 부른 시간 `gen_ai.invoke_agent.duration`과 함께, 그동안 모델과 도구를 부른 횟수를 히스토그램으로 잰다.
+
+에이전트가 요청 하나를 처리하며 모델을 세 번, 도구를 두 번 불렀다고 하자. 호출이 차례로 이어지므로 하나만 늦어져도 실행 전체가 늦어진다.
+
+<AgentCallsFigure />
+
+## 비용 — 토큰이 곧 돈이다
+
+LLM은 토큰을 하나씩 만들어 내고 요금도 토큰으로 매기므로, 비용은 토큰 수로 잰다. Microsoft는 입력과 출력을 더한 전체 토큰 수를 주된 사용률 지표로 두고, 다음 셋을 따로 세라고 한다.
+
+- <strong>과부하 응답</strong> — 모델이나 서비스가 과부하일 때 오는 429 응답의 수다. 가장 바쁜 때를 잡으려고 90번째나 95번째 백분위를 본다.
+- <strong>잘린 응답</strong> — `finish_reason`이 `length`로 온 응답이다. 최대 토큰 수에 닿아 답이 중간에 잘렸을 가능성이 크다.
+- <strong>버려진 토큰</strong> — 오류가 났거나, 잘렸거나, 사용자에게 쓸모없던 응답에 쓴 출력 토큰이다. 돈은 냈지만 가치가 없으니 줄여야 한다.
+
+토큰은 종류별로 나눠 센다. OpenTelemetry 규약은 입력 토큰과 출력 토큰을 각각 카운터로 세고, 그 가운데 캐시에서 읽은 입력, 캐시에 쓴 입력, 추론에 쓴 출력을 따로 센다. 이 셋은 입력과 출력의 일부이므로 전체 토큰은 입력과 출력만 더해 구한다. 그림에서 안쪽 칸은 바깥 칸에 포함된다.
+
+<TokenCounterFigure />
+
+이 카운터는 비용을 어림하는 주된 수단이다. 그래서 실패한 요청의 토큰도 세고, 과금되는 토큰을 따로 알려 주는 시스템이라면 과금되는 쪽을 센다. 요청마다 토큰 수를 보는 히스토그램도 있지만, 이것으로는 합계나 비용을 내지 않고 p95나 p99 같은 백분위와 튀는 값만 본다.
+
+캐시 적중률은 분모부터 맞춘다. 제공자마다 입력 토큰의 뜻이 다르기 때문이다. 규약의 입력 토큰 카운터와 OpenAI 문서는 캐시에서 읽은 토큰까지 입력에 넣는다. 반면 Anthropic API의 `input_tokens`는 마지막 캐시 지점 뒤의 토큰, 앞의 그림으로 보면 캐시를 안 거친 입력 칸만 센다. 그래서 Anthropic 쪽은 캐시에서 읽은 토큰, 캐시에 쓴 토큰, `input_tokens`를 모두 더해야 전체 입력이 된다. `input_tokens`를 그대로 분모에 쓰면 Anthropic 쪽 적중률만 실제보다 크게 나온다.
+
+비용은 호출당 비용보다 성공한 결과당 비용으로 본다. 토큰이 싼 모델이라도 실패가 잦으면 결국 더 비싸기 때문이다. FinOps Foundation은 이 값을 모든 실행에 든 비용을 품질 기준을 넘은 실행 수로 나눠 구한다. 그리고 맞는 모델이란 품질 기준을 넘는 모델 가운데 가장 싼 것이라고 본다. 실행마다 비용 차이가 크니 이 값은 분포로 그린다.
+
+모델 A는 실행 한 번에 10원이 들고 100번 가운데 50번 성공하고, 모델 B는 15원이 들고 95번 성공한다고 하자. 한 번 실행하는 값은 A가 싸지만, 성공한 결과당 비용은 A가 20원, B가 약 15.8원으로 B가 싸다.
+
+<CostPerSuccessFigure />
+
+대시보드에는 토큰 수에 모델별 단가를 곱해 돈으로 보여 주면 읽기 쉽다. 다만 사업 지표 설계 글에서 본 것처럼, 정산같이 정확해야 하는 숫자는 카운터가 아니라 청구서로 확인한다.
+
+## 규약 — 기능마다 같은 이름으로 잰다
+
+AI 기능이 여럿이라면 지표를 같은 이름과 속성으로 내보내야 한 패널에서 견줄 수 있다. 모니터링 설계 글의 [지표 이름 짓기](/ko/blog/monitoring-design/#지표-이름-짓기)에서 본 것과 같은 이유다. OpenTelemetry 규약은 지표 이름과 함께 붙일 속성까지 정해 두었으니 이것을 따르면 된다.
+
+### 같은 이름에 같은 속성을 붙인다
+
+규약은 모델 호출의 지연 히스토그램과 토큰 카운터에 같은 속성을 붙이고, 요구 수준을 셋으로 나눈다. 반드시 붙이는 것, 조건이 맞으면 반드시 붙이는 것, 붙이기를 권하는 것이다.
+
+| 속성 | 요구 수준 | 뜻 |
+| --- | --- | --- |
+| `gen_ai.operation.name` | 반드시 | `chat`이나 `generate_content` 같은 작업 종류 |
+| `gen_ai.provider.name` | 반드시 | `openai`나 `gcp.vertex_ai` 같은 모델 제공자 |
+| `gen_ai.request.model` | 알 수 있으면 반드시 | 요청한 모델의 이름 |
+| `gen_ai.response.model` | 권장 | 응답을 만든 모델의 이름 |
+| `error.type` | 오류가 났으면 반드시 | 오류의 종류 |
+| `gen_ai.token.modality` | 토큰 카운터에는 반드시 | 텍스트, 이미지, 소리 같은 토큰의 형태 |
+
+모델 이름은 둘이라서 대시보드에서 어느 쪽으로 묶을지 정해 둔다. 요청한 모델에는 요청할 때 쓴 이름을, 응답한 모델에는 실제로 응답을 만든 모델의 이름을 적는다. 그래서 규약의 예처럼 `gpt-4`를 요청했는데 `gpt-4-0613`이 응답하면, 같은 호출이 두 이름으로 보인다.
+
+요약, 검색, 상담 세 기능이 같은 이름과 속성으로 지표를 내보낸다고 하자. 그러면 기능이 몇 개든 패널 하나에서 모델별 지연과 토큰을 견주고, 단가를 곱해 비용도 한 번에 낼 수 있다. 다만 호출한 기능은 규약에 없어서 직접 붙여야 한다.
+
+<ConventionFigure />
+
+### 이름은 아직 바뀌는 중이다
+
+규약의 생성형 AI 부분은 아직 개발 단계라서 이름이 바뀐다. 예를 들어 토큰 수는 원래 `gen_ai.client.token.usage` 히스토그램 하나에 토큰 종류를 속성으로 붙여 쟀지만, 지금은 방향과 종류마다 따로 잰다. 그러니 이름을 굳히기보다 뜻을 규약에 맞춰 두고, 이름이 바뀌면 따라간다.
+
+### 규약이 채워 주지 않는 것
+
+규약만으로는 비는 곳이 있어서 다음은 직접 채워야 한다.
+
+- <strong>어느 기능이 불렀는지</strong> — 모델 호출의 지표에는 호출한 기능을 나타내는 속성이 없다. 에이전트 이름 `gen_ai.agent.name`은 에이전트와 도구 실행의 지표에만 붙고, 서비스 이름으로는 한 서비스 안의 여러 기능을 가를 수 없다. 그래서 기능별 비용을 보려면 속성을 직접 정해 붙인다.
+- <strong>돈</strong> — 규약은 토큰 카운터를 비용을 어림하는 대리 지표로 쓰라고 할 뿐, 돈으로 잰 지표는 없다. 게다가 단가는 모델과 토큰 종류마다 다르고, Anthropic처럼 캐시 쓰기를 5분 보존과 1시간 보존으로 나눠 값을 달리 매기기도 한다. 그러니 단가표는 직접 들고 있어야 한다.
+- <strong>제공자가 알려 주지 않는 구분</strong> — 대부분의 제공자는 캐시 여부와 토큰의 형태를 함께 나눠 알려 주지 않는다. 그래서 캐시에서 읽은 토큰이 텍스트인지 이미지인지 모르면 그 형태는 `unknown`으로 남는다. 프록시나 호스팅 플랫폼을 거치면 제공자 이름도 실제와 다를 수 있다.
+- <strong>품질의 기준</strong> — 규약은 평가 결과를 `gen_ai.evaluation.result` 이벤트로 남기는 모양만 정하고, 평가 이름과 점수의 뜻은 정하지 않는다. 그래서 같은 점수 1이 어떤 평가에서는 관련 있음을, 다른 평가에서는 관련 없음을 뜻할 수 있다. 기능끼리 품질을 견주려면 평가 이름과 점수 범위를 직접 맞춘다.
+- <strong>사용자 가치</strong> — 사용자가 응답을 받아들였는지, 다시 돌아왔는지는 규약에 없다.
+
+품질과 사용자 가치는 다음 장부터 본다.
+
+## 품질 — 빨리 왔지만 틀린 답
+
+SRE 책은 모든 시스템이 신경 써야 할 것으로 정확성, 곧 맞는 답을 돌려줬느냐를 꼽는다. 보통의 API에서는 오류율이 이 질문을 어느 정도 대신하지만 AI 기능에서는 그렇지 않다. 성공 응답이 빨리 와도 답이 틀릴 수 있기 때문이다. 그래서 품질은 따로 채점하고, 그 채점을 믿을 수 있는지도 함께 잰다.
+
+### 사람이 기준을 정하고 채점한다
+
+채점은 기준을 정하는 데서 시작한다. LinkedIn도 품질 평가에서 처음 부딪힌 문제가 이것이었다. 직무 적합도를 평가해 주는 기능이라면 답이 사실에 맞으면서도 말투에 공감이 담겨야 했고, 누가 채점하든 점수가 고르게 나오려면 이 기준이 일관돼야 했다.
+
+그래서 LinkedIn의 언어 전문가 팀은 하루 최대 500개의 대화를 평가하는 도구와 절차를 만들었다. 전체 품질 점수, 환각 비율, 책임 있는 AI 원칙 위반, 일관성, 문체를 채점했고, 이 점수가 추세를 보고 프롬프트를 고치고 출시를 정하는 주된 신호가 됐다.
+
+평가는 빠른 것부터 세 겹이었다. 엔지니어가 빠르고 러프하게 방향을 보고, 채점자가 하루쯤 걸려 자세히 평가하고, 마지막 판단은 실제 사용자가 내렸다. 사용자 반응까지 보면 변경 하나에 사흘 넘게 걸리기도 했다. 그림에서 오른쪽으로 갈수록 느리지만 실제에 가깝다. LinkedIn은 같은 항목을 모델로 자동 채점하는 일을 "성배"라고 부르며 아직 진행 중이라고 적었다.
+
+<EvalLayersFigure />
+
+### 판정 모델은 사람과 맞춰 본다
+
+판정 모델의 점수는 사람과 얼마나 일치하는지 함께 볼 때만 믿을 수 있다. 판정 모델은 사람만큼 맞히기도 하지만 편향도 있기 때문이다. Zheng 등의 2023년 연구에서 GPT-4의 판정은 사람과 80% 넘게 일치해 사람끼리 일치하는 수준과 같았다. 하지만 두 답의 순서를 바꾸면 판정이 바뀌기도 했고, 내용 없이 길게 늘인 답에 속기도 했다.
+
+보정하면 일치도를 사람 가까이 올릴 수 있다. LinkedIn이 2026년에 낸 SAGE 논문에서 검색 결과의 관련도를 채점한 판정 모델은, 사람과의 일치도가 가중 카파로 처음 0.67에서 보정 뒤 0.77이 됐다. 사람끼리의 일치도는 0.83이었고, 논문은 이것을 이 일의 실질적인 상한으로 본다. 작은 모델로 증류한 뒤에도 0.72\~0.73을 지켜 하루 수천만 건을 채점할 수 있었다.
+
+<JudgeAgreementFigure />
+
+같은 논문은 채점 기준을 버전으로 관리하라고도 한다. 기준의 정의가 바뀌면 시스템이 그대로여도 지표가 움직이기 때문이다.
+
+일치도를 재려면 사람이 붙인 라벨이 있어야 한다. Hamel Husain과 Shreya Shankar의 평가 안내서는 다음 순서를 권한다.
+
+1. <strong>오류 분석부터 한다</strong> — 실제 트레이스를 적어도 100개 읽으며 새 실패 유형이 더 나오지 않을 때까지 본다. 무엇을 평가할지는 여기서 정한다.
+2. <strong>합격과 불합격으로 판정한다</strong> — 1\~5점 같은 척도에서는 채점하는 사람마다 이웃한 점수의 차이를 다르게 봐서 라벨이 흔들린다.
+3. <strong>판정 모델을 사람 라벨로 시험한다</strong> — 실제 실패 가운데 판정 모델이 잡아낸 비율인 TPR과, 좋은 출력 가운데 통과시킨 비율인 TNR을 잰다. 라벨은 학습, 개발, 시험 세트로 나눠, 판정 프롬프트가 이미 본 예에만 잘 맞는 것은 아닌지 확인한다.
+
+사람이 라벨을 붙인 출력 100개 가운데 실제 실패가 20개라고 하자. 판정 모델이 그중 18개를 잡고 좋은 출력 80개 가운데 72개를 통과시켰다면, TPR과 TNR은 둘 다 90%다.
+
+<JudgeConfusionFigure />
+
+기준도 처음부터 정해지지는 않는다. Shankar 등은 출력을 채점하려면 기준이 필요하지만 그 기준은 출력을 채점하면서 정해진다고 보고, 이것을 기준 표류라고 불렀다. 그러니 대시보드에 품질 점수를 올릴 때는 판정 모델과 사람의 일치도를 함께 둔다.
+
+### 에이전트는 여러 번 돌려 본다
+
+에이전트는 같은 일을 맡겨도 할 때마다 결과가 다를 수 있어서, 한 번 돌린 성공률로는 부족하다. 그래서 τ-bench 논문과 Anthropic의 에이전트 평가 글은 두 지표를 나눈다.
+
+- <strong>pass@k</strong> — k번 시도해 한 번이라도 성공할 확률이다. 한 번만 맞히면 되는 일에 어울린다.
+- <strong>pass^k</strong> — k번 모두 성공할 확률이다. 고객을 상대하는 에이전트처럼 매번 맞아야 하는 일에 어울린다.
+
+매번 맞아야 하는 일이라면 pass^k가 훨씬 낮게 나온다. 한 번에 성공할 확률이 75%여도 세 번 모두 성공할 확률은 0.75³, 약 42%이기 때문이다. 실제로 τ-bench에서는 당시 최신 모델로 만든 에이전트도 소매 상담 과제의 pass^8이 25%에 못 미쳤다.
+
+시도마다 성공할 확률이 75%이고 시도끼리 서로 영향을 주지 않는다고 하자. k가 커질수록 pass@k는 100%에 다가가고 pass^k는 떨어진다.
+
+<PassKFigure />
+
+채점은 에이전트의 말이 아니라 일이 끝난 뒤의 상태로 한다. 항공권 예약 에이전트라면 예약했다고 말했는지가 아니라 DB에 예약이 생겼는지를 본다. Anthropic은 정해진 단계를 순서대로 밟았는지 보는 채점은 지나치게 깨지기 쉽다고 경고하고, τ-bench도 대화가 끝난 뒤의 DB 상태를 정답과 견줘 성공을 판정한다.
+
+에이전트가 예약을 마쳤다고 말했지만 DB에는 예약이 생기지 않았다고 하자. 같은 실행이라도 말로 채점하면 합격, 상태로 채점하면 불합격이다.
+
+<OutcomeGradingFigure />
+
+### 안전 장치에 걸린 비율
+
+책임 있는 AI 지표로는 콘텐츠 필터에 걸린 비율을 센다. Microsoft는 필터가 프롬프트를 거절해 400 응답이 온 비율과, 응답이 필터에 걸려 `finish_reason`이 `content_filter`로 온 비율을 나눠 센다.
+
+### 오프라인 평가만으로는 모른다
+
+오프라인 평가로는 사용자 경험이 나아졌는지 알 수 없어서, 실제 트래픽에서 실험으로 확인한다. Microsoft는 오프라인 평가가 개발 초기에는 알맞지만, 모델을 바꿨을 때 사용자 경험이 나아지는지는 알려 주지 못한다고 한다. Google도 오프라인 지표는 사용자 가치를 대충만 보여 주므로 온라인 A/B 실험을 빠르게 돌리는 것이 핵심이라고 본다.
+
+Microsoft는 그림자 실험도 소개한다. 같은 요청에 기존 응답과 새 응답을 모두 만들고 기존 응답만 보여 주는 방식이다. 그래서 같은 요청끼리 짝지어 비교할 수 있지만, 사용자가 새 응답을 보지 못하므로 사용자 반응은 잴 수 없다.
+
+<ShadowExperimentFigure />
+
+### 운영 중인 응답도 표본으로 채점한다
+
+운영 중인 응답은 표본을 뽑아, 응답이 나간 뒤에 따로 채점한다. 앞의 평가 안내서도 운영 트레이스를 표본으로 뽑아 평가기를 비동기로 돌리라고 한다. 운영 데이터에는 정답이 없으므로 판정 모델처럼 정답 없이 채점하는 평가기를 주로 쓴다.
+
+이때 평가기와 가드레일을 구분한다. 가드레일은 사용자가 응답을 보기 전에 응답 경로에서 막거나 고친다. 반면 평가기는 응답이 나간 뒤에 채점할 뿐 응답을 막지 않고, 그 결과는 대시보드와 회귀 시험으로 간다.
+
+<EvalPathFigure />
+
+## 사용자 가치 — 쓰고, 받아들이고, 남기는가
+
+### 사용 단계를 하나씩 센다
+
+사용자 가치는 기능이 불린 뒤 결과가 남기까지를 단계별로 세어 본다. Microsoft는 기능이 불린 횟수, 프롬프트 수, 응답 수, 사용자가 본 응답 수, 받아들인 응답 수, 결국 남은 내용을 차례로 센다. 그러면 어느 단계에서 사용자가 빠지는지 보인다. Google도 도움을 받을 기회가 실제로 적용된 도움으로 바뀌는 비율을 높이려고, 그 사이의 병목을 없애는 쪽으로 기능을 다듬는다.
+
+<FunnelFigure />
+
+응답의 질을 짐작할 신호도 함께 센다. Microsoft는 메시지 길이, 머문 시간, 좋아요와 싫어요, 이어진 프롬프트 사이의 편집 거리를 본다. 이 가운데 편집 거리는 사용자가 프롬프트를 얼마나 고쳐 쓰는지 잰다. 자꾸 고쳐 쓴다면 처음 답이 원하던 것이 아니었다는 뜻이다. 이때 제품이 덧붙인 프롬프트는 빼고 사용자가 쓴 부분만 비교한다.
+
+### 수락률
+
+수락률은 여러 회사가 함께 쓰지만 분모의 정의가 저마다 달라서, 정의를 함께 적어야 한다. 예를 들어 Google의 2026년 논문은 받아들인 제안을, 받아들인 제안과 거절한 제안의 합으로 나눈다. 이때 거절로는 사용자에게 750ms 넘게 보인 제안만 세므로 잠깐 스쳐 간 제안은 빠진다.
+
+AI가 쓴 코드 문자의 비율은 분모에 따라 두 배 넘게 달라진다. Google은 받아들인 AI 문자를, 직접 친 문자와 받아들인 AI 문자의 합으로 나눈다. 그런데 같은 2025년 3월의 값이 붙여넣은 문자를 분모에 넣으면 28.7%, 빼면 70.6%였다. 그림의 칸 길이는 두 비율에서 거꾸로 계산했다.
+
+<CharShareFigure />
+
+수락률은 러프한 품질 신호로 쓰되 그것만 보지는 않는다. GitHub의 연구진이 Copilot 사용자의 설문을 사용 기록과 맞춰 보니, 받아들인 코드가 나중까지 남는지 같은 자세한 지표보다 수락률이 개발자가 느끼는 생산성을 가장 잘 예측했다. 하지만 설명되지 않는 부분이 여전히 컸고, 수락률은 개발자와 시기에 따라 크게 달랐다. 그래서 연구진도 다른 지표를 더하면 예측이 나아진다고 적었다. GitHub 문서 역시 수락률이 높다고 코드 품질이나 개발자 만족도가 확인되는 것은 아니라고 한다.
+
+### 에이전트에 맡긴 일은 따로 센다
+
+에이전트가 코드를 고치고 PR까지 만들면 줄 단위 수락률로는 그 일을 잴 수 없다. GitHub Copilot의 사용 지표를 보면, 제안한 줄 수에는 에이전트의 편집이 들어가지 않지만 에디터에 실제로 더해진 줄 수에는 들어가기 때문이다. 그래서 에이전트가 만든 PR은 하루에 머지된 수와, 만든 뒤 머지되기까지 걸린 시간의 중앙값으로 따로 센다.
+
+사람이 에이전트에게 얼마나 맡기는지도 잰다. Anthropic은 에이전트가 일을 시작해 멈출 때까지 걸린 시간, 모든 실행을 자동 승인한 세션의 비율, 사람이 중간에 끼어든 비율, 에이전트가 스스로 멈춰 되물은 횟수를 본다.
+
+이 가운데 자동 승인과 끼어들기는 함께 봐야 뜻이 드러난다. 모두 자동 승인한 세션은 처음 쓰는 사용자가 약 20%였고 750세션쯤 쓴 사용자는 40%를 넘었다. 그런데 사람이 끼어든 턴의 비율도 세션을 10번쯤 쓴 사용자는 5%, 숙련된 사용자는 9% 정도로 숙련된 쪽이 높았다. Anthropic은 이것을 감독을 그만둔 것이 아니라 감독하는 방식이 바뀐 것으로 본다. 하나하나 승인하는 대신 맡겨 두고, 일이 잘못되거나 방향을 바꿔야 할 때 끼어든다는 것이다. 그림의 두 비율은 비교하는 사용자가 서로 다르다.
+
+<AutonomyFigure />
+
+### 혼자 끝낸 일은 해결률로 센다
+
+상담처럼 AI가 사용자를 직접 상대해 한 건을 혼자 끝내는 일은 세 비율로 나눠 센다. Intercom이 고객 상담 AI 에이전트 Fin에 쓰는 방식이다.
+
+- <strong>관여율</strong> — 새 대화 가운데 Fin이 답하려고 나선 대화의 비율이다.
+- <strong>해결률</strong> — Fin이 나선 대화 가운데 해결된 대화의 비율이다.
+- <strong>자동화율</strong> — 전체 대화 가운데 Fin이 끝까지 해결한 대화의 비율이다. 관여율에 해결률을 곱한 값과 같다.
+
+여기에 Fin이 나선 대화가 사람 상담원에게 넘어간 비율도 따로 센다.
+
+해결은 사용자의 반응으로 판정한다. 사용자가 "고마워요"처럼 긍정하는 답을 남기면 확인된 해결이다. 사람 상담원을 찾지도, "답이 안 됐어요" 같은 부정하는 답을 남기지도 않았으면 추정된 해결이다. 해결률은 둘을 모두 센다. 그런데 추정된 해결에는 답을 얻지 못한 채 그냥 떠난 사용자도 섞일 수 있다. 그래서 같은 문의로 다시 연락한 비율을 가드레일로 함께 두는 편이 낫다.
+
+새 대화 100건 가운데 Fin이 80건에 나서 60건을 해결하고 15건을 사람 상담원에게 넘겼다고 하자. 해결한 60건은 확인된 해결 20건과 추정된 해결 40건이라고 가정한다. 그러면 관여율은 80%, 해결률은 75%이고 자동화율은 둘을 곱한 60%다.
+
+<ResolutionFigure />
+
+분모의 정의가 바뀌면 같은 성과도 다른 숫자가 된다. Intercom은 2026년 8월, Fin이 나섰지만 답할 기회가 없던 대화를 관여한 대화에서 뺐다. 이 대화들이 분모에서 빠지므로 해결률은 오르고 관여율은 내려가지만, 자동화율은 바뀌지 않는다. 그러니 해결률을 대시보드에 올릴 때는 분모를 언제 어떻게 정했는지 함께 적는다.
+
+### 새 기능에 사람이 남는가
+
+처음에는 많이 쓰다가 곧 쓰지 않게 되는 새로움 효과를 가려내려면 유지율을 본다. Microsoft는 대화 길이, 하루에 AI 기능을 쓴 사용자 수, 처음 AI 기능을 써 본 사용자가 다시 돌아오는 비율로 이것을 잰다.
+
+다만 최종 기준은 AI 기능의 사용량이 아니라 제품 전체의 효용이다. Microsoft는 제품 전체의 효용 지표를 최종 평가 기준으로 두고, AI 기능의 사용량은 따로 재서 그 기능이 효용에 미친 영향을 가려낸다. 사업 지표 설계 글로 말하면 제품 전체의 효용이 출력 지표이고, AI 기능의 사용량은 입력 지표다.
+
+## 도입 효과 — AI를 들여 일이 나아졌는가
+
+지금까지는 기능 하나를 쟀다. 하지만 조직이 AI를 들여 일이 나아졌는지는 다른 질문이고, 그 목표는 일이 더 빠르고 정확해지는 것이다. 따라서 AI를 쓰는 사람 수나 호출 수는 이 목표의 입력 지표일 뿐, 그 자체가 성과는 아니다.
+
+### 느끼는 생산성과 실제 생산성은 다를 수 있다
+
+생산성은 느낌을 묻지 말고 실제로 걸린 시간으로 잰다. 느낌은 실제와 반대로 갈 수도 있기 때문이다. METR은 2025년 초에 숙련된 오픈 소스 개발자 16명에게 실제 이슈 246개를 맡기고, 이슈마다 AI를 쓸 수 있는지를 무작위로 정했다. 그 결과 AI를 쓸 수 있을 때 시간이 19% 더 걸렸다. 그런데도 개발자들은 시작 전에 24% 빨라질 것이라고 예상했고, 끝난 뒤에도 20% 빨라졌다고 믿었다.
+
+<MetrGapFigure />
+
+다만 이 결과를 넓게 일반화할 수는 없다. 2025년 초의 AI를 한 환경에서 적은 사람으로 잰 결과이기 때문이다. 게다가 시간을 제대로 재는 일 자체가 어렵다. METR의 후속 실험에서는 AI 없이는 일하지 않겠다며 참여하지 않은 개발자가 크게 늘었고, 여러 에이전트를 동시에 돌리는 개발자는 작업 시간을 재기도 어려웠다. 그래서 METR은 실험 설계를 바꾸고 있다. 한편 METR의 2026년 설문에서 기술직 응답자가 답한 속도 향상의 중앙값은 3배였다. 하지만 METR도 설문 결과가 반드시 실제에 근거하지는 않는다고 적었다.
+
+### 아낀 시간과 아낀 인건비
+
+아낀 시간에 시급을 곱하면 인건비가 나온다. 하지만 그 숫자만 좇으면 품질을 놓칠 수 있다. Klarna가 그 예다. Klarna는 2024년 2월, AI 상담원이 첫 달에 상담 채팅의 3분의 2를 처리했고 정규직 상담원 700명분의 일이라고 발표했다. 그런데 2025년 5월에는 CEO가 비용을 지나치게 앞세워 품질이 낮아졌다고 인정했고, 사람 상담원을 다시 뽑기 시작했다. 그리고 2026년 2월의 실적 자료는 AI 상담 건수 대신 직원 1인당 매출을 앞세운다. 내가 읽기로는 AI의 성과를 말하는 단위가 상담 건수에서 회사 전체의 효율로 옮겨 갔다.
+
+<KlarnaTimelineFigure />
+
+아낀 시간을 재는 방법은 크게 넷이다. 그런데 방법마다 숫자가 크게 다르다.
+
+- <strong>실험으로 직접 잰다</strong> — Noy와 Zhang의 글쓰기 실험에서는 걸린 시간이 40% 줄었다. Brynjolfsson 등이 상담원들에게 AI 도우미를 차례로 도입한 연구에서는 시간당 해결 건수가 15% 늘었다. 개발자를 대상으로 한 Cui 등과 Google의 실험에서도 효과는 20%대였지만 둘 다 오차가 컸다. 그리고 대체로 경험이 적은 사람일수록 효과가 컸다. 가장 숙련된 상담원은 오히려 품질이 조금 떨어지기도 했다.
+- <strong>설문으로 묻는다</strong> — Humlum과 Vestergaard가 덴마크에서 2만 5천 명을 조사하니, 사용자는 AI를 쓴 날 평균 25분을 아꼈다고 답했다. 하지만 쓰는 빈도를 반영해 전체 근무시간으로 바꾸면 아낀 시간은 2.8%였다.
+- <strong>모델이 추정한다</strong> — Anthropic은 Claude 대화 10만 건마다 AI 없이 걸렸을 시간과 실제로 걸린 시간을 Claude에게 추정하게 했고, 걸린 시간이 약 80% 줄었다고 봤다. 하지만 이 추정은 실제 작업 시간으로 검증하지 못했고, 대화 밖에서 결과를 검토하고 고친 시간도 빠져 있다.
+- <strong>건수에 기준 시간을 곱한다</strong> — Microsoft의 Copilot 영향 보고서는 Copilot으로 한 행동의 수에 자사 연구에서 얻은 배수를 곱해 아낀 시간을 어림하고, 여기에 시급을 곱해 금액을 낸다. 기본 시급은 미국 노동통계국 추정에 근거한 72달러이고 조직마다 바꿀 수 있다. Microsoft도 이 값을 대략의 추정으로 보라고 한다.
+
+실험과 현장의 숫자가 이렇게 다른 까닭은 조건에 있다. Humlum과 Vestergaard에 따르면 실험에서 흔히 15%를 넘던 효과가 현장에서는 2.8%에 그쳤다. 실험은 효과가 큰 직업에 몰려 있고, 현장의 많은 사람은 실험만큼 좋은 조건에서 일하지 않기 때문이다. 실제로 회사가 사용을 장려하는 곳에서는 이득이 10\~40% 컸다.
+
+도입 전후를 비교할 때는 AI 말고도 지표를 움직이는 요인을 걸러 내야 한다. Microsoft의 보고서는 직원마다 처음 쓴 날을 기준으로 앞뒤 4주를 비교하고, 쓰는 사람과 쓰지 않는 사람도 비교한다. 그러면서도 그 차이를 Copilot 혼자 만든 것은 아닐 것이라고 적는다. 도입 정도, 계절, 직무의 차이도 지표를 움직이기 때문이다. 내가 보기에 AI의 몫을 가려내려면 Brynjolfsson 등의 연구처럼 도입 시점을 사람마다 엇갈리게 하는 편이 낫다. 그러면 아직 쓰지 않는 사람이 같은 시기의 비교 대상이 된다.
+
+게다가 아낀 시간이 곧바로 인건비를 줄이지도 않는다. Humlum과 Vestergaard의 2026년 개정판에서 사용자의 85%는 아낀 시간을 다른 업무에 썼고, 휴식에 쓴 사람은 10%가 안 됐다. 약 30%는 시간을 아낀 바로 그 일에 시간을 더 들였다. 그리고 ChatGPT가 나오고 2년이 지나도록 임금과 기록된 근무시간에는 효과가 나타나지 않았다. 그림의 세 항목은 겹칠 수 있어서 합이 100%를 넘는다.
+
+<TimeReallocationFigure />
+
+### 아낀 시간은 피한 비용으로 센다
+
+그래서 아낀 시간은 인건비 절감이 아니라 피한 비용으로 센다. DORA가 2026년 「ROI of AI-assisted Software Development」 보고서에서 쓰는 방식이다. 아낀 시간으로 새 일을 하면 그 일을 하려고 사람을 더 뽑지 않아도 되니, 그만큼을 피한 비용으로 본다. 식은 인원 × 1인당 총인건비 × 1인당 순절약시간이다. 여기서 순절약시간은 아낀 시간에서 AI 때문에 늘어난 불안정을 수습한 시간을 뺀 값이다.
+
+한 사람이 주에 4시간을 아끼고, 늘어난 불안정을 수습하는 데 1시간을 쓴다고 하자. 그러면 식에 들어가는 순절약시간은 주 3시간이다.
+
+<AvoidedCostFigure />
+
+보고서는 감원 전략을 쓰지 말라고도 강하게 권한다. 감원이 사기와 조직 문화를 해치고, 일하는 방식을 고칠 동기를 꺾을 수 있기 때문이다.
+
+도입 초기의 하락도 셈에 넣는다. DORA는 대부분의 조직이 도입 초기에 생산성이 잠시 떨어지고 불안정해지는 J커브를 겪을 것으로 본다. 원인 하나는 검증 부담이다. 코드가 빨리 많이 나오면 리뷰와 자동 시험에 드는 시간이 늘어난다. 그래서 변경 리드타임과 변경 실패율 같은 DORA 지표로 J커브를 지나고 있는지 지켜본다. 아래 그림은 숫자 없이 모양만 그렸다.
+
+<JCurveFigure />
+
+정리하면 아낀 시간은 "AI가 대신한 일의 양"이라고 부르는 편이 정확하다. 이것을 돈으로 말하려면 다음 셋을 함께 보인다.
+
+1. 처리 건수에 업무별 기준 시간을 곱해 어림한다면, 기준 시간을 가끔 실제로 재서 맞춘다. 사람의 느낌도 모델의 추정도 실제와 다를 수 있기 때문이다.
+2. AI의 결과를 검토하고 고친 시간과, 늘어난 불안정을 수습한 시간을 뺀다.
+3. 아낀 시간이 어디로 갔는지 잰다. 같은 인원이 처리한 양이 늘었는지, 초과근무나 외주가 줄었는지 보고, 품질 지표를 가드레일로 둔다.
+
+### 빨라져도 불안정해질 수 있다
+
+배포 안정성은 AI 도입의 가드레일 지표로 둔다. 처리량이 올라도 변경 실패가 늘면 얻은 것을 잃기 때문이다. DORA의 2024년 조사에서는 AI 도입이 늘 때 문서 품질, 코드 품질, 코드 리뷰 속도는 좋아졌지만 배포 처리량과 배포 안정성은 떨어지는 것으로 추정됐다. 그래서 DORA는 개발 과정이 나아진다고 배포가 저절로 나아지지는 않으며, 작은 배치와 탄탄한 테스트 같은 기본을 지켜야 한다고 해석한다. 그림에서 개발 과정의 지표는 오르고 배포의 지표는 내려간다.
+
+<Dora2024Figure />
+
+2025년 조사에서는 AI 도입이 늘 때 배포 처리량과 제품 성과가 함께 올랐다. 하지만 배포 안정성은 여전히 반대로 움직였다. DORA는 이 결과를 "AI는 팀을 고치지 않고, 이미 있는 것을 키운다"고 요약한다.
+
+불안정성은 두 지표로 잰다. 하나는 배포 직후 바로 손써야 했던 배포의 비율인 변경 실패율이다. 다른 하나는 DORA가 2024년에 더한 배포 재작업률로, 버그를 고치려고 계획에 없이 한 배포의 비율이다.
+
+### 활용, 영향, 비용을 나눠 본다
+
+조직 전체의 대시보드는 활용, 영향, 비용 세 축으로 나눈다. 개발자 경험을 측정하는 회사 DX가 권하는 틀이다. 이 장에서 본 지표를 내 방식대로 나눠 담으면 활용에는 사용자 수와 에이전트에 맡긴 일을, 영향에는 실제로 잰 시간과 배포 성과를, 비용에는 성공한 결과당 비용을 둔다.
+
+<ThreeAxesFigure />
+
+다만 이 지표를 사람을 평가하는 데 쓰면 안 된다. DX는 이 지표를 위에서 내려온 사용 지시의 근거로 삼거나 개인 평가에 쓰지 말라고 강하게 경고하고, 코드를 만든 양 같은 지표는 특히 부풀리기 쉽다고 적는다. GitHub 문서도 도입 방식을 바꾸기 전에 기준선을 기록하고, 사용 지표를 성과 지표 대신 쓰지 말고 함께 보라고 한다.
+
+### 만든 사람과 받는 사람을 함께 본다
+
+AI가 문서나 메시지를 만들어 주는 기능이라면 받는 사람 쪽도 잰다. Microsoft는 만드는 쪽에서는 내용이 얼마나 많은 사람에게 닿았는지, 내용의 품질, 편집에 쓴 시간을 보고, 받는 쪽에서는 내용이 닿은 범위, 공유나 댓글 같은 행동, 읽는 데 쓴 시간을 본다.
+
+## 정리
+
+대시보드를 설계할 때 확인할 것을 순서대로 모은다.
+
+1. 스트리밍 응답은 첫 토큰까지 시간, 토큰당 시간, 전체 시간으로 나눠 히스토그램으로 잰다.
+2. 지연 옆에 처리량을 둔다. 사용률이 오르면 지연이 함께 늘고, 추론 토큰은 사용자에게 보이지 않는 기다림이 된다.
+3. 에이전트는 실행 시간과 함께 모델과 도구를 부른 횟수를 잰다.
+4. 토큰은 입력과 출력, 캐시와 추론으로 나눠 센다. 과금되는 토큰을 세되 실패한 요청의 토큰도 넣는다.
+5. 429 과부하 응답, 잘린 응답, 쓸모없던 응답에 쓴 토큰을 따로 본다.
+6. 비용은 성공한 결과당 비용으로 보고 분포로 그린다. 캐시 적중률은 제공자마다 입력 토큰의 뜻이 다르니 분모를 맞춘다.
+7. AI 기능마다 지표를 규약의 이름으로 내보내고 작업 종류, 제공자, 모델을 같은 속성으로 붙인다. 호출한 기능, 단가, 품질 평가의 기준은 직접 정한다.
+8. 품질은 실제 출력을 읽는 오류 분석에서 시작해 합격과 불합격의 기준을 세운다. 채점은 판정 모델에 맡기되 사람 라벨과의 일치도를 함께 두고, 기준은 버전으로 관리한다.
+9. 에이전트는 여러 번 돌려 pass^k로 일관성을 보고, 말이 아니라 일이 끝난 뒤의 상태로 채점한다.
+10. 오프라인 평가는 개발 초기에 쓰고, 사용자 가치는 실제 트래픽의 실험으로 확인한다. 운영 중인 응답은 표본을 뽑아 비동기로 채점한다.
+11. 기능이 불린 뒤 결과가 남기까지를 단계별로 센다. 수락률은 러프한 품질 신호로 쓰되 분모의 정의를 같이 적고 다른 지표와 함께 본다.
+12. 에이전트에 맡긴 일은 머지된 PR 수, 머지까지 걸린 시간, 사람이 끼어든 비율로 센다. AI가 혼자 끝내는 일은 관여율, 해결률, 사람에게 넘긴 비율로 나눠 세고, 해결을 판정한 방법과 분모를 함께 적는다.
+13. 새로움 효과를 가려내려고 유지율을 본다.
+14. 도입 효과는 느낌이 아니라 실제로 걸린 시간과 배포 성과로 잰다. 변경 실패율과 배포 재작업률을 가드레일로 두고, 도입 초기의 J커브를 셈에 넣는다. 도입 전후를 비교할 때는 계절이나 직무 차이처럼 AI 말고도 지표를 움직이는 요인을 함께 본다.
+15. 아낀 시간은 AI가 대신한 일의 양으로 보고, 돈으로 말할 때는 피한 비용으로 센다. 기준 시간을 실측으로 맞추고, 검토와 수습에 쓴 시간을 빼고, 아낀 시간이 어디로 갔는지와 품질을 함께 잰다.
+16. 조직의 대시보드는 활용, 영향, 비용으로 나누고, 개인 평가에 쓰지 않는다.
+
+## 참고 자료
+
+-   OpenTelemetry, [Semantic conventions for generative AI metrics](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-metrics.md)
+-   OpenTelemetry, [Semantic conventions for generative AI client inference](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/client-inference.md)
+-   OpenTelemetry, [Semantic conventions for generative AI inference token metrics](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-token-metrics.md)
+-   OpenTelemetry, [Design choices behind token metrics](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/non-normative/token-metrics-design.md)
+-   OpenTelemetry, [Semantic conventions for Generative AI events](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-events.md)
+-   Juan Pablo Bottaro, Karthik R., [Musings on building a Generative AI product](https://www.linkedin.com/blog/engineering/generative-ai/musings-on-building-a-generative-ai-product), LinkedIn Engineering, 2024
+-   Megha Agarwal 외, [LLM Inference Performance Engineering: Best Practices](https://www.databricks.com/blog/llm-inference-performance-engineering-best-practices), Databricks, 2023
+-   Widad Machmouchi, Somit Gupta, [How to Evaluate LLMs: A Complete Metric Framework](https://www.microsoft.com/en-us/research/articles/how-to-evaluate-llms-a-complete-metric-framework/), Microsoft Research, 2023
+-   FinOps Foundation, [FinOps for AI Overview](https://www.finops.org/wg/finops-for-ai-overview/), 2026
+-   Anthropic, [Prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching), Claude Docs
+-   OpenAI, [Prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching), OpenAI API Docs
+-   Google SRE, [Chapter 4 - Service Level Objectives](https://sre.google/sre-book/service-level-objectives/)
+-   Lianmin Zheng 외, [Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena](https://arxiv.org/abs/2306.05685), NeurIPS 2023
+-   Benjamin Le 외, [SAGE: Scalable AI Governance & Evaluation](https://arxiv.org/abs/2602.07840), LinkedIn, 2026
+-   Hamel Husain, Shreya Shankar, [AI Evals: Everything You Need to Know](https://hamel.dev/blog/posts/evals-faq/), 2026
+-   Shreya Shankar 외, [Who Validates the Validators? Aligning LLM-Assisted Evaluation of LLM Outputs with Human Preferences](https://arxiv.org/abs/2404.12272), UIST 2024
+-   Mikaela Grace, Jeremy Hadfield, Rodrigo Olivares, Jiri De Jonghe, [Demystifying evals for AI agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents), Anthropic, 2026
+-   Shunyu Yao 외, [τ-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains](https://arxiv.org/abs/2406.12045), 2024
+-   Satish Chandra, Maxim Tabachnyk, [AI in software engineering at Google: Progress and the path ahead](https://research.google/blog/ai-in-software-engineering-at-google-progress-and-the-path-ahead/), Google Research, 2024
+-   Maxim Tabachnyk 외, [Achieving Productivity Gains with AI-based IDE features: A Journey at Google](https://arxiv.org/abs/2601.19964), LLM4Code 2026
+-   Albert Ziegler 외, [Productivity Assessment of Neural Code Completion](https://arxiv.org/abs/2205.06537), MAPS 2022
+-   GitHub, [Achieving your company's engineering goals with GitHub Copilot](https://docs.github.com/en/copilot/get-started/achieve-company-goals), GitHub Docs
+-   GitHub, [Data available in Copilot usage metrics](https://docs.github.com/en/copilot/reference/copilot-usage-metrics/copilot-usage-metrics), GitHub Docs
+-   Anthropic, [Measuring AI agent autonomy in practice](https://www.anthropic.com/research/measuring-agent-autonomy), 2026
+-   Intercom, [Reporting metrics & attributes](https://fin.ai/help/en/articles/10867126-reporting-metrics-attributes), Fin Help Center
+-   Intercom, [Update to Fin performance metrics](https://www.intercom.com/help/en/articles/15599377), Intercom Help Center, 2026
+-   Joel Becker, Nate Rush, Beth Barnes, David Rein, [Measuring the Impact of Early-2025 AI on Experienced Open-Source Developer Productivity](https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/), METR, 2025
+-   Joel Becker, Nate Rush, Tom Cunningham, David Rein, Khalid Mahamud, [We are Changing our Developer Productivity Experiment Design](https://metr.org/blog/2026-02-24-uplift-update/), METR, 2026
+-   Joel Becker, [Measuring the Self-Reported Impact of Early-2026 AI on Technical Worker Productivity](https://metr.org/blog/2026-05-11-ai-usage-survey/), METR, 2026
+-   Klarna, [Klarna AI assistant handles two-thirds of customer service chats in its first month](https://www.klarna.com/international/press/klarna-ai-assistant-handles-two-thirds-of-customer-service-chats-in-its-first-month/), 2024
+-   Chris McKay, [Klarna Dials Back its AI Customer Service Strategy, Now It's Hiring Humans Again](https://www.maginative.com/article/klarna-dials-back-its-ai-customer-service-strategy-now-its-hiring-humans-again/), Maginative, 2025
+-   Klarna, [Q4 2025 Earnings Release](https://s205.q4cdn.com/644747736/files/doc_earnings/2025/q4/earnings-result/Q4-25-Klarna-Group-plc-Earnings-Release.pdf), 2026
+-   Shakked Noy, Whitney Zhang, [Experimental evidence on the productivity effects of generative artificial intelligence](https://www.science.org/doi/10.1126/science.adh2586), Science, 2023
+-   Erik Brynjolfsson, Danielle Li, Lindsey R. Raymond, [Generative AI at Work](https://doi.org/10.1093/qje/qjae044), The Quarterly Journal of Economics, 2025
+-   Zheyuan (Kevin) Cui 외, [The Effects of Generative AI on High-Skilled Work: Evidence from Three Field Experiments with Software Developers](https://www.microsoft.com/en-us/research/publication/the-effects-of-generative-ai-on-high-skilled-work-evidence-from-three-field-experiments-with-software-developers/), 2025
+-   Elise Paradis 외, [How much does AI impact development speed? An enterprise-based randomized controlled trial](https://arxiv.org/abs/2410.12944), 2024
+-   Anders Humlum, Emilie Vestergaard, [Large Language Models, Small Labor Market Effects](https://bfi.uchicago.edu/wp-content/uploads/2025/04/BFI_WP_2025-56-3.pdf), BFI Working Paper 2025-56, 2025
+-   Anders Humlum, Emilie Vestergaard, [Still Waters, Rapid Currents: Early Labor Market Transformation under Generative AI](https://www.rfberlin.com/wp-content/uploads/2026/03/26078.pdf), RFBerlin Discussion Paper 078/26, 2026
+-   Anthropic, [Estimating AI productivity gains from Claude conversations](https://www.anthropic.com/research/estimating-productivity-gains), 2025
+-   Microsoft, [Microsoft Copilot impact report](https://learn.microsoft.com/en-us/viva/insights/advanced/analyst/templates/microsoft-365-copilot-impact), Microsoft Learn, 2026
+-   Nathen Harvey, Derek DeBellis, [Highlights from the 10th DORA report](https://cloud.google.com/blog/products/devops-sre/announcing-the-2024-dora-report), Google Cloud, 2024
+-   Nathen Harvey, Derek DeBellis, [Announcing the 2025 DORA Report](https://cloud.google.com/blog/products/ai-machine-learning/announcing-the-2025-dora-report), Google Cloud, 2025
+-   Google Cloud DORA, [ROI of AI-assisted Software Development](https://dora.dev/ai/roi/report/), 2026
+-   Nathen Harvey, [A history of DORA's software delivery metrics](https://dora.dev/guides/dora-metrics/history/), DORA, 2026
+-   Abi Noda, Laura Tacho, [Measuring AI code assistants and agents](https://getdx.com/research/measuring-ai-code-assistants-and-agents/), DX
