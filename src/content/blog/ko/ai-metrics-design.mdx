@@ -24,7 +24,6 @@ import JudgeConfusionFigure from "@/materials/ai-metrics-design/JudgeConfusionFi
 import KlarnaTimelineFigure from "@/materials/ai-metrics-design/KlarnaTimelineFigure";
 import MetrGapFigure from "@/materials/ai-metrics-design/MetrGapFigure";
 import OutcomeGradingFigure from "@/materials/ai-metrics-design/OutcomeGradingFigure";
-import OverviewFigure from "@/materials/ai-metrics-design/OverviewFigure";
 import PassKFigure from "@/materials/ai-metrics-design/PassKFigure";
 import ReasoningWaitFigure from "@/materials/ai-metrics-design/ReasoningWaitFigure";
 import ResolutionFigure from "@/materials/ai-metrics-design/ResolutionFigure";
@@ -38,10 +37,7 @@ import TokenCounterFigure from "@/materials/ai-metrics-design/TokenCounterFigure
 
 [모니터링 설계 글](/ko/blog/monitoring-design/)은 서비스가 제대로 응답하는지, [사업 지표 설계 글](/ko/blog/business-metrics-design/)은 사업이 목표대로 가는지 재는 법을 다뤘다. 하지만 AI 기능은 두 글의 지표만으로는 다 보이지 않는다. 응답이 빠르고 오류가 없어도 답이 틀릴 수 있고, 같은 기능이라도 토큰을 얼마나 쓰느냐에 따라 비용이 달라진다. 게다가 AI를 들인 뒤 일이 실제로 나아졌는가 하는 더 큰 질문이 남는다.
 
-그래서 이 글은 AI 기능에서 잴 것을 네 층으로 나눈다. 빨리 응답하는지, 비용이 얼마나 드는지, 답이 맞는지, 사용자가 받아들이는지다. 여기에 지표를 기능마다 같은 이름으로 내보내는 규약을 더하고, 마지막으로 조직이 AI를 들여 일이 나아졌는지 재는 법을 본다. 흔히 AX라고 부르는 도입 효과다. 그림 오른쪽에는 층마다 이 글에서 다룰 지표를 적었다.
-
-<OverviewFigure />
-
+그래서 이 글은 AI 기능에서 잴 것을 네 층으로 나눈다. 빨리 응답하는지, 비용이 얼마나 드는지, 답이 맞는지, 사용자가 받아들이는지다. 여기에 지표를 기능마다 같은 이름으로 내보내는 규약을 더하고, 마지막으로 조직이 AI를 들여 일이 나아졌는지 재는 법을 본다. 흔히 AX라고 부르는 도입 효과다.
 층마다 요점을 먼저 모으면 이렇다. 근거로 삼은 자료는 글 끝의 참고 자료에 모았다.
 
 | 층 | 묻는 것 | 요점 |
