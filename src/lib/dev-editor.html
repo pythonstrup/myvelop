@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>글 편집</title>
+<style>
+	:root { --bg: #fff; --fg: #1f2328; --muted: #656d76; --line: #d0d7de; --accent: #0969da; --warn: #bf3989; color-scheme: light dark; }
+	@media (prefers-color-scheme: dark) { :root { --bg: #16181d; --fg: #e6edf3; --muted: #8d96a0; --line: #30363d; --accent: #4493f8; --warn: #f778ba; } }
+	* { box-sizing: border-box; }
+	html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.5 -apple-system, "Apple SD Gothic Neo", sans-serif; }
+	a { color: var(--accent); }
+	header { display: flex; gap: 12px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); height: 44px; }
+	header .file { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	header .status { color: var(--muted); margin-left: auto; white-space: nowrap; }
+	header .status.error { color: var(--warn); }
+	button { font: inherit; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+	main { display: grid; grid-template-columns: 1fr 1fr; height: calc(100% - 44px); }
+	textarea { width: 100%; height: 100%; resize: none; border: 0; border-right: 1px solid var(--line); padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.7 ui-monospace, "SF Mono", Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; }
+	iframe { width: 100%; height: 100%; border: 0; }
+	.list { max-width: 720px; margin: 24px auto; padding: 0 16px; }
+	.list input { width: 100%; padding: 8px; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+	.list ul { padding-left: 20px; }
+	.mirror { position: absolute; top: 0; left: -9999px; visibility: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
+	[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<section class="list" id="list" hidden>
+	<h1>글 편집</h1>
+	<p>개발 서버에서만 열리는 페이지입니다. 저장하면 이 PC 의 파일만 바뀌고, 커밋은 따로 합니다.</p>
+	<input id="filter" placeholder="파일 이름으로 찾기" autofocus>
+	<ul id="files"></ul>
+</section>
+<div id="editor" hidden style="height:100%">
+	<header>
+		<a href="/_edit/">목록</a>
+		<span class="file" id="file"></span>
+		<a id="open" target="_blank">새 탭에서 보기</a>
+		<span class="status" id="status"></span>
+		<button id="reload" hidden>내 고침 버리고 다시 불러오기</button>
+		<button id="save">저장 ⌘S</button>
+	</header>
+	<main>
+		<textarea id="source" spellcheck="false"></textarea>
+		<iframe id="preview" title="글 미리보기"></iframe>
+	</main>
+</div>
+<script type="module">
+const TOKEN = "__DEV_EDITOR_TOKEN__";
+const $ = (id) => document.getElementById(id);
+const file = new URLSearchParams(location.search).get("file");
+
+async function getJson(url, options) {
+	const res = await fetch(url, options);
+	const data = await res.json();
+	if (!res.ok) throw Object.assign(new Error(data.error), { status: res.status });
+	return data;
+}
+
+if (!file) showList();
+else openEditor(file).catch((error) => setStatus(error.message, true));
+
+async function showList() {
+	$("list").hidden = false;
+	const { files } = await getJson("/_edit/api/list");
+	const render = () => {
+		const q = $("filter").value.trim();
+		$("files").replaceChildren(...files.filter((f) => f.includes(q)).map((f) => {
+			const li = document.createElement("li");
+			const a = document.createElement("a");
+			a.href = `/_edit/?file=${encodeURIComponent(f)}`;
+			a.textContent = f.replace("src/content/blog/", "");
+			li.append(a);
+			return li;
+		}));
+	};
+	$("filter").addEventListener("input", render);
+	render();
+}
+
+function setStatus(text, isError = false) {
+	$("status").textContent = text;
+	$("status").classList.toggle("error", isError);
+}
+
+async function openEditor(file) {
+	$("editor").hidden = false;
+	const ta = $("source");
+	const frame = $("preview");
+	let { text: savedText, hash: baseHash, pageUrl } = await getJson(`/_edit/api/source?file=${encodeURIComponent(file)}`);
+	ta.value = savedText;
+	$("file").textContent = file.replace("src/content/blog/", "");
+	document.title = `편집: ${$("file").textContent}`;
+	$("open").href = pageUrl;
+	frame.src = pageUrl;
+
+	const dirty = () => ta.value !== savedText;
+	ta.addEventListener("input", () => setStatus(dirty() ? "저장 안 됨" : ""));
+	addEventListener("beforeunload", (e) => { if (dirty()) e.preventDefault(); });
+
+	// 저장
+	let keepScroll = null;
+	async function save() {
+		if (!dirty()) return setStatus("바뀐 것 없음");
+		const text = ta.value;
+		try {
+			keepScroll = frame.contentWindow.scrollY;
+			({ hash: baseHash } = await getJson("/_edit/api/save", {
+				method: "POST",
+				headers: { "content-type": "application/json", "x-dev-editor-token": TOKEN },
+				body: JSON.stringify({ file, text, baseHash }),
+			}));
+			savedText = text;
+			setStatus(dirty() ? "저장 안 됨" : `저장했습니다 ${new Date().toLocaleTimeString()}`);
+		} catch (error) {
+			keepScroll = null;
+			setStatus(error.message, true);
+			$("reload").hidden = error.status !== 409;
+		}
+	}
+	$("save").addEventListener("click", save);
+	addEventListener("keydown", (e) => {
+		if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); save(); }
+	});
+	$("reload").addEventListener("click", async () => {
+		({ text: savedText, hash: baseHash } = await getJson(`/_edit/api/source?file=${encodeURIComponent(file)}`));
+		ta.value = savedText;
+		$("reload").hidden = true;
+		setStatus("다시 불러왔습니다");
+	});
+
+	// 원문 줄 ↔ 글 화면. 글 화면의 블록에는 개발 서버가 data-src-line 을 달아 둔다(MDX 만).
+	const lineAt = (pos) => ta.value.slice(0, pos).split("\n").length;
+	const posOfLine = (line) => {
+		let pos = 0;
+		for (let i = 1; i < line; i++) {
+			const next = ta.value.indexOf("\n", pos);
+			if (next < 0) break;
+			pos = next + 1;
+		}
+		return pos;
+	};
+	const mirror = document.createElement("div");
+	mirror.className = "mirror";
+	document.body.append(mirror);
+	function caretTop(pos) {
+		const cs = getComputedStyle(ta);
+		Object.assign(mirror.style, { font: cs.font, lineHeight: cs.lineHeight, padding: cs.padding, width: `${ta.clientWidth}px` });
+		mirror.textContent = ta.value.slice(0, pos);
+		const mark = document.createElement("span");
+		mark.textContent = "​";
+		mirror.append(mark);
+		return mark.offsetTop;
+	}
+	let lastLine = 0;
+	function jumpToLine(line) {
+		const start = posOfLine(line);
+		lastLine = line;
+		// 줄을 선택하지 않고 커서만 둔다. 선택해 두면 이어서 친 글자가 문단을 통째로 덮어쓴다.
+		ta.focus({ preventScroll: true });
+		ta.setSelectionRange(start, start);
+		ta.scrollTop = caretTop(start) - ta.clientHeight / 3;
+	}
+	function flash(el) {
+		el.style.outline = "2px solid #f59e0b";
+		el.style.outlineOffset = "4px";
+		setTimeout(() => { el.style.outline = ""; el.style.outlineOffset = ""; }, 900);
+	}
+	const tagged = () => [...frame.contentDocument.querySelectorAll("[data-src-line]")];
+	// 그림 앞 표지는 숨겨져 있으니, 그 뒤에서 처음 보이는 요소(그림)를 쓴다. Astro 가 사이에 <style> 을 넣기도 한다.
+	const SKIP = new Set(["STYLE", "SCRIPT", "LINK", "TEMPLATE"]);
+	const visible = (el) => {
+		let next = el;
+		while (next && (next.hidden || SKIP.has(next.tagName))) next = next.nextElementSibling;
+		// <astro-island> 는 display: contents 라 상자가 없다. 상자가 있는 첫 자식까지 내려간다.
+		while (next && next.getClientRects().length === 0 && next.firstElementChild) next = next.firstElementChild;
+		return next ?? el;
+	};
+
+	frame.addEventListener("load", () => {
+		if (keepScroll !== null) {
+			frame.contentWindow.scrollTo(0, keepScroll);
+			keepScroll = null;
+		}
+		if (tagged().length === 0) setStatus("이 글은 클릭 이동을 지원하지 않습니다(.md)");
+	});
+	// 글 화면의 리소스가 다 불릴 때(load)까지 기다리지 않고, 문서가 준비되는 대로 클릭 처리를 붙인다.
+	// 저장 뒤 다시 불러오면 문서가 바뀌므로 계속 지켜본다.
+	let attached = null;
+	setInterval(() => {
+		const doc = frame.contentDocument;
+		if (!doc || doc === attached || doc.readyState === "loading") return;
+		const all = tagged();
+		if (all.length === 0) return;
+		attached = doc;
+		frame.dataset.attached = String(Date.now());
+		const body = all[0].parentElement;
+		doc.addEventListener("click", (e) => {
+			if (!body.contains(e.target)) return;
+			// 누른 곳을 감싸거나 그 앞에 있는 표지 가운데 가장 가까운 것
+			let best = null;
+			for (const el of tagged()) {
+				if (el === e.target || el.compareDocumentPosition(e.target) & Node.DOCUMENT_POSITION_FOLLOWING) best = el;
+				else break;
+			}
+			if (!best) return;
+			e.preventDefault();
+			jumpToLine(Number(best.dataset.srcLine));
+			flash(visible(best));
+		}, true);
+	}, 300);
+
+	function syncPreview() {
+		const line = lineAt(ta.selectionStart);
+		if (line === lastLine) return;
+		lastLine = line;
+		let best = null;
+		for (const el of frame.contentDocument ? tagged() : []) {
+			if (Number(el.dataset.srcLine) <= line) best = el;
+			else break;
+		}
+		if (!best) return;
+		const target = visible(best);
+		target.scrollIntoView({ block: "center", behavior: "smooth" });
+		flash(target);
+	}
+	ta.addEventListener("keyup", syncPreview);
+	ta.addEventListener("mouseup", syncPreview);
+}
+</script>
+</body>
+</html>
