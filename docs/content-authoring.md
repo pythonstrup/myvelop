@@ -30,8 +30,8 @@ OG 카드는 `node scripts/og-card.mjs --title "How OCR Works" --keywords "detec
 소셜 이미지는 `socialImage`, `heroImage`, `src/assets/og-default.png` 순서로 대체된다. 본문과 대표 이미지는 `src/assets/blog/<slug>/01.png`처럼 보관하고 Markdown에서는 글 파일을 기준으로 상대 경로를 쓴다.
 
 ```yaml
-heroImage: "../../../assets/blog/bullmq-notification-part-1-what-is-bullmq/01.png"
-socialImage: "../../../assets/blog/bullmq-notification-part-1-what-is-bullmq/social.png"
+heroImage: "../../../assets/blog/what-is-bullmq/01.png"
+socialImage: "../../../assets/blog/what-is-bullmq/social.png"
 ```
 
 ## 번역과 다이어그램

@@ -26,4 +26,4 @@ This series covers the forks I met while designing such a notification server. A
 3. Where should the state of pending work live?
 4. How should scheduled sends be represented?
 
-To give the answer first, I chose BullMQ, a Redis-backed job queue. This post, however, is not an introduction to BullMQ. For each question, it asks what would have changed with a different candidate. BullMQ's own structure and features are covered separately in [What Is BullMQ](/blog/bullmq-notification-part-1-what-is-bullmq).
+To give the answer first, I chose BullMQ, a Redis-backed job queue. This post, however, is not an introduction to BullMQ. For each question, it asks what would have changed with a different candidate. BullMQ's own structure and features are covered separately in [What Is BullMQ](/blog/what-is-bullmq).

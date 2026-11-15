@@ -20,7 +20,7 @@ new Worker(name, handler, {
 });
 ```
 
-The counter lives in Redis, so no matter how many worker instances run, they add up and respect the limit. That is exactly what [What Is BullMQ](/blog/bullmq-notification-part-1-what-is-bullmq) described. Our average was 20 req/s, comfortably inside the quota on paper.
+The counter lives in Redis, so no matter how many worker instances run, they add up and respect the limit. That is exactly what [What Is BullMQ](/blog/what-is-bullmq) described. Our average was 20 req/s, comfortably inside the quota on paper.
 
 Then `429 Too Many Requests` started showing up, sporadically.
 

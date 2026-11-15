@@ -172,7 +172,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 						{ value: '151억 원', label: '알림 발송으로 이어진 매출 전환' },
 					],
 					stack: ['BullMQ', 'Redis', 'Kubernetes', 'AWS', 'Pulumi', 'Elastic', 'OpenTelemetry'],
-					links: [{ href: '/ko/blog/bullmq-notification-part-1-what-is-bullmq/', label: '기술 글 읽기' }],
+					links: [{ href: '/ko/blog/what-is-bullmq/', label: '기술 글 읽기' }],
 					visual: {
 						key: 'notification',
 						alt: '여러 서비스가 Redis 기반 BullMQ 큐 하나에 발송 작업을 넣고 수평 확장되는 Worker가 외부 메시징 API로 보내며, 메시지는 운영 DB에서 읽기 전용으로 조회하고 발송 이력은 S3의 Parquet 파일에 남겨 DuckDB를 쓰는 모니터링 앱에서 조회하며 로그·트레이스·메트릭은 따로 수집하는 아키텍처',
@@ -409,7 +409,7 @@ const aboutContent: Record<AboutLocale, AboutContent> = {
 						{ value: '₩15.1B', label: 'Revenue converted after notification delivery' },
 					],
 					stack: ['BullMQ', 'Redis', 'Kubernetes', 'AWS', 'Pulumi', 'Elastic', 'OpenTelemetry'],
-					links: [{ href: '/blog/bullmq-notification-part-1-what-is-bullmq/', label: 'Read the technical write-up' }],
+					links: [{ href: '/blog/what-is-bullmq/', label: 'Read the technical write-up' }],
 					visual: {
 						key: 'notification',
 						alt: 'Architecture showing producer services enqueueing work in one Redis-backed BullMQ queue, horizontally scaled workers sending through an external messaging API, messages looked up read-only from the operational database, delivery history kept as Parquet files on S3 and queried by a monitoring app with DuckDB, and a separate logs, traces, and metrics pipeline',

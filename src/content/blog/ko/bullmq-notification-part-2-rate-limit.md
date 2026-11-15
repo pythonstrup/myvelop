@@ -20,7 +20,7 @@ new Worker(name, handler, {
 });
 ```
 
-카운터는 Redis에 있으니 워커를 몇 대로 띄우든 합산해서 한도를 지킨다. [BullMQ란](/ko/blog/bullmq-notification-part-1-what-is-bullmq) 글에서 정리한 그대로다. 우리 평균 발송량은 20 req/s였고, 종이 위에서는 정확히 한도 이내였다.
+카운터는 Redis에 있으니 워커를 몇 대로 띄우든 합산해서 한도를 지킨다. [BullMQ란](/ko/blog/what-is-bullmq) 글에서 정리한 그대로다. 우리 평균 발송량은 20 req/s였고, 종이 위에서는 정확히 한도 이내였다.
 
 그런데 `429 Too Many Requests`가 산발적으로 찍히기 시작했다.
 

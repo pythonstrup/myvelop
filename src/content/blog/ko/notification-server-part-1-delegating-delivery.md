@@ -26,4 +26,4 @@ seriesOrder: 1
 3. 대기 중인 작업의 상태를 어디에 둘 것인가
 4. 예약 발송을 어떻게 표현할 것인가
 
-답부터 말하면 Redis 기반 작업 큐인 BullMQ를 골랐다. 다만 이 글은 BullMQ를 소개하지 않는다. 질문마다 다른 후보를 골랐다면 무엇이 달라졌을지를 따진다. BullMQ 자체의 구조와 기능은 [BullMQ란](/ko/blog/bullmq-notification-part-1-what-is-bullmq) 글에 따로 정리했다.
+답부터 말하면 Redis 기반 작업 큐인 BullMQ를 골랐다. 다만 이 글은 BullMQ를 소개하지 않는다. 질문마다 다른 후보를 골랐다면 무엇이 달라졌을지를 따진다. BullMQ 자체의 구조와 기능은 [BullMQ란](/ko/blog/what-is-bullmq) 글에 따로 정리했다.
