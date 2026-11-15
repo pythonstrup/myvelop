@@ -271,6 +271,8 @@ async function verifyHtml() {
 	for (const file of htmlFiles) {
 		const html = await readFile(file, 'utf8');
 		const name = displayPath(file);
+		// 개발용 편집 페이지(src/lib/dev-editor.ts)가 개발 서버에서만 다는 줄 번호다.
+		if (html.includes('data-src-line')) fail(`${name}: dev editor source-line attributes leaked into the build`);
 		const titleCount = [...html.matchAll(/<title(?:\s[^>]*)?>/gi)].length;
 		const headingCount = [...html.matchAll(/<h1(?:\s[^>]*)?>/gi)].length;
 		const canonicalTags = [...html.matchAll(/<link\b(?=[^>]*\brel=["']canonical["'])[^>]*>/gi)];

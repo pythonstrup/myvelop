@@ -10,6 +10,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { devEditor, remarkSourceLines } from "./src/lib/dev-editor.ts";
 import { withTrailingSlash } from "./src/lib/nav.ts";
 import { tagSlug } from "./src/lib/slug.ts";
 
@@ -127,6 +128,7 @@ export default defineConfig({
   integrations: [
     mdx(),
     react(),
+    devEditor(),
     sitemap({
       filter: (page) => !["/404/", "/ko/404/", "/llms.txt"].includes(new URL(page).pathname),
     }),
@@ -138,7 +140,7 @@ export default defineConfig({
 
   markdown: {
     processor: unified({
-      remarkPlugins: [remarkWikilinks, remarkInternalTrailingSlash],
+      remarkPlugins: [remarkWikilinks, remarkInternalTrailingSlash, remarkSourceLines],
       rehypePlugins: [rehypeWrapTables],
     }),
     shikiConfig: {
