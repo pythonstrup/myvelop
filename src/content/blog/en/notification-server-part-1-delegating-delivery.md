@@ -10,20 +10,17 @@ seriesOrder: 1
 
 ## Introduction
 
-Every service needs to send messages to users, whether through AlimTalk, email, or push notifications. At first, calling the external API wherever a message is needed is enough. Once more places start sending, though, that approach quickly runs into limits.
+Suppose we are building a service that sends a welcome AlimTalk message when someone finishes signing up. At first, one call to the external messaging API inside the sign-up API is all it takes.
 
--   <strong>Multiple places call the same external API.</strong> Delivery paths become scattered across the API server, admin system, and batch jobs.
--   <strong>External APIs have rate limits.</strong> A constraint such as "100 requests per five seconds" must be enforced somewhere.
--   <strong>Many messages are not sent immediately.</strong> Timed sends such as "guidance on D+1 after verification" or "another notice three days after a payment failure" are necessary. Some, like a one-off message an administrator schedules for a particular user at a particular time, are hard to express as a state value in the domain model.
--   <strong>Bulk delivery always includes some failures.</strong> The system must track which messages failed and which need to be sent again.
+The requirements soon snowball. When a payment fails, the user needs another notice three days later, and the admin team wants to schedule a message for a particular user at a time of their choosing. A nightly batch job sends an announcement to every member. Now there is sending code in the API server, in the admin system, and in the batch job.
 
-Each of these problems can be solved on its own. Consolidate delivery into one module, put a rate limit inside a function, create time-based branches with a scheduler, and record failures in a delivery-history table. The hard part is solving all four at once inside one system. In a distributed environment where an API server and several workers run together, the four must not drift apart.
+This is where the problems show up. Say the external API has a limit such as "100 requests per five seconds." The three places have to share that limit, yet none of them knows how much the others are calling. To send the notice three days later, something has to remember that time. And if part of the batch announcement fails, it is hard to work out whom to send it to again.
 
-This series covers the forks I met while designing such a notification server. At each fork, it looks at which candidates there were and what each one gains and gives up. Part 1 starts at the beginning and breaks the question of where to hand off delivery into four questions.
+At this point, someone suggests gathering delivery in one place and splitting it out into its own server. This series covers the trade-offs you will face while building that notification server. In order, it looks at what to hand delivery to, where to enforce the external API's limit, where to store the delivery history and how to read it, and what gets crossed when bulk sends go out in groups. For each decision, it lines up the candidates and weighs what each one gains and gives up. If you are about to split out a delivery server yourself, you can read it as a list of things to check before deciding.
+
+Part 1 covers the first of those trade-offs: where to hand off delivery. That question breaks down into four.
 
 1. Does the side that requests a send need to wait for the result?
 2. Does the requesting side know who will process it?
 3. Where should the state of pending work live?
 4. How should scheduled sends be represented?
-
-To give the answer first, I chose BullMQ, a Redis-backed job queue. This post, however, is not an introduction to BullMQ. For each question, it asks what would have changed with a different candidate. BullMQ's own structure and features are covered separately in [What Is BullMQ](/blog/what-is-bullmq).
