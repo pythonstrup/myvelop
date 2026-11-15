@@ -1,9 +1,10 @@
 ---
-title: "Running a Notification System with BullMQ, Part 2 - Rate Limits and the Design They Forced"
+title: "Designing a Notification Server, Part 2 - Rate Limits and the Design They Forced"
 description: "Quota was 100 messages per 5 seconds, average 20 req/s, yet 429s still fired. Misaligned fixed windows and a shared account forced a new sending path."
 pubDate: "2026-07-20T21:00:00+09:00"
 tags: ["BullMQ","nodejs","redis","typescript","rate limit"]
-series: "Running a Notification System with BullMQ"
+series: "Designing a Notification Server"
+seriesOrder: 2
 socialImage: "../../../assets/blog/bullmq-notification-part-2-rate-limit/og.png"
 ---
 
@@ -19,7 +20,7 @@ new Worker(name, handler, {
 });
 ```
 
-The counter lives in Redis, so no matter how many worker instances run, they add up and respect the limit. That is exactly what [Part 1](/blog/bullmq-notification-part-1-what-is-bullmq) described. Our average was 20 req/s, comfortably inside the quota on paper.
+The counter lives in Redis, so no matter how many worker instances run, they add up and respect the limit. That is exactly what [What Is BullMQ](/blog/bullmq-notification-part-1-what-is-bullmq) described. Our average was 20 req/s, comfortably inside the quota on paper.
 
 Then `429 Too Many Requests` started showing up, sporadically.
 
@@ -84,7 +85,7 @@ Even after slicing the window, the 429s did not disappear entirely. The remainin
 
 <strong>Another team was using the same third-party account.</strong>
 
-Here the property from Part 1 comes back as a liability. BullMQ's rate limiter is per queue. Workers subscribed to the same queue share a counter, but nothing beyond that is visible to them. The other team's application does not look at our Redis.
+Here the property noted above comes back as a liability. BullMQ's rate limiter is per queue. Workers subscribed to the same queue share a counter, but nothing beyond that is visible to them. The other team's application does not look at our Redis.
 
 <pre class="mermaid">
 flowchart LR

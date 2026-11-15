@@ -1,14 +1,15 @@
 ---
-title: "BullMQ로 알림 시스템 운영하기 3편 - 발송 이력을 어디에 쌓을 것인가"
+title: "알림 서버 설계하기 3편 - 발송 이력을 어디에 쌓을 것인가"
 description: "발송 이력을 어디에 저장할지에 대한 고민이다. 관계형 DB, RDB·S3 직렬·SNS fan-out·Firehose를 놓고 따진 트레이드오프를 정리했다."
 pubDate: "2026-07-25T21:00:00+09:00"
 tags: ["BullMQ","nodejs","aws","architecture","s3"]
-series: "BullMQ로 알림 시스템 운영하기"
+series: "알림 서버 설계하기"
+seriesOrder: 3
 socialImage: "../../../assets/blog/bullmq-notification-part-3-delivery-history/og.png"
 ---
 ## 들어가며
 
-[1편](/ko/blog/bullmq-notification-part-1-what-is-bullmq)과 [2편](/ko/blog/bullmq-notification-part-2-rate-limit)은 발송을 어떻게 안정적으로 내보낼 것인가에 대한 이야기였다. 이번 글은 보낸 다음의 이야기다.
+[1편](/ko/blog/notification-server-part-1-delegating-delivery)과 [2편](/ko/blog/bullmq-notification-part-2-rate-limit)은 발송을 어떻게 안정적으로 내보낼 것인가에 대한 이야기였다. 이번 글은 보낸 다음의 이야기다.
 
 무엇을 언제 누구에게 보냈고 결과가 어땠는지는 어딘가에 남아야 한다. 문제는 어디에 남기느냐다. 관계형 DB, S3 직렬 파이프라인, SNS fan-out, Firehose 경유를 놓고 저울질해볼 것이다.
 

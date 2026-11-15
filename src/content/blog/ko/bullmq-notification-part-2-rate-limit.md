@@ -1,9 +1,10 @@
 ---
-title: "BullMQ로 알림 시스템 운영하기 2편 - Rate Limit과 그에 따른 설계"
+title: "알림 서버 설계하기 2편 - Rate Limit과 그에 따른 설계"
 description: "발송 한도는 5초당 100건, 평균은 20 req/s로 종이 위에는 한도 안이었다. 그런데 429가 났고, 시작이 어긋난 fixed-window와 계정 공유가 겹치며 발송 경로를 다시 설계했다."
 pubDate: "2026-07-20T21:00:00+09:00"
 tags: ["BullMQ","nodejs","redis","typescript","rate limit"]
-series: "BullMQ로 알림 시스템 운영하기"
+series: "알림 서버 설계하기"
+seriesOrder: 2
 socialImage: "../../../assets/blog/bullmq-notification-part-2-rate-limit/og.png"
 ---
 
@@ -19,7 +20,7 @@ new Worker(name, handler, {
 });
 ```
 
-카운터는 Redis에 있으니 워커를 몇 대로 띄우든 합산해서 한도를 지킨다. [1편](/ko/blog/bullmq-notification-part-1-what-is-bullmq)에서 정리한 그대로다. 우리 평균 발송량은 20 req/s였고, 종이 위에서는 정확히 한도 이내였다.
+카운터는 Redis에 있으니 워커를 몇 대로 띄우든 합산해서 한도를 지킨다. [BullMQ란](/ko/blog/bullmq-notification-part-1-what-is-bullmq) 글에서 정리한 그대로다. 우리 평균 발송량은 20 req/s였고, 종이 위에서는 정확히 한도 이내였다.
 
 그런데 `429 Too Many Requests`가 산발적으로 찍히기 시작했다.
 
@@ -84,7 +85,7 @@ await queue.add(name, data, {
 
 <strong>같은 서드파티 계정을 다른 팀도 쓰고 있었다.</strong>
 
-여기서 1편에서 짚은 성질이 문제로 돌아온다. BullMQ의 rate limiter는 큐 단위다. 같은 큐를 구독하는 워커들끼리는 카운터를 공유하지만, 큐 밖의 호출은 알지 못한다. 다른 팀의 애플리케이션은 우리 Redis를 보지 않는다.
+여기서 앞서 짚은 성질이 문제로 돌아온다. BullMQ의 rate limiter는 큐 단위다. 같은 큐를 구독하는 워커들끼리는 카운터를 공유하지만, 큐 밖의 호출은 알지 못한다. 다른 팀의 애플리케이션은 우리 Redis를 보지 않는다.
 
 <pre class="mermaid">
 flowchart LR
