@@ -47,3 +47,13 @@ export function cropLine(pixels: string, from: number, to: number) {
 		runs: kept.map(([a, y, b]) => [a - from, y, b - from] as const),
 	};
 }
+
+// pixels를 [from, to] 열만 잘라 칸 단위 0/1 격자로 펼친다. 합성곱·RNN 데모가 픽셀 값을 직접 읽을 때 쓴다.
+export function pixelGrid(line: { h: number; pixels: string }, from: number, to: number) {
+	const w = to - from + 1;
+	const on = new Uint8Array(w * line.h);
+	for (const [, x, y, run] of line.pixels.matchAll(/M(\d+) (\d+)h(\d+)/g)) {
+		for (let i = Math.max(Number(x), from); i < Math.min(Number(x) + Number(run), to + 1); i++) on[Number(y) * w + i - from] = 1;
+	}
+	return { w, h: line.h, at: (x: number, y: number) => (x < 0 || y < 0 || x >= w || y >= line.h ? 0 : on[y * w + x]) };
+}
