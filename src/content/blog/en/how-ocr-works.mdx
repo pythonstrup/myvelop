@@ -7,6 +7,11 @@ socialImage: "../../../assets/blog/how-ocr-works/og.png"
 ---
 import DetectRecognizeDiagram from "@/materials/how-ocr-works/DetectRecognizeDiagram";
 import ProjectionProfileDiagram from "@/materials/how-ocr-works/ProjectionProfileDiagram";
+import BinarizeVsMapDiagram from "@/materials/how-ocr-works/BinarizeVsMapDiagram";
+import DbDetectDemo from "@/materials/how-ocr-works/DbDetectDemo";
+import ShrinkDiagram from "@/materials/how-ocr-works/ShrinkDiagram";
+import CraftMapsDiagram from "@/materials/how-ocr-works/CraftMapsDiagram";
+import CrnnDiagram from "@/materials/how-ocr-works/CrnnDiagram";
 import CtcDecodeDemo from "@/materials/how-ocr-works/CtcDecodeDemo";
 import MaskingDiagram from "@/materials/how-ocr-works/MaskingDiagram";
 import VlmPatchDiagram from "@/materials/how-ocr-works/VlmPatchDiagram";
@@ -83,28 +88,73 @@ In the end, the problem was the premise that characters had to be separated one 
 
 Deep learning OCR keeps the two stages of detection and recognition, but in each stage the model learns from data the rules people used to write by hand.
 
-### Scoring each pixel for text
+### Detection — scoring each pixel for text
 
-A deep learning detection model takes an image and computes, for each pixel, "the probability that this pixel is part of a text region." The result is a grayscale map the same size as the original. Text areas are bright and the background is dark. Group the bright areas of this map and trace their outlines, and you get detection boxes. The outline does not have to be a rectangle, which is why OCR APIs sometimes return coordinates as a list of vertices.
+A deep learning detection model takes an image and computes, for each pixel, "the probability that this pixel is part of a text region." The result is a grayscale map the same size as the original. Text areas are bright and the background is dark.
+
+This is easy to confuse with binarization in classic OCR. Classic OCR looked at the brightness of the original and asked, for each pixel, whether it was ink. Only the strokes came out dark, and the gaps between strokes and between characters stayed empty. The probability map asks whether a pixel lies inside a text region. Gaps between strokes or between letters are bright as long as they sit inside a word, so a whole word lights up as one blob. Seals and table lines, on the other hand, are ink but not text, and the model learns to leave them dark.
+
+The figure below shows the same line, with a seal stamped over it, seen both ways. The probability map is drawn to look like what a well-trained model would produce.
+
+<BinarizeVsMapDiagram lang="en" />
 
 The unit of detection changed too. Instead of single characters, the model finds words or lines. Deciding where characters begin and end is left to the next stage, the recognition model.
 
-The best-known models are CRAFT and DBNet. CRAFT, published by NAVER Clova researchers in 2019, predicts the center of each character together with the links between characters. That said, NAVER has not disclosed which model the CLOVA OCR service uses internally. PaddleOCR's PP-OCRv5 detector is based on the DB algorithm. The DB in DBNet stands for Differentiable Binarization. Where classic OCR had people set the binarization threshold, this model learns a threshold for each pixel.
+Inside the model, a CNN extracts features while shrinking the image in several stages. The lightly shrunk stages see fine details such as strokes, and the heavily shrunk stages see a wide area. These features are scaled back to the same size and merged, and then the model outputs a probability for each pixel. Looking at several scales at once is what lets one model find both large text like titles and small text like footnotes.
 
-### Reading a line in narrow slices
+The best-known detection models are DBNet and CRAFT. PaddleOCR's PP-OCRv5 detector is based on DBNet's DB algorithm. Let's first follow how DBNet turns a probability map into boxes. It takes four steps.
 
-The recognition model receives the line image cropped to the detection box. A typical architecture is CRNN, which, as the name says, chains a CNN and an RNN.
+1. <strong>Threshold</strong> — keep only the pixels whose probability is above a threshold. The DBNet paper used 0.2.
+2. <strong>Group</strong> — group touching pixels into blobs. One blob is one word.
+3. <strong>Grow</strong> — push each blob outward by a margin computed from its area and perimeter.
+4. <strong>Box</strong> — trace the outline of each grown blob and return its vertex coordinates. PaddleOCR drops a box when the average probability inside it is low.
+
+Steps 1 and 2 are the same operations as binarization and connected components in classic OCR. The difference is what gets cut. Instead of the brightness of the original, the threshold applies to the probabilities the model assigned, so to the extent the model has learned to filter out seals and table lines, the text regions come through cleanly even on a messy document.
+
+The demo below walks a two-line image through these steps until it becomes boxes. The text pixels were extracted the same way as in the earlier figure, but the probability map is not real model output. It was drawn to show the process.
+
+<DbDetectDemo client:visible lang="en" />
+
+Step 3 grows the blobs because the labels were shrunk during training. DBNet does not use the word region itself as the label; it uses the region with its border pulled inward. Picture a document with tight line spacing. If the word regions were the labels as they are, the regions of the upper and lower lines would touch, and grouping would merge several words into one blob. Shrunken regions stay apart, so each word becomes its own blob, and growing each blob back by the same amount restores the original size. The figure below compares the two cases on the same two lines.
+
+<ShrinkDiagram lang="en" />
+
+The differentiable binarization in DBNet's name is a training device. During training, the model outputs a threshold map alongside the probability map, holding a threshold for each pixel. Ordinary binarization is a step, 1 above the threshold and 0 below it, so it cannot be differentiated and cannot be part of training. DB replaces the step with a steep curve so that binarization itself becomes part of training. The threshold map learns to be high near text borders, which pushes the model to produce maps where the probability changes sharply at the border. At inference, the threshold map is dropped and a single constant threshold is used, as in the steps above. Training gets more precise while inference stays just as fast.
+
+CRAFT, published by NAVER Clova researchers in 2019, draws its maps per character instead of per word. It outputs two maps. One holds the probability that a pixel is the center of a character, and the other holds the probability that it is the center of the space between two neighboring characters. Thresholding each map, overlaying them, and grouping the result links the character centers through the links between characters, forming one word. Because it chains characters one by one, it can follow curved lines of text.
+
+The figure below shows how the two maps join into one word for "agree". These maps are also drawn for illustration.
+
+<CraftMapsDiagram lang="en" />
+
+Training data, however, usually has word boxes and no character boxes. So CRAFT first learns from synthetic images where the character positions are known, and on real images it estimates the character positions inside each word itself and uses those estimates as labels. The further the estimated character count is from the length of the correct string, the less it trusts that label. That said, NAVER has not disclosed which model the CLOVA OCR service uses internally.
+
+### Recognition — reading a line in narrow slices
+
+The recognition model receives the line image cropped to the detection box. The crop is not passed on as is, though. A detection box may be tilted or shaped like a trapezoid, so its four vertices are first mapped onto the four corners of a rectangle to straighten it. Then the height is scaled to a fixed value, and the width is scaled to keep the aspect ratio. PaddleOCR also offers an optional orientation step in between that flips lines that are upside down.
+
+A typical architecture is CRNN, which, as the name says, chains a CNN and an RNN.
 
 1. <strong>CNN</strong> — splits the line image, from left to right, into narrow vertical columns and extracts shape features from each.
 2. <strong>RNN</strong> — reads the columns in order, taking the context of neighboring columns into account.
 3. <strong>CTC</strong> — turns the character candidates from each column into a single string.
+
+The CNN applies convolution after convolution, shrinking the height of the image down to a single cell while keeping several cells across. Its output is therefore a row of feature sets running from left to right, each corresponding to a narrow vertical strip of the image. In practice, each feature set also reaches a little into the neighboring strips.
+
+The RNN reads this row once from the left and once from the right, so each column carries context from both sides. That is how a column covering only the left half of "g" can still tell, by looking at the column to its right, that it is part of "g".
+
+Finally, each column outputs a probability for every character the model knows, plus the blank. The figure below shows the word "agree" going through these steps until it becomes per-column probabilities. The darkness of each feature set is the share of stroke pixels in that band, and the probabilities are made-up values for illustration.
+
+<CrnnDiagram lang="en" />
+
+The characters a model can pick are limited to the character list fixed at training time, because each slot of the output corresponds to one character in that list. A character missing from the list cannot be read no matter how sharp it is; it gets read as a similar-looking character or dropped. If your documents include names with rarely used characters, check the character list of the model you plan to use first.
 
 The key here is CTC. Column widths do not line up with character widths. Several columns can fall on a single character, and some columns fall on the gaps between characters. So for each column the model picks either a character or `-`, which stands for blank, and CTC cleans up the result with two rules.
 
 1. Merge runs of the same character into one.
 2. Drop the blanks.
 
-Say the columns picked `a a g - r e e - e`. Merging repeats gives `a g - r e - e`, and dropping the blanks gives `agree`.
+Say the columns picked `a a g - r e e - e`, as in the figure above. Merging repeats gives `a g - r e - e`, and dropping the blanks gives `agree`.
 
 The demo below crops "agree" from the same pixels as the figure above and walks through the process step by step.
 
@@ -112,15 +162,19 @@ The demo below crops "agree" from the same pixels as the figure above and walks 
 
 When the same character really does repeat, like the two e's in "agree" or the zeros in a resident registration number, a blank has to sit between them. `0 0 - 0` reads as `00`; to get `000`, the model has to output `0 - 0 - 0`.
 
+CTC is used in training as well. If the correct string is "agree", many per-column picks besides `a a g - r e e - e` clean up to "agree". `a g g - r - e - e` also becomes "agree" once repeats are merged and blanks are dropped. CTC adds up the probabilities of all these cases and adjusts the model to make that sum larger. That is why the model can learn from the correct string alone, without being told which column holds which character.
+
 Think back to the Hangul case in classic OCR, where the syllable 계 split in two at a zero column. To a CRNN, that zero column is just one more column. The model looks at the neighboring columns and picks 계, so it never needs to know the character boundaries in advance. Tesseract also switched to an LSTM-based recognizer in version 4.0 in 2018, moving from matching one character at a time to reading a whole line at once.
 
 This is also where confidence comes from. For each column, the model outputs a probability for each candidate character. Combine the probabilities of the characters that survive in the final string, and you can tell how sure the model is about that string. PaddleOCR, for example, averages the probabilities of the columns that remain after merging repeats and dropping blanks, and returns that as the score. The confidence in the JSON from the introduction is this kind of value. NAVER has not published exactly how CLOVA OCR computes it.
+
+Newer models sometimes use a transformer in place of the RNN, or a decoder that generates characters one at a time from the start instead of CTC. The overall flow is still the same: extract features from the line image and turn them into a string.
 
 ### Rules learned from data, not written by hand
 
 Deep learning OCR beats classic OCR less because of its architecture than because of how it learns. If the training data has enough characters under seals or touching table lines, the model learns to tell them apart on its own. Nobody has to add exception rules one by one.
 
-The shape of the training data is simple too. Give the detection model images with the vertex coordinates of the text regions, and give the recognition model line images with the correct string for each. Thanks to CTC, you do not need to mark where each character is. That answers the question from the introduction of what exactly gets trained. These two are also what we will prepare when fine-tuning for contracts in the next part.
+The shape of the training data is simple too. Give the detection model images with the vertex coordinates of the text regions, and give the recognition model line images with the correct string for each. The training code builds the shrunken labels and the threshold map from those coordinates. Thanks to CTC, you do not need to mark where each character is. That answers the question from the introduction of what exactly gets trained. These two are also what we will prepare when fine-tuning for contracts in the next part.
 
 With these principles in hand, let's use a real OCR API.
 
