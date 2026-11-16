@@ -1,4 +1,4 @@
-import { BINARIZED_LINES } from "./binarizedLines";
+import { BINARIZED_LINES, cropLine } from "./binarizedLines";
 
 // CRNN이 줄 이미지 한 장을 칸별 글자 확률로 바꾸는 과정. 정적 SVG — SSR로만 렌더링한다.
 // 줄 이미지와 칸 나누기는 CtcDecodeDemo와 같다. 특징 묶음의 진하기는 칸의 띠마다 센 검은 칸 비율이고, 확률은 설명용으로 정한 값이다.
@@ -75,24 +75,12 @@ const BANDS = 5;
 const CELL_H = 18;
 const argmax = (p: readonly number[]) => p.indexOf(Math.max(...p));
 
-// 줄 픽셀 path에서 [from, to] 열만 잘라 0열부터 시작하게 옮긴다
-function crop(pixels: string, from: number, to: number) {
-	const runs = [...pixels.matchAll(/M(\d+) (\d+)h(\d+)/g)].map((m) => [Number(m[1]), Number(m[2]), Number(m[3])]);
-	const kept = runs
-		.map(([x, y, n]) => [Math.max(x, from), y, Math.min(x + n - 1, to)] as const)
-		.filter(([a, , b]) => a <= b);
-	return {
-		d: kept.map(([a, y, b]) => `M${a - from} ${y}h${b - a + 1}v1h-${b - a + 1}z`).join(""),
-		runs: kept.map(([a, y, b]) => [a - from, y, b - from] as const),
-	};
-}
-
 export default function CrnnDiagram({ lang = "ko" }: { lang?: Lang }) {
 	const t = LABELS[lang];
 	const line = DATA[lang];
 	const width = line.to - line.from + 1;
 	const n = line.probs.length;
-	const { d, runs } = crop(line.pixels, line.from, line.to);
+	const { d, runs } = cropLine(line.pixels, line.from, line.to);
 	const sliceW = (width * S) / n;
 	const sliceX = (i: number) => STRIP_X + i * sliceW;
 	const noteX = STRIP_X + width * S + 14;

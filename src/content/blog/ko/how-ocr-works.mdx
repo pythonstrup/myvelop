@@ -7,8 +7,10 @@ socialImage: "../../../assets/blog/how-ocr-works/og.png"
 ---
 import DetectRecognizeDiagram from "@/materials/how-ocr-works/DetectRecognizeDiagram";
 import ProjectionProfileDiagram from "@/materials/how-ocr-works/ProjectionProfileDiagram";
+import BinarizeVsMapDiagram from "@/materials/how-ocr-works/BinarizeVsMapDiagram";
 import DbDetectDemo from "@/materials/how-ocr-works/DbDetectDemo";
 import ShrinkDiagram from "@/materials/how-ocr-works/ShrinkDiagram";
+import CraftMapsDiagram from "@/materials/how-ocr-works/CraftMapsDiagram";
 import CrnnDiagram from "@/materials/how-ocr-works/CrnnDiagram";
 import CtcDecodeDemo from "@/materials/how-ocr-works/CtcDecodeDemo";
 import MaskingDiagram from "@/materials/how-ocr-works/MaskingDiagram";
@@ -92,6 +94,10 @@ OCR이 무엇인지부터 알아야 한다. 이해해야 할 것은 세 가지�
 
 고전 OCR의 이진화와 헷갈리기 쉬운 대목이다. 고전 OCR은 원본의 밝기를 보고 픽셀마다 잉크인지를 물었다. 그래서 획만 검게 남고 획 사이와 글자 사이는 비었다. 확률 지도는 픽셀이 글자 영역 안에 있는지를 묻는다. 획 사이든 글자 사이든 단어 안쪽이면 밝아서 단어 하나가 통째로 한 덩어리가 된다. 반대로 도장이나 표 선은 잉크라도 글자가 아니니 어둡게 남기도록 배운다.
 
+아래 그림은 도장이 찍힌 같은 줄을 두 방식으로 본 결과다. 확률 지도는 잘 학습된 모델이 낼 법한 모양을 그린 것이다.
+
+<BinarizeVsMapDiagram />
+
 검출하는 단위도 바뀌었다. 글자 하나가 아니라 단어나 줄을 찾는다. 글자 경계를 정하는 일은 다음 단계인 인식 모델에 맡긴다.
 
 모델 안에서는 CNN이 이미지를 여러 단계로 줄여 가며 특징을 뽑는다. 적게 줄인 단계는 획 같은 세부를 보고, 많이 줄인 단계는 넓은 범위를 본다. 이 특징들을 같은 크기로 다시 늘려 합친 뒤 픽셀마다 확률을 낸다. 제목처럼 큰 글자와 각주처럼 작은 글자를 한 모델로 함께 찾을 수 있는 것도 여러 크기를 함께 보기 때문이다.
@@ -116,6 +122,10 @@ OCR이 무엇인지부터 알아야 한다. 이해해야 할 것은 세 가지�
 DBNet의 이름에 담긴 미분 가능한 이진화(Differentiable Binarization)는 학습을 위한 장치다. 학습할 때 모델은 확률 지도와 함께 픽셀마다 기준값을 담은 기준값 지도를 하나 더 낸다. 보통의 이진화는 기준값을 넘으면 1, 아니면 0이 되는 계단이라 미분할 수 없고, 그래서 학습에 넣을 수 없다. DB는 이 계단을 가파른 곡선으로 바꿔 이진화까지 학습에 넣는다. 기준값 지도는 글자 테두리 근처에서 높아지도록 배우고, 그 덕분에 모델은 테두리에서 확률이 또렷하게 갈리는 지도를 내게 된다. 추론할 때는 기준값 지도를 떼어 내고 앞에서 본 것처럼 상수 기준값 하나로 자른다. 학습은 정교해지고 추론 속도는 그대로인 셈이다.
 
 CRAFT는 2019년 NAVER Clova 연구진이 발표한 모델로, 단어 대신 글자를 단위로 지도를 그린다. 지도는 두 장이다. 한 장은 픽셀이 글자 하나의 중심일 확률을, 다른 한 장은 이웃한 두 글자 사이의 중심일 확률을 담는다. 두 지도를 각각 기준값으로 잘라 겹친 뒤 덩어리로 묶으면, 글자 중심들이 글자 사이 연결을 타고 이어져 단어 하나가 된다. 글자를 하나씩 이어 붙이는 방식이라 휘어진 글자 줄도 따라갈 수 있다.
+
+아래 그림은 "계약을"에서 두 지도가 단어 하나로 이어지는 과정이다. 두 지도 역시 설명을 위해 그린 것이다.
+
+<CraftMapsDiagram />
 
 그런데 학습 데이터에는 보통 단어 상자만 있고 글자 상자는 없다. 그래서 CRAFT는 글자 위치를 아는 합성 이미지로 먼저 배운 뒤, 실제 이미지에서는 단어 안의 글자 위치를 모델이 스스로 추정해 정답으로 쓴다. 추정한 글자 수가 정답 문자열의 글자 수와 어긋날수록 그 정답을 덜 믿는다. 다만 CLOVA OCR 서비스가 내부에서 어떤 모델을 쓰는지는 공개되어 있지 않다.
 

@@ -20,8 +20,8 @@ const PAIRS = {
 } as const;
 export type Lang = keyof typeof PAIRS;
 
-// 잉크가 있는 열을 단어 단위로 묶고, 단어마다 잉크를 PAD만큼 감싼 정답 상자를 만든다
-function wordsOf(line: Line, top: number): Rect[] {
+// 잉크가 있는 열을 단어 단위로 묶고, 단어마다 잉크를 PAD만큼 감싼 정답 상자를 만든다. 줄은 MARGIN만큼 들여 놓는다고 본다
+export function wordBoxes(line: Line, top: number): Rect[] {
 	const runs = [...line.pixels.matchAll(/M(\d+) (\d+)h(\d+)/g)].map((m) => [Number(m[1]), Number(m[2]), Number(m[3])]);
 	const spans: [number, number][] = [];
 	let gap = Number.POSITIVE_INFINITY;
@@ -56,7 +56,7 @@ export function documentOf(lang: Lang) {
 		],
 		width: Math.max(first.w, second.w) + MARGIN * 2,
 		height: top2 + second.h + MARGIN,
-		words: [...wordsOf(first, MARGIN), ...wordsOf(second, top2)],
+		words: [...wordBoxes(first, MARGIN), ...wordBoxes(second, top2)],
 	};
 }
 

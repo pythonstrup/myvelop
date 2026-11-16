@@ -7,8 +7,10 @@ socialImage: "../../../assets/blog/how-ocr-works/og.png"
 ---
 import DetectRecognizeDiagram from "@/materials/how-ocr-works/DetectRecognizeDiagram";
 import ProjectionProfileDiagram from "@/materials/how-ocr-works/ProjectionProfileDiagram";
+import BinarizeVsMapDiagram from "@/materials/how-ocr-works/BinarizeVsMapDiagram";
 import DbDetectDemo from "@/materials/how-ocr-works/DbDetectDemo";
 import ShrinkDiagram from "@/materials/how-ocr-works/ShrinkDiagram";
+import CraftMapsDiagram from "@/materials/how-ocr-works/CraftMapsDiagram";
 import CrnnDiagram from "@/materials/how-ocr-works/CrnnDiagram";
 import CtcDecodeDemo from "@/materials/how-ocr-works/CtcDecodeDemo";
 import MaskingDiagram from "@/materials/how-ocr-works/MaskingDiagram";
@@ -92,6 +94,10 @@ A deep learning detection model takes an image and computes, for each pixel, "th
 
 This is easy to confuse with binarization in classic OCR. Classic OCR looked at the brightness of the original and asked, for each pixel, whether it was ink. Only the strokes came out dark, and the gaps between strokes and between characters stayed empty. The probability map asks whether a pixel lies inside a text region. Gaps between strokes or between letters are bright as long as they sit inside a word, so a whole word lights up as one blob. Seals and table lines, on the other hand, are ink but not text, and the model learns to leave them dark.
 
+The figure below shows the same line, with a seal stamped over it, seen both ways. The probability map is drawn to look like what a well-trained model would produce.
+
+<BinarizeVsMapDiagram lang="en" />
+
 The unit of detection changed too. Instead of single characters, the model finds words or lines. Deciding where characters begin and end is left to the next stage, the recognition model.
 
 Inside the model, a CNN extracts features while shrinking the image in several stages. The lightly shrunk stages see fine details such as strokes, and the heavily shrunk stages see a wide area. These features are scaled back to the same size and merged, and then the model outputs a probability for each pixel. Looking at several scales at once is what lets one model find both large text like titles and small text like footnotes.
@@ -116,6 +122,10 @@ Step 3 grows the blobs because the labels were shrunk during training. DBNet doe
 The differentiable binarization in DBNet's name is a training device. During training, the model outputs a threshold map alongside the probability map, holding a threshold for each pixel. Ordinary binarization is a step, 1 above the threshold and 0 below it, so it cannot be differentiated and cannot be part of training. DB replaces the step with a steep curve so that binarization itself becomes part of training. The threshold map learns to be high near text borders, which pushes the model to produce maps where the probability changes sharply at the border. At inference, the threshold map is dropped and a single constant threshold is used, as in the steps above. Training gets more precise while inference stays just as fast.
 
 CRAFT, published by NAVER Clova researchers in 2019, draws its maps per character instead of per word. It outputs two maps. One holds the probability that a pixel is the center of a character, and the other holds the probability that it is the center of the space between two neighboring characters. Thresholding each map, overlaying them, and grouping the result links the character centers through the links between characters, forming one word. Because it chains characters one by one, it can follow curved lines of text.
+
+The figure below shows how the two maps join into one word for "agree". These maps are also drawn for illustration.
+
+<CraftMapsDiagram lang="en" />
 
 Training data, however, usually has word boxes and no character boxes. So CRAFT first learns from synthetic images where the character positions are known, and on real images it estimates the character positions inside each word itself and uses those estimates as labels. The further the estimated character count is from the length of the correct string, the less it trusts that label. That said, NAVER has not disclosed which model the CLOVA OCR service uses internally.
 
