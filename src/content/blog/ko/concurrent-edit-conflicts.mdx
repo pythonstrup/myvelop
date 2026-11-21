@@ -11,6 +11,7 @@ import CellHistoryDiagram from "@/materials/concurrent-edit-conflicts/CellHistor
 import CellValueDiagram from "@/materials/concurrent-edit-conflicts/CellValueDiagram";
 import CheckBenchDiagram from "@/materials/concurrent-edit-conflicts/CheckBenchDiagram";
 import CompareUnitDiagram from "@/materials/concurrent-edit-conflicts/CompareUnitDiagram";
+import { ConflictDialogDiagram, OverwriteDiagram } from "@/materials/concurrent-edit-conflicts/ConflictResolve";
 import EditLockDiagram from "@/materials/concurrent-edit-conflicts/EditLockDiagram";
 import LinkedCellsDiagram from "@/materials/concurrent-edit-conflicts/LinkedCellsDiagram";
 import ProductTableDiagram from "@/materials/concurrent-edit-conflicts/ProductTableDiagram";
@@ -435,3 +436,68 @@ DELETE FROM product_tags WHERE product_id = 1 AND tag = '신상';
 값 대신 바꾼 내용, 곧 연산을 보내는 셈이다. 이 생각을 글자 하나하나까지 밀고 가면 뒤에서 다룰 OT와 CRDT가 된다.
 
 세 값 판정과 목록 병합을 거치면, 사용자에게 물을 일은 같은 칸을 서로 다르게 고친 경우만 남는다. 그때 무엇을 보여 주고 어떻게 고르게 할지가 다음 질문이다.
+
+## 충돌 알림과 의도적 덮어쓰기
+
+A가 베이직 린넨 셔츠의 가격을 39,000원에서 29,000원으로 내려 저장했다고 하자. 그사이 B는 39,000원을 보고 가격을 35,000원으로 고치고, 상품 설명에 세탁 방법을 덧붙여 저장한다. 가격 칸은 세 값이 모두 다르니 진짜 충돌이고, 설명 칸은 B만 바꿨으니 써도 된다. 앞의 서버는 이때 아무것도 쓰지 않고 충돌한 칸과 최신 값을 돌려준다. 이제 화면이 사용자에게 물을 차례다.
+
+### 충돌 창에 보여 줄 것
+
+버전 비교의 거절 창은 누군가 바꿨다는 사실만 알리고 다시 입력하게 했다. 칸마다 세 값으로 판정하는 서버는 더 많은 것을 알려 줄 수 있다. 충돌 창은 어느 칸이 부딪혔는지와 그 칸의 세 값을 나란히 보여 준다.
+
+<ConflictDialogDiagram />
+
+B는 A가 가격을 29,000원으로 내렸다는 것을 안 뒤에 고른다. A의 값을 따르면 화면은 가격 수정을 빼고 다시 보내고, 설명만 저장된다. 내 값을 고르면 35,000원으로 덮어쓴다.
+
+어느 쪽을 고르든 B가 입력한 설명은 남아야 한다. 충돌 창이 입력을 지우면 충돌한 칸 하나 때문에 충돌하지 않은 수정까지 다시 해야 한다. 화면은 충돌 응답을 받아도 입력한 값을 그대로 두고, 부딪힌 칸만 묻는다.
+
+누가 언제 바꿨는지도 판단을 돕는다. 할인 담당자가 2분 전에 내린 가격이라면 B는 덮어쓰기 전에 먼저 물어볼 수 있다. 다만 행에 `updated_by`와 `updated_at`만 있으면 칸마다 누가 바꿨는지는 알 수 없다. 칸 단위로 보여 주려면 칸마다 변경 기록을 남겨야 한다.
+
+### 의도적 덮어쓰기
+
+B가 내 값으로 저장을 누르면 무엇을 보내야 할까? 손쉬운 방법은 요청에 `force` 같은 표시를 붙여 서버가 판정을 건너뛰게 하는 것이다. 하지만 창을 띄운 뒤 버튼을 누르기까지 시간이 있다. 그사이 C가 가격을 25,000원으로 바꿨다면, 판정을 건너뛴 저장은 B가 본 적 없는 C의 수정을 지운다. 잃어버린 수정이 다시 생기는 것이다.
+
+그래서 덮어쓰기도 판정을 거친다. 창에 보여 준 최신 값을 읽은 값으로 바꿔 다시 보낸다. B가 29,000원을 보고도 35,000원을 골랐다는 뜻이다.
+
+```ts
+// 내 값으로 저장: 창에 보여 준 최신 값을 읽은 값으로 삼아 다시 보낸다
+await saveProduct(productId, {
+  seen: { ...seen, price: 29000 }, // 처음 본 39000 대신 창에서 본 29000
+  changes: { price: 35000, desc: "통기성 좋은 린넨 100% 셔츠. 찬물 손세탁 권장" },
+});
+```
+
+최신 값이 그대로 29,000원이면 서버는 아무도 안 바꿨다고 판정해 35,000원을 쓴다. 그사이 C가 25,000원으로 바꿨다면 다시 충돌이 나고, B는 25,000원이 담긴 창을 새로 본다.
+
+<OverwriteDiagram />
+
+이렇게 하면 사용자는 자기가 본 값만 덮어쓸 수 있다. 덮어쓴 일은 변경 기록에 읽은 값과 함께 남긴다. 나중에 A가 가격이 왜 35,000원이냐고 물으면, B가 29,000원을 보고 35,000원을 골랐다는 기록이 답이 된다.
+
+얻는 것은 사람이 판단해야 하는 일만 사람에게 묻는다는 점이다. 내주는 것은 두 가지다.
+
+<strong>판단은 여전히 사용자 몫이다.</strong> 창은 값을 보여 줄 뿐 어느 값이 맞는지는 모른다. B가 A의 할인 사정을 모르면 무엇을 골라도 틀릴 수 있다. 누가 언제 바꿨는지를 보여 주는 이유가 여기에 있다.
+
+<strong>창이 잦으면 읽지 않고 누른다.</strong> 충돌 창이 자주 뜨면 사용자는 내용을 읽지 않고 내 값으로 저장을 누르게 된다. 그러면 단계만 하나 늘어난 Last-Write-Wins가 된다. 그림처럼 덮어쓰기 버튼을 기본으로 강조하지 않으면 조금 낫다. 하지만 충돌이 그만큼 잦다면 편집 잠금이나 뒤에서 다룰 CRDT처럼 충돌 자체를 줄이는 방법을 봐야 한다.
+
+충돌을 미리 알리는 방법도 있다. 다른 사람이 편집 중인 칸에 표시를 띄우면 같은 칸을 동시에 고치는 일이 줄어든다. 다만 앞의 실시간 화면의 한계에서 본 것처럼 표시는 늦게 도착할 수 있다. 편집 중 표시는 충돌을 줄이고, 저장할 때의 판정은 수정이 사라지는 것을 막는다. 둘은 함께 쓴다.
+
+<strong>구현할 곳</strong> — 서버는 충돌을 `409 Conflict`로 알린다. 버전 비교에서 쓴 412는 요청에 실린 조건이 맞지 않았다는 뜻이고, 409는 요청이 리소스의 현재 상태와 부딪혔다는 뜻이다. 칸마다 내용을 보고 판정했으니 409가 더 어울린다. RFC 9110은 409 응답에 사용자가 충돌의 원인을 알아볼 만큼 정보를 담으라고 한다. 앞의 서버 코드가 던진 `ConflictError`를 칸마다 세 값과 바꾼 사람을 담은 본문으로 바꾼다.
+
+```json
+{
+  "conflicts": [
+    {
+      "field": "price",
+      "seen": 39000,
+      "current": 29000,
+      "mine": 35000,
+      "updatedBy": "A",
+      "updatedAt": "2026-11-20T14:03:00+09:00"
+    }
+  ]
+}
+```
+
+화면은 이 본문으로 충돌 창을 그리고, 입력한 값은 그대로 둔다.
+
+여기까지는 저장 버튼을 누를 때마다 판정했다. 상품 설명처럼 긴 글을 여러 사람이 동시에 계속 고친다면 저장할 때마다 묻는 것으로는 부족하다. 다음 장의 OT와 CRDT는 글자 하나하나의 수정을 합친다.
