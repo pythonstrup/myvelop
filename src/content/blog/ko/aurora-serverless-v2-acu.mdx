@@ -59,7 +59,7 @@ ACU로 세는 것은 CPU와 메모리 같은 계산 용량뿐이다. 데이터�
 
 범위는 클러스터마다 하나만 정한다. writer와 reader가 같은 범위를 쓰지만 용량은 인스턴스마다 따로 움직이므로, writer가 바쁠 때도 reader는 바닥에 머물 수 있다.
 
-최소는 바닥이다. 한가할 때는 용량이 여기까지 내려가므로 바닥이 낮을수록 요금이 덜 나오고, 0으로 두면 일이 없을 때 인스턴스가 아예 멈춘다. 그렇다고 무조건 낮게 잡을 일은 아니다. 바닥이 낮으면 두 가지를 잃는다. 하나는 속도다. 용량이 작을 때는 조금씩 늘어나서, 바닥에서 출발하면 필요한 만큼 올라가는 데 오래 걸린다. 다른 하나는 캐시다. Aurora는 자주 읽는 데이터를 버퍼 캐시라는 메모리 공간에 올려 두는데, 용량이 줄면 이 데이터가 밀려난다. 그러면 다시 바빠졌을 때 클러스터 저장소에서 새로 읽어 와야 한다.
+최소는 바닥이다. 한가할 때는 용량이 여기까지 내려가므로 바닥이 낮을수록 요금이 덜 나오고, 0으로 두면 일이 없을 때 인스턴스가 아예 멈춘다. 다만 이 자동 일시 중지는 Aurora PostgreSQL 16.3, 15.7, 14.12, 13.15 이상과 Aurora MySQL 3.08.0 이상에서만 쓸 수 있다. 그렇다고 무조건 낮게 잡을 일은 아니다. 바닥이 낮으면 두 가지를 잃는다. 하나는 속도다. 용량이 작을 때는 조금씩 늘어나서, 바닥에서 출발하면 필요한 만큼 올라가는 데 오래 걸린다. 다른 하나는 캐시다. Aurora는 자주 읽는 데이터를 버퍼 캐시라는 메모리 공간에 올려 두는데, 용량이 줄면 이 데이터가 밀려난다. 그러면 다시 바빠졌을 때 클러스터 저장소에서 새로 읽어 와야 한다.
 
 최소만 다르게 정한 두 인스턴스에 같은 일을 맡겨 보자. 위는 최소가 0.5 ACU, 아래는 4 ACU다.
 
@@ -182,7 +182,7 @@ DB 인스턴스에서 데이터가 드나드는 길은 셋이다. 애플리케�
 
 <TempSpillDemo client:visible />
 
-애플리케이션과 오가는 양은 `NetworkThroughput`이, 클러스터 저장소와 오가는 양은 `StorageNetworkThroughput`이 잰다. 로컬 저장소와 오가는 임시 파일은 어느 쪽에도 잡히지 않고, Serverless v2에만 있는 `TempStorageIOPS`와 `TempStorageThroughput`이 따로 잰다. 이 두 지표가 ACU와 함께 오른다면 메모리를 넘친 정렬이나 집계 쿼리부터 찾아본다.
+애플리케이션과 오가는 양은 `NetworkThroughput`이, 클러스터 저장소와 오가는 양은 `StorageNetworkThroughput`이 잰다. 로컬 저장소와 오가는 임시 파일은 Serverless v2에만 있는 `TempStorageIOPS`와 `TempStorageThroughput`이 따로 잰다. 이 두 지표가 ACU와 함께 오른다면 메모리를 넘친 정렬이나 집계 쿼리부터 찾아본다.
 
 ### 요청이 없는데도 내려오지 않을 때
 
@@ -281,7 +281,7 @@ CloudWatch 호출이 실패하거나 최근 1분 값이 비어 있을 때가 있
 | 진행(fail-open) | 그대로 쓴다 | 작업에 마감이 있고, 데이터베이스가 잠깐 느려져도 피해가 작을 때 |
 | 멈춤(fail-closed) | 쉰다 | 작업은 늦어져도 되고, 데이터베이스가 막히면 사용자가 피해를 볼 때 |
 
-조절 장치를 단 목적이 서비스 요청을 지키는 것이라면 멈춤을 기본으로 둔다. 지표를 읽지 못하는 동안에는 데이터베이스가 괜찮은지 알 수 없기 때문이다. 대신 그대로 두면 아무도 모르는 사이에 작업이 오래 서 있을 수 있으니, 일정 시간 넘게 값을 못 읽으면 알림을 보낸다.
+조절 장치를 단 목적이 서비스 요청을 지키는 것이라면 멈춤을 기본으로 둔다. 지표를 읽지 못하는 동안에는 데이터베이스가 괜찮은지 알 수 없기 때문이다. 대신 그대로 두면 아무도 모르는 사이에 작업이 오래 서 있을 수 있으니, 이유가 무엇이든 일정 시간 넘게 멈춰 있으면 알림을 보낸다.
 
 어느 쪽을 고르든 값이 없는 것을 0으로 읽어서는 안 된다. 0 ACU는 한가하다는 뜻이라, 값이 없을 때마다 0으로 읽으면 고른 적도 없는 진행이 기본 동작이 되어 버린다. 값이 없는 경우는 따로 다뤄야 한다.
 
@@ -331,6 +331,7 @@ async function waitUntilAcuIsLow(): Promise<void> {
 
 -   AWS, [How Aurora Serverless v2 works](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-serverless-v2.how-it-works.html)
 -   AWS, [Performance and scaling for Aurora Serverless v2](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-serverless-v2.setting-capacity.html)
+-   AWS, [Scaling to Zero ACUs with automatic pause and resume for Aurora serverless](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-serverless-v2-auto-pause.html)
 -   AWS, [Amazon CloudWatch metrics for Amazon Aurora](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Aurora.AuroraMonitoring.Metrics.html)
 -   AWS, [Monitoring Amazon Aurora metrics with Amazon CloudWatch](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/monitoring-cloudwatch.html)
 -   AWS, [Amazon CloudWatch dimensions for Aurora](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/dimensions.html)

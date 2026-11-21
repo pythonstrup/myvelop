@@ -17,7 +17,7 @@ const DONE_AT = 9300;
 const TRAVEL = 700;
 const SPACING = 140;
 const ARIA =
-	"DB 인스턴스를 가운데 두고, 위에 애플리케이션, 왼쪽 아래에 클러스터 저장소, 오른쪽 아래에 로컬 저장소가 있다. 상자마다 그 길을 재는 지표 이름과 그 값의 작은 그래프가 붙어 있다. 먼저 정렬할 행이 클러스터 저장소에서 인스턴스로 올라와 메모리의 정렬 작업 공간이 찬다. 공간이 다 차면 넘친 몫이 로컬 저장소로 내려가 임시 파일이 쌓이고, 그동안 TempStorageThroughput 그래프가 크게 오르며 ACU도 4에서 6으로 오른다. 이어서 임시 파일을 다시 읽어 정렬을 마치고, 결과를 애플리케이션으로 보낸 뒤 임시 파일을 지운다. 끝나고 나면 세 그래프 가운데 임시 파일이 오간 양은 TempStorageThroughput에만 남아 있다.";
+	"DB 인스턴스를 가운데 두고, 위에 애플리케이션, 왼쪽 아래에 클러스터 저장소, 오른쪽 아래에 로컬 저장소가 있다. 상자마다 그 길을 재는 지표 이름과 그 값의 작은 그래프가 붙어 있다. 먼저 정렬할 행이 클러스터 저장소에서 인스턴스로 올라와 메모리의 정렬 작업 공간이 찬다. 공간이 다 차면 넘친 몫이 로컬 저장소로 내려가 임시 파일이 쌓이고, 그동안 TempStorageThroughput 그래프가 크게 오르며 ACU도 4에서 6으로 오른다. 이어서 임시 파일을 다시 읽어 정렬을 마치고, 결과를 애플리케이션으로 보낸 뒤 임시 파일을 지운다. 끝나고 나면 임시 파일이 오간 양은 TempStorageThroughput 그래프로 볼 수 있다.";
 
 // 꺼졌다 켜졌다 하는 구간. a에서 켜지고 b에서 꺼진다.
 const window01 = (t: number, a: number, b: number) => Math.min(seg(t, a, a + 300), 1 - seg(t, b, b + 300));
@@ -34,7 +34,7 @@ function captionAt(t: number) {
 	if (t < READBACK_FROM) return "② 메모리가 차면 넘친 몫을 임시 파일로 덜어 낸다";
 	if (t < RESULT_FROM) return "③ 임시 파일을 다시 읽어 가며 정렬을 마친다";
 	if (t < DONE_AT) return "④ 결과를 보내고 임시 파일은 지운다";
-	return "⑤ 임시 파일이 오간 양은 TempStorage 지표에만 남는다";
+	return "⑤ 임시 파일이 오간 양은 TempStorage 지표로 본다";
 }
 
 type Pt = readonly [number, number];
