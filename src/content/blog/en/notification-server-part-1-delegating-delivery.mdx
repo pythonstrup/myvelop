@@ -9,6 +9,24 @@ seriesOrder: 1
 ---
 
 import ScatteredLimitDemo from "@/materials/notification-server-part-1-delegating-delivery/ScatteredLimitDemo";
+import ResponseTimingDemo from "@/materials/notification-server-part-1-delegating-delivery/ResponseTimingDemo";
+import LossWindowDemo from "@/materials/notification-server-part-1-delegating-delivery/LossWindowDemo";
+import OutboxBrokerDiagram from "@/materials/notification-server-part-1-delegating-delivery/OutboxBrokerDiagram";
+import ModuleCounterDiagram from "@/materials/notification-server-part-1-delegating-delivery/ModuleCounterDiagram";
+import SendServerDiagram from "@/materials/notification-server-part-1-delegating-delivery/SendServerDiagram";
+import OutboxTableDiagram from "@/materials/notification-server-part-1-delegating-delivery/OutboxTableDiagram";
+import QueueBufferDiagram from "@/materials/notification-server-part-1-delegating-delivery/QueueBufferDiagram";
+import PriorityDemo from "@/materials/notification-server-part-1-delegating-delivery/PriorityDemo";
+import QueueArchitectureDiagram from "@/materials/notification-server-part-1-delegating-delivery/QueueArchitectureDiagram";
+import DbQueueTableDiagram from "@/materials/notification-server-part-1-delegating-delivery/DbQueueTableDiagram";
+import RabbitRetryDiagram from "@/materials/notification-server-part-1-delegating-delivery/RabbitRetryDiagram";
+import KafkaDiagram from "@/materials/notification-server-part-1-delegating-delivery/KafkaDiagram";
+import ScheduleGapDiagram from "@/materials/notification-server-part-1-delegating-delivery/ScheduleGapDiagram";
+import BatchScanDiagram from "@/materials/notification-server-part-1-delegating-delivery/BatchScanDiagram";
+import ReservationTableDiagram from "@/materials/notification-server-part-1-delegating-delivery/ReservationTableDiagram";
+import DelayedJobDiagram from "@/materials/notification-server-part-1-delegating-delivery/DelayedJobDiagram";
+import ManagedSchedulerDiagram from "@/materials/notification-server-part-1-delegating-delivery/ManagedSchedulerDiagram";
+import PollerGapDiagram from "@/materials/notification-server-part-1-delegating-delivery/PollerGapDiagram";
 
 ## Introduction
 
@@ -24,9 +42,532 @@ Here is what happens when what each place sends under the limit meets at the ext
 
 At this point, someone suggests gathering delivery in one place and splitting it out into its own server. This series covers the trade-offs you will face while building that notification server. In order, it looks at what to hand delivery to, where to enforce the external API's limit, where to store the delivery history and how to read it, and what gets crossed when bulk sends go out in groups. For each decision, it lines up the candidates and weighs what each one gains and gives up. If you are about to split out a delivery server yourself, you can read it as a list of things to check before deciding.
 
-Part 1 covers the first of those trade-offs: where to hand off delivery. That question breaks down into four.
+Part 1 covers the first of those trade-offs: where to hand off delivery. That question breaks down into three.
 
-1. Does the side that requests a send need to wait for the result?
-2. Does the requesting side know who will process it?
-3. Where should the state of pending work live?
-4. How should scheduled sends be represented?
+1. How to hand off a send request
+2. What to build the queue on
+3. How to represent scheduled sends
+
+## How to hand off a send request
+
+The API server, the admin system, and the batch job each have code that calls the external API, and we want to gather it in one place. There are four ways: a shared module that gathers the code, a send server that gathers the execution, and a transactional outbox or a message queue that collects the requests. Let's compare the four on the same criteria.
+
+-   Does the caller's response wait for the send?
+-   If the external API slows down or stops, does the caller feel it?
+-   Is there a window in which a send request can be lost?
+-   Where is the external API's limit enforced?
+-   What new thing has to be operated?
+
+### 1. Gather the code in a shared module
+
+If the service is a monolith running on a single server, gathering the sending code into one module may be enough. Template mapping, phone number normalization, and the external API call end up in one place, and there is nothing new to operate. With only one server, a counter inside the module can enforce the limit.
+
+Suppose there are 120 notifications to send in five seconds. The counter stops at 100 and pushes the remaining 20 to the next five seconds.
+
+<ModuleCounterDiagram scene={1} lang="en" />
+
+The trouble starts when servers are added. Scale out to several servers or move the batch job into its own process, and the same module runs separately in several places. The code is gathered but execution is scattered, and since each copy only sees its own counter, together they exceed the limit.
+
+For example, say the API server, the admin system, and the batch job each carry the same send module and send 40, 20, and 60 messages in five seconds. Each stays under the limit by its own counter, but 120 reach the external API in total and 20 are rejected.
+
+<ModuleCounterDiagram scene={2} lang="en" />
+
+Moving the counter to a shared store such as Redis solves this, but once you have built that, you have all but built a queue.
+
+The three servers check the Redis counter together before sending, so only 100 per five seconds reach the external API.
+
+<ModuleCounterDiagram scene={3} lang="en" />
+
+The weak spots also depend on how the module is called. Called synchronously, the external API's latency and outages, plus any time spent waiting on the limit, land directly on the caller's response. Handed off asynchronously inside the process, the response gets faster, but unsent requests sit in memory and vanish on a deploy or restart. And every change to the module means redeploying every service that uses it.
+
+### 2. Call a send server over an API
+
+To gather execution as well, run a separate send server. Let's look at each service calling it over HTTP. A change to the send logic only means redeploying the send server, and since callers only need to speak HTTP, the language or framework does not matter.
+
+With only the send server calling the external API, there is also only one place to enforce the limit.
+
+As in the earlier example, even if three places try to send 120 in five seconds, the send server's counter stops at 100.
+
+<SendServerDiagram scene={1} lang="en" />
+
+Scale the send server out and you put a load balancer in front to spread the requests. Keep the setup as it was, and each send server keeps its own counter, so rate limiting stops working.
+
+Say the load balancer splits 120 requests into 60 for each of two send servers. Both stay under the limit by their own counters, but 120 reach the external API in total.
+
+<SendServerDiagram scene={2} lang="en" />
+
+To bring the counter back to one place, limit the rate at the load balancer that every request passes through. When 120 come in, it passes only 100 per five seconds, 50 to each send server, and rejects the other 20.
+
+<SendServerDiagram scene={3} lang="en" />
+
+That comes with three costs.
+
+-   <strong>Each service becomes responsible for retries.</strong> Excess requests are rejected rather than kept, so the API server, the admin system, and the batch job each need their own retry logic. When the final retry also fails, they need a way to compensate for the failed send as well.
+-   <strong>The load balancer only counts incoming requests.</strong> Calls the send server makes to the external API to resend failed messages do not show up in that number.
+-   <strong>With several load balancers, the same problem comes back.</strong> To keep each node from counting on its own, the counter has to live in a shared store such as Redis.
+
+<details>
+<summary>In Nginx and Envoy</summary>
+
+Nginx's `limit_req` returns 503 for excess requests by default, and `limit_req_status` can change that to another code such as 429. With `burst`, that many requests are delayed and let through instead of being rejected at once. The default is 0. The counter lives in a shared memory zone on a single Nginx instance, and `sync`, which keeps that zone in step across instances, is only available with a commercial subscription.
+
+Envoy calls a separate global rate limit service over gRPC so that several instances can enforce a limit together. The official reference implementation is written in Go and keeps its counters in Redis.
+
+</details>
+
+From here the path splits in two, depending on when the send server responds.
+
+-   <strong>It responds after the send finishes.</strong> The caller knows the result right away. In exchange, the external API's latency and outages spread all the way to the caller. If the send server stops, the request itself fails, so the job of resending stays with the caller. When the limit is hit, the response is late by however long the send server waits, and if it returns 429, the caller has to decide when to try again. A batch job that sends a notice to every member ends up throttling itself.
+-   <strong>It responds with `202 Accepted` as soon as the request arrives.</strong> The caller gets faster, but the send server has to keep the requests somewhere and send them out slowly. Kept in memory, they vanish on restart. Kept in storage, that is building a queue.
+
+Suppose sign-up processing takes 0.2 seconds and the external API takes 3 seconds. Responding after the send returns the sign-up response at 3.2 seconds, and responding with 202 returns it at 0.2 seconds.
+
+<ResponseTimingDemo client:visible lang="en" />
+
+Responding after the send lets the external API's problems spread, and responding right away needs somewhere to keep the requests. Either way, a queue becomes necessary.
+
+### 3. Write it with the commit using a transactional outbox
+
+If a queue is needed, the closest one at hand is the DB you already use. Write the send request to an outbox table in the same transaction as the sign-up, and a send worker takes it from that table and sends it. When the sign-up commits, the send request commits with it, and when it rolls back, both disappear. Requests are kept rather than rejected and the worker retries the failed ones, so callers need neither retries nor failure compensation.
+
+Suppose one sign-up request comes in. One row goes into the members table and one into the outbox table, in a single transaction.
+
+<OutboxTableDiagram scene={1} lang="en" />
+
+In exchange, you build the queue's features yourself. Lock rows with `SELECT … FOR UPDATE SKIP LOCKED` so that several workers do not pick the same row, manage retry intervals, clean up processed rows, and find a way for workers to share the limit. Reading the table periodically puts load on the production DB, and sends are late by up to the polling interval.
+
+Suppose two send workers read the outbox table every second. What you have to build depends on which state a row is in.
+
+<OutboxTableDiagram scene={2} lang="en" />
+
+The transactional outbox is usually introduced together with a message broker. A separate process reads the rows written to the outbox table and moves them to Kafka or RabbitMQ. But the outbox table is already a queue in its own right. Rows pile up in the order they are written, and rows that have been taken are marked as processed. If the send worker can read this table directly, I think running a second queue that does the same job, plus a process that moves rows between the two, is overengineering.
+
+Drawing the two setups side by side shows how many things are playing the role of a queue.
+
+<OutboxBrokerDiagram lang="en" />
+
+A broker earns its place elsewhere: when each service has its own DB so the receiving side cannot read the outbox table, or when several services need to subscribe to the same event. If a single notification server picks up send requests written to the same DB, neither applies.
+
+### 4. Put it on a message queue and return
+
+If building queue features on top of a table feels like too much, hand them to a message queue. The caller puts the request on the queue and returns right away, and a send worker takes it off and calls the external API. Locking, retries, and cleanup, which the outbox made you build, come built into most queues. If the external API slows down or stops, the caller is unaffected, and a burst of requests waits in the queue and flows out at the limit the worker enforces.
+
+As in the earlier example, suppose three places enqueue 120 requests in five seconds. The worker takes and sends only 100 per five seconds, and the remaining 20 wait in the queue and go out in the next five seconds.
+
+<QueueBufferDiagram lang="en" />
+
+That leaves some homework.
+
+-   <strong>You cannot know the result right away.</strong> All the caller knows is that it handed the request off. To check whether it was actually sent, you need to record the delivery history and build a way to look it up. [Part 3](/blog/bullmq-notification-part-3-delivery-history) and [Part 4](/blog/bullmq-notification-part-4-reading-history) cover that.
+-   <strong>You have a queue to operate.</strong> The queue becomes new infrastructure and a new point of failure. What to build it on is the next section's question.
+-   <strong>The same notification can go out twice.</strong> If the external API sent the message but the response was cut off, the worker treats it as a failure and sends it again. So each send needs an identifying key to filter out duplicates.
+-   <strong>There is a window in which a send request can be lost.</strong> If the sign-up has committed to the DB and the server dies just before enqueueing, the send request is lost. Because the write is split between the DB and the queue, the gap the outbox closed opens again.
+
+Here is what survives when the server dies right after the commit, comparing enqueueing directly with writing to an outbox.
+
+<LossWindowDemo client:visible lang="en" />
+
+### Side by side
+
+| Criterion | Shared module | Send server API | Outbox | Message queue |
+| --- | --- | --- | --- | --- |
+| Does the response wait for the send? | Yes, if called synchronously | Yes, if it responds after sending | No | No |
+| Do external API outages spread? | Yes, if called synchronously | Yes, if it responds after sending | No | No |
+| Window for losing a request | On restart, if asynchronous | When the send server stops | None | Between commit and enqueue |
+| Where the limit is enforced | Separately on each server | Send server or load balancer | Worker | Worker |
+| New things to operate | None | Send server | Outbox table and workers | Queue and workers |
+
+### Choosing how to hand off
+
+None of the four always wins. The answer depends on how many servers you run and whether you can afford to lose even one request.
+
+-   <strong>If you run a single-server monolith and send far below the limit, a shared module is enough.</strong> What you gain is that there is nothing new to operate. What you give up is the limit as soon as servers are added, and every change to the module means redeploying every service that uses it.
+-   <strong>If callers need the result right away and can each own their retries, a send server API fits.</strong> What you gain is the send logic and the limit in one place, with results right away. What you give up is that the external API's latency and outages spread to callers, and every service needs its own retries and failure compensation for rejected requests.
+-   <strong>If notifications that must never be lost, such as payment results, are the core, the outbox fits.</strong> What you gain is that the sign-up and the send request commit in one transaction, leaving no gap. What you give up is that you build locking, retry intervals, cleanup, and a limit shared across workers on top of a table, and the production DB takes the polling load.
+-   <strong>If you run several servers and need delayed sends, retries, and a shared limit, a message queue comes closest.</strong> What you gain is that the queue provides these out of the box. What you give up is a new piece of infrastructure and the gap between commit and enqueue. That gap can be closed with a batch job that periodically finds sends that should have gone out but did not, and enqueues them again.
+
+## What to build the queue on
+
+Once you have decided on a queue, outbox or message queue, it is time to decide what to build it on. First, let's look at why every candidate so far ended up needing a queue.
+
+### Why a queue
+
+A queue is a waiting line between the side that puts requests in and the side that takes them out and processes them. That one line solves the earlier problems in four ways.
+
+-   <strong>It absorbs bursts and releases them at a steady rate.</strong> Requests can go in and come out at different rates, so even if 120 arrive in five seconds, the worker takes 100 at a time. It respects the external API's limit without rejecting the excess.
+-   <strong>It separates the caller from the sender.</strong> The caller enqueues and returns right away. If the external API slows down or stops, the effect stops at the worker and does not reach the caller. When volume grows, you only add workers.
+-   <strong>It handles failures inside the queue.</strong> A failed request goes back into the queue and is retried after an interval. The API server, the admin system, and the batch job do not each need retry logic.
+-   <strong>It remembers when to send.</strong> Put in a request to be sent three days later, and the queue holds it until then and releases it.
+
+Not every queue does all of this equally well, though. So let's compare the candidates on these criteria.
+
+-   Can it hold a request until a set time, like the follow-up three days later?
+-   Can it retry failures after an interval?
+-   Can an urgent notification such as an OTP go out ahead of queued notices?
+-   Can several workers share the external API's limit?
+-   Do queued requests survive a server crash?
+-   What new thing has to be operated?
+
+There are five candidates: the DB you already use, a job queue built on Redis, a managed queue such as SQS, RabbitMQ, and Kafka.
+
+### 1. Store it in the DB you already use
+
+Use the outbox section's table as the queue as it is. Workers take different rows with `SKIP LOCKED`, and most of the features you want take one column and one condition. Picking only rows whose send time has passed gives you delayed sends, and pushing a failed row's send time back gives you retry intervals. Sorting by a priority column puts OTPs at the front.
+
+Suppose it is exactly 10:00 and the send request table has five rows. When a worker takes two rows with one query, delayed sends, retry intervals, and priority play out row by row like this.
+
+<DbQueueTableDiagram lang="en" />
+
+Kept in the same DB as the sign-up, the send request can go in within the sign-up's transaction, so there is no gap between commit and enqueue. It is effectively the same structure as the outbox. There is nothing new to operate, and requests survive as long as the DB does.
+
+You also inherit the outbox's costs. A limit shared across workers has to be built, processed rows have to be deleted, and the production DB takes the load. Put in 10,000 notices at once and 10,000 rows go in, each row is updated when picked and when finished, and all 10,000 are deleted once sent. The DB that handles sign-ups and payments carries this work too.
+
+Draw the setup with two workers reading the table every second, and the two parts you have to build yourself show up with it.
+
+<QueueArchitectureDiagram kind="db" lang="en" />
+
+Using a DB as a queue is not an unusual choice. Some libraries package this approach.
+
+<details>
+<summary>Libraries that use a DB as a queue</summary>
+
+Rails 8 sets up Solid Queue as the default queue for new applications. It runs on MySQL, PostgreSQL, and SQLite, and on databases that support it, workers split rows with `FOR UPDATE SKIP LOCKED`. It supports delayed execution and priority but has no automatic retries, so it relies on Active Job's retries. Workers poll the table every 0.1 seconds by default.
+
+For Node.js there is pg-boss, which runs on PostgreSQL. It also splits work with `SKIP LOCKED` and supports delayed execution, retries with exponential backoff, and priority.
+
+</details>
+
+This option fits when send volume is modest and the production DB has headroom.
+
+### 2. Use a job queue built on Redis
+
+Use a job queue library that keeps its data in Redis, such as BullMQ or Sidekiq. Redis itself is not a queue, but the library layers queue features on top of its data structures. Delayed execution, retries with intervals, and priority are built in, and BullMQ even provides a rate limiter that several workers share. Earlier I said that moving the shared module's counter to Redis is all but building a queue. Here, the library has already built that queue.
+
+Draw it from sign-up to the external API, and a single Redis handles waiting, delays, priority, and the limit counter.
+
+<QueueArchitectureDiagram kind="redis" lang="en" />
+
+The numbers show why priority matters. Say an OTP arrives while 10,000 notices are queued. At 100 per five seconds, sending all 10,000 notices takes 500 seconds, or 8 minutes 20 seconds.
+
+<PriorityDemo client:visible lang="en" />
+
+Putting in 10,000 notices does not load the production DB.
+
+Handing the queue to Redis brings its own burdens.
+
+-   <strong>Redis has to be run as a queue.</strong> Settings meant for a cache will not do. If keys are evicted when memory fills up, queued jobs vanish, so BullMQ recommends setting `maxmemory-policy` to `noeviction`. Persistence to disk has to be turned on separately too.
+-   <strong>Queued requests live in memory.</strong> Put in 10,000 notices and 10,000 jobs go into Redis memory. As volume grows, memory has to grow with it.
+-   <strong>Durability is looser than a DB's.</strong> Even with AOF on and the default of writing to disk every second, a failure can lose the last second of data.
+-   <strong>It cannot share a transaction with the sign-up.</strong> The gap between commit and enqueue seen earlier remains.
+
+<details>
+<summary>In BullMQ and Sidekiq</summary>
+
+BullMQ's rate limiter is set in the worker options as `limiter: { max, duration }`. Even with 10 workers on one queue, the limit applies to the queue as a whole. Priority is a number from 1 to 2,097,151, and smaller numbers go first. Adding a prioritized job costs O(log n), so it is heavier than adding a normal job.
+
+Sidekiq is for Ruby. By default it retries a failed job 25 times over about 20 days with exponential backoff. Rate limiting that several processes share through Redis is part of the paid Sidekiq Enterprise.
+
+</details>
+
+This option fits when you do not want to build delayed sends, retries, priority, and a shared limit yourself, and you can afford to run another Redis.
+
+### 3. Use a managed queue such as SQS
+
+If you would rather not run a queue, use one the cloud runs for you. AWS's SQS is the typical example. There are no servers to run, and messages are stored as copies across multiple Availability Zones. Unlike Redis, there is no memory to grow and no disk setting to look after.
+
+Retries are built into how SQS works. When a worker receives a message, the message stays in the queue but is hidden from other workers for a while. That period is called the visibility timeout, and it defaults to 30 seconds. If the worker does not delete the message within it, the message becomes visible again and another worker picks it up. A message received a set number of times without being deleted is moved to a dead-letter queue.
+
+Three things a notification server wants are missing.
+
+-   <strong>Delays only go up to 15 minutes.</strong> Each message can be delayed, but only for up to 15 minutes, so a follow-up three days later cannot be expressed with SQS alone. AWS itself recommends EventBridge Scheduler for anything beyond 15 minutes.
+-   <strong>There is no priority within a queue.</strong> To send OTPs ahead of notices, you split them into two queues and write the workers to read the urgent queue first.
+-   <strong>Workers do not share a limit.</strong> With several workers, the shared module's problem comes right back. The counter has to go back into something like Redis.
+
+Solve the three-day follow-up, OTP priority, and a limit of 100 per five seconds for two workers with SQS, and you get this.
+
+<QueueArchitectureDiagram kind="sqs" lang="en" />
+
+<details>
+<summary>SQS defaults and limits</summary>
+
+The visibility timeout defaults to 30 seconds, with a maximum of 12 hours. Messages are kept for 4 days by default and up to 14 days. Delays max out at 15 minutes, whether a delay queue for the whole queue or a message timer per message.
+
+Standard queues guarantee at-least-once delivery, so the same message can arrive more than once, and they try to keep order without guaranteeing it. FIFO queues keep order within a message group and filter duplicates by deduplication ID. In exchange, without high throughput mode, API calls are capped at 300 per second, and even batching 10 messages per call tops out at 3,000 messages per second.
+
+</details>
+
+This option fits when you already run your service on AWS and do not have the capacity to run a queue yourself. You still pay separately to fill in delays, priority, and a shared limit from outside.
+
+### 4. Use RabbitMQ
+
+RabbitMQ is a message broker. The sender publishes a message to an exchange, routing rules deliver it into a queue, and a worker takes it, processes it, and sends an ack. If no ack comes or the worker rejects the message, it goes back to the queue. It fits well as a work queue in which one worker handles each message.
+
+Priority is built in. Classic queues set the number of priority levels with `x-max-priority` when they are declared, and since 4.3, quorum queues support 32 priority levels with no extra configuration. Failure handling is there too. A quorum queue redelivers the same message up to 20 times by default and then sends it to a dead-letter exchange.
+
+Three things still get in the way.
+
+-   <strong>Retries have no interval.</strong> A rejected message comes straight back to the queue. To avoid resending the same message over and over while the external API is briefly down, you build the interval yourself by wiring a waiting queue with a TTL to a dead-letter exchange.
+-   <strong>There is no shared limit.</strong> Prefetch sets how much a worker takes at once, but that only caps how many are processed concurrently. It does not hold a rate such as 100 per five seconds.
+-   <strong>You have a broker to operate.</strong> Replicating queues means building a cluster of several nodes and keeping it healthy.
+
+Here is the setup with retry intervals and the limit in place. The broker handles priority, and the dashed lines are the parts you wire up yourself.
+
+<QueueArchitectureDiagram kind="rabbitmq" lang="en" />
+
+Let's take a closer look at the retry waiting queue. To resend a send that failed during a brief external API outage 30 seconds later, add one more waiting queue and wire it up like this.
+
+<RabbitRetryDiagram lang="en" />
+
+Delayed sends depend on the version. Since 4.4, quorum queues support delayed delivery directly through the `x-opt-delivery-time` header. Earlier versions needed a TTL wired to a dead-letter exchange, or the delayed message plugin.
+
+<details>
+<summary>Limits of the RabbitMQ delayed message plugin</summary>
+
+The `rabbitmq-delayed-message-exchange` plugin stores delayed messages on a single node. Lose that node or disable the plugin, and the waiting messages are gone. The plugin itself says it is not a good fit for large numbers of delayed messages and was designed with delays of a day or two in mind. The RabbitMQ team no longer maintains it and recommends quorum queue delayed delivery or a TTL wired to a dead-letter exchange instead.
+
+</details>
+
+This option fits when many services besides notifications already exchange messages over a broker you run, or when you need routing that splits messages across several queues.
+
+### 5. Use Kafka
+
+Kafka is less a queue than a log. Messages pile up in order in a topic's partitions and are not deleted when read. Consumers remember how far they have read in each partition as an offset. So several services can each read the same event, and read it again from the start if needed. Kafka's strongest suit is exactly what the outbox section named as the case where a broker earns its place: several services that need to subscribe to the same event.
+
+Used as a work queue for sending notifications, it has gaps.
+
+-   <strong>Handling failures one message at a time is hard.</strong> A consumer group only records "read up to here" as an offset. If one message in the middle fails, you either stop there and retry, or build a separate retry topic and move it there.
+-   <strong>There are no delays and no priority.</strong> The follow-up three days later and OTPs overtaking notices both have to be built.
+-   <strong>Parallelism is tied to the partition count.</strong> Within a consumer group, each partition is read by only one consumer. Scale out to six workers with four partitions, and only four do any work.
+-   <strong>It is the heaviest to operate.</strong> You need a cluster of several brokers, which is a lot to bring in just for sending notifications.
+
+Draw a setup in which Kafka also handles sending notifications, and you have to attach most of the parts a work queue needs yourself.
+
+<QueueArchitectureDiagram kind="kafka" lang="en" />
+
+Say that in one partition only the message at offset 3 fails, while 4 and 5 succeed. The offset you can commit stops at 3.
+
+<KafkaDiagram scene={1} lang="en" />
+
+If six workers read a topic with four partitions, four workers take one partition each and two sit idle.
+
+<KafkaDiagram scene={2} lang="en" />
+
+<details>
+<summary>Kafka share groups</summary>
+
+Since Kafka 4.2, share groups are a production-ready feature. In a share group, several consumers read one partition together, report the outcome of each record, and count how many times it has been delivered. A record still unprocessed after the set number of deliveries is not sent again. It is a step toward a work queue, but ordering within a partition is not guaranteed. There is still no delayed delivery and no priority.
+
+</details>
+
+This option fits when notifications start from events already flowing through Kafka. Even then, it is better to keep Kafka as the entry point for events and hand the sending itself to a work queue.
+
+### The five side by side
+
+| Criterion | DB table | Redis job queue | SQS | RabbitMQ | Kafka |
+| --- | --- | --- | --- | --- | --- |
+| Delayed sends | One column | Built in | Up to 15 minutes | Quorum queues since 4.4 | None |
+| Retry intervals | Build it | Built in | Visibility timeout | Wire it up | Build it |
+| Priority | One column | Built in | Split queues | Built in | None |
+| Limit shared across workers | Build it | Built in, depending on the library | Build it | Build it | Build it |
+| Same transaction as the sign-up | Yes | No | No | No | No |
+| New things to operate | None | Redis | None | Broker cluster | Kafka cluster |
+
+### Choosing a queue
+
+None of the five always wins either. What you already run and how much you can build yourself decide the answer.
+
+-   <strong>If send volume is modest and the production DB has headroom, a DB table is enough.</strong> What you gain is that there is nothing new to operate and the request shares a transaction with the sign-up. What you give up is polling load on the production DB, plus a shared limit and cleanup that you build yourself.
+-   <strong>If you do not want to build delays, retries, priority, and a shared limit yourself, a job queue on Redis comes closest.</strong> What you gain is all four features in the library. What you give up is the work of running Redis as a queue, durability that can lose the last second in a failure, and a commit separate from the sign-up's.
+-   <strong>If you run on AWS and cannot afford to operate a queue, SQS is the better fit.</strong> What you gain is that there are no servers to run and messages are kept across multiple Availability Zones. What you give up is the work of filling in bookings beyond 15 minutes, priority, and a shared limit with EventBridge Scheduler, two queues, and a shared counter.
+-   <strong>If you already run RabbitMQ, there is little reason to bring in another Redis.</strong> What you gain is a broker that handles priority, redelivery, and dead-lettering. What you give up is wiring retry intervals and a shared limit yourself, plus running a broker cluster.
+-   <strong>If notifications start from events already flowing through Kafka, keep Kafka as the entry point and hand the sending to a work queue.</strong> What you gain is a structure in which several services can read and reread the same event. Sending with Kafka alone means building retries, delays, priority, and the limit yourself.
+
+## How to represent scheduled sends
+
+With the queue decided, scheduling is what remains. The requirements in the introduction included three kinds of notifications that do not go out right away.
+
+-   When a payment fails, send another notice three days later. The send time comes from when the payment failed, and if the user pays again in the meantime, it must not go out.
+-   An admin schedules a message for a particular user at a chosen time. A person sets the time, and it must be possible to cancel or change it before it goes out.
+-   A nightly batch job sends a notice to every member. It repeats at the same time and sends a large volume at once.
+
+In all three, the gap between deciding to send and actually sending can run to days. In that time the user pays again, an admin edits the wording, and the servers are deployed several times. A booking has to survive that time, and when it comes due, something has to check again whether it should still go out.
+
+Suppose a payment fails at 15:00 on Monday and a follow-up is booked for 15:00 on Thursday. Here is what can happen in those three days.
+
+<ScheduleGapDiagram lang="en" />
+
+So let's compare the candidates on these criteria.
+
+-   Can a booking be found and cancelled or changed before it goes out?
+-   If conditions change in the meantime, can it be kept from going out?
+-   How far ahead, and how precisely, can it be scheduled?
+-   Does the booking survive deploys and restarts?
+-   What new thing has to be operated?
+
+There are four candidates: a batch job that finds targets by condition, a reservation table, delayed jobs in the queue, and a managed scheduler.
+
+### 1. A batch job finds targets by condition
+
+Nothing is written down as a booking. A batch job runs periodically and finds whom to send to from domain state. For the follow-up three days later, it finds users whose payment failed at least three days ago, who have not paid again, and who have not received the follow-up, and enqueues them. The send time lives in the payment failure time and the condition.
+
+Users who pay again drop out of the condition on their own, so there is no cancellation logic. Change the wording or the condition, and the change applies from the next run. With no bookings written down, there is nothing to lose on a restart, and if one run fails, the next run finds the same users again.
+
+To use the "has not received the follow-up" condition, though, you have to record what was sent. Without that record, every run sends it again.
+
+Suppose the batch runs daily at 10:00. Users A and B both had a payment fail at 15:00 on Monday, and only B paid again, at 14:00 on Wednesday.
+
+<BatchScanDiagram lang="en" />
+
+A went out 19 hours late because at Thursday's 10:00 run, only 2 days and 19 hours had passed since the failure.
+
+Four things get in the way.
+
+-   <strong>The send time is tied to the batch interval.</strong> With a daily batch, a send can be up to a day late. Shorten the interval to one minute and you query that much more often.
+-   <strong>It cannot hold bookings that state cannot find.</strong> A booking an admin makes for next Tuesday at 15:00 has no condition to be found by. The moment you write that time down somewhere, it becomes the next section's reservation table.
+-   <strong>The production DB takes the query load.</strong> Every run scans the payments table. As rules pile up, such as a day-7 onboarding message or a cart reminder, batches and queries pile up with them.
+-   <strong>Overlapping runs send twice.</strong> With several batch servers, or a scheduler that starts the same batch twice, two runs find the same user. You need a lock or the sent record to filter out duplicates.
+
+<details>
+<summary>Making a batch run only once</summary>
+
+Kubernetes CronJob handles overlapping runs with `concurrencyPolicy`. The default, `Allow`, lets runs overlap, and `Forbid` skips the new run. Even so, the official documentation says a Job may be created twice or not at all, and recommends making Jobs idempotent.
+
+A scheduler running inside the application, like Spring's `@Scheduled`, runs the same task on every instance. ShedLock takes a lock in a DB or Redis so that only one place runs it, and if it is already running elsewhere, it skips the run instead of waiting.
+
+</details>
+
+This option fits when the send time follows from domain state and being up to a batch interval late is acceptable. It also fits recurring sends such as the nightly notice.
+
+### 2. Write the send time in a reservation table
+
+Write the recipient, the content, the send time, and a status as one row in a reservation table, and a poller periodically moves due rows into the queue. A follow-up and an admin booking are each one row, so admin bookings, which a batch could not hold, fit here too.
+
+Because a booking is a row, most of the criteria become easy. "Bookings going out this week" is one query, and cancelling or rescheduling is editing a row. A booking months away is still one row, and since it lives in the DB, it survives restarts. In the same DB as payments, it can be written in one transaction, like an outbox. If the poller runs every minute, the error stays within a minute.
+
+Suppose it is 15:00 on Thursday and the reservation table has five rows. The poller moves only the due rows into the queue, and the worker checks once more right before sending.
+
+<ReservationTableDiagram lang="en" />
+
+B paid again on Wednesday, but the reservation table does not know that and moved the follow-up into the queue. There are two ways to call off a booking whose conditions have changed.
+
+-   <strong>Cancel the booking where the condition changes.</strong> The code that handles a successful payment finds and cancels the follow-up booking. As payment paths multiply, so does the code that has to know about bookings, and missing even one lets the follow-up go out.
+-   <strong>Check the condition again right before sending.</strong> The worker checks the payment status again before calling the external API. The payment side does not need to know about bookings, but the worker needs to know what to check for each kind of notification.
+
+The second is sturdier. A booking an admin cancels right after the poller moved it is also caught here. The wording is the same choice. Write the finished text into the booking and it goes out exactly as it read when booked. Point to a template instead, and edits made in the meantime go out.
+
+There are things to take care of in exchange.
+
+-   <strong>You build the poller.</strong> With several pollers, lock rows with `SKIP LOCKED` so that two do not move the same row. It is the same work as building a queue on a DB table.
+-   <strong>There is a gap at the moment of moving.</strong> Enqueueing and updating the status cannot share a transaction. Update the status first and die, and the booking is lost. Enqueue first and die, and the next poll moves it again. So enqueue first and use the booking id as the job id to filter out duplicates.
+-   <strong>Precision ends at the time it enters the queue.</strong> Even if 10,000 notices are booked for 10:00, at 100 per five seconds the last one goes out 8 minutes 20 seconds later.
+-   <strong>The table keeps growing.</strong> The poller queries every minute, so status and send time need an index, and finished bookings have to be deleted or moved elsewhere.
+
+Suppose the poller dies while moving booking r-7 into the queue. What remains depends on the order of the two steps.
+
+<PollerGapDiagram lang="en" />
+
+If the queue is built on a DB table, the reservation table is the queue. Workers only pick rows whose send time has passed, so no poller is needed.
+
+<details>
+<summary>Filtering jobs that were enqueued twice</summary>
+
+BullMQ ignores a job added with an existing job id. Once the earlier job has been removed, though, the same id can go in again, so if completed jobs are removed right away, a duplicate that arrives after that is not filtered.
+
+SQS FIFO queues reject a message with the same deduplication ID for five minutes. Standard queues have no such mechanism, so the worker has to filter by booking id itself.
+
+In Java, db-scheduler is a library that bundles a reservation table and a poller. It uses a single table, looks for due tasks every 10 seconds by default, and even with several instances, each execution is picked up by only one of them.
+
+</details>
+
+This option fits when admins need to see and edit bookings, or when bookings go further out than a queue can hold.
+
+### 3. Put it on the queue as a delayed job
+
+If the queue supports delayed sends, put a job delayed by three days straight in. There is no reservation table and no poller, and the queue hands the job to a worker when it comes due. Among the queue section's candidates, the ones that can hold a job for three days are the job queue on Redis and RabbitMQ quorum queues since 4.4. SQS only goes up to 15 minutes.
+
+What you gain is simplicity. Enqueueing is one line, and with no moving step there is no gap at the moment of moving. As before, it does not share a transaction with the payment, and it still needs a check right before sending.
+
+What gets in the way comes from the bookings living inside the queue. Suppose it is 11:00 on Tuesday and four delayed jobs are waiting in the queue. The follow-ups got job ids derived from payment ids, and the admin bookings got ids the queue assigned.
+
+<DelayedJobDiagram lang="en" />
+
+-   <strong>Bookings line up by send time and nothing else.</strong> There is no way to find them by user or kind, so showing "bookings for user C" means scanning every job.
+-   <strong>Cancelling or changing one needs its job id.</strong> If the job id is derived from the payment id, as with the follow-ups, deleting or rescheduling is easy. With no rule to derive it from, as with admin bookings, you have to write the job id down somewhere, and at that moment a reservation table reappears.
+-   <strong>The data in a job is frozen at enqueue time.</strong> Put the wording in the job and edits made in the meantime never reach it. A job enqueued three days ago is taken out by code deployed since, so if you changed the shape of the job data, the new code still has to read the old shape. That is why it is safer to put only ids in the job and read the content at send time.
+-   <strong>Bookings stay in the queue's storage.</strong> On Redis, days' worth of bookings pile up in memory. When you drain the queue or move to another one, the waiting bookings have to move too.
+
+<details>
+<summary>Delayed jobs in BullMQ and Sidekiq</summary>
+
+BullMQ takes milliseconds in the `delay` option. A delayed job can be rescheduled with `changeDelay` or removed with `remove`, but a job that is already being processed cannot be removed. The documentation does not guarantee the exact time but says it is quite accurate in most cases.
+
+Sidekiq schedules jobs with `perform_in` or `perform_at`. Scheduled jobs go into a set sorted by time and are checked about every five seconds by default, so they are not accurate to the second. A job can be found and deleted by jid, but the documentation advises scanning the set to delete jobs only when something has gone wrong. Its best practices also say to pass ids rather than state, because data changes while the job waits.
+
+</details>
+
+This option fits when nobody needs to find or edit bookings and job ids can be derived from domain ids. It suits bookings that the system sets and the system calls off, such as the follow-up three days later.
+
+### 4. Hand it to a managed scheduler
+
+Hand bookings to a cloud scheduler. On AWS, that is EventBridge Scheduler, which the queue section mentioned as AWS's recommendation for anything beyond 15 minutes. Create a one-time schedule for each booking, and at that time the scheduler puts a message on the send queue.
+
+As with delayed jobs, you just put it in, and there are no servers to run and no storage to hold bookings. Schedules live outside the queue, so bookings survive draining or replacing the queue. You name schedules yourself, so for a follow-up you name it after the payment id and delete or change it by that name. The nightly notice is a single cron-based recurring schedule. Times are accurate to the minute, so a schedule set for 10:00 puts its message in between 10:00:00 and 10:00:59.
+
+Moved to schedules, the follow-ups and admin bookings become one-time schedules, and the nightly notice becomes a recurring one.
+
+<ManagedSchedulerDiagram lang="en" />
+
+The weak spots resemble those of delayed jobs.
+
+-   <strong>The schedule name is the only way to find a booking.</strong> Listing schedules can only filter by group, name prefix, and whether a schedule is enabled. Showing "bookings for user C" means putting the user in the name or writing it down separately, and a prefix supports only one way to search.
+-   <strong>Changing one means sending the whole schedule again.</strong> Updating a schedule resets any value missing from the request to its default. Even to change only the time, you have to read the schedule first and send the other values back unchanged.
+-   <strong>The content is frozen at creation.</strong> The message to enqueue is fixed when the schedule is created. Here too, it is safer to include only ids.
+-   <strong>Finished schedules still count against the quota.</strong> One-time schedules remain after they run and count toward the schedule quota, so set them to be deleted when done.
+-   <strong>One booking is one API call.</strong> It does not share a transaction with the payment, and the bookings live inside your cloud account. For bulk sends that land at the same time, like a notice, one schedule that wakes a batch job beats a schedule per user.
+
+<details>
+<summary>EventBridge Scheduler quotas and pricing</summary>
+
+A one-time schedule is written as a time, like `at(2026-11-26T15:00:00)`, and a recurring schedule as a six-field expression that includes the year, like `cron(0 21 * * ? *)`. Both can take a time zone such as `Asia/Seoul`, and the target is invoked within 60 seconds of the set time.
+
+The default quota is 10 million schedules per Region, and it can be raised. Finished one-time schedules count toward it, so AWS recommends setting `ActionAfterCompletion` to `DELETE`. If invoking the target fails, it can be set to retry with exponential backoff for up to 24 hours and 185 attempts, and calls that still fail can go to a dead-letter queue. A schedule's input is limited to 256 KB.
+
+Pricing is free up to 14 million invocations a month, then $1.00 per million.
+
+</details>
+
+This option fits when you run your send queue on SQS on AWS and need a separate home for bookings further out than 15 minutes. It fits even better when schedule names can be derived from domain ids.
+
+### The four side by side
+
+| Criterion | Batch finds by condition | Reservation table | Delayed jobs in the queue | Managed scheduler |
+| --- | --- | --- | --- | --- |
+| Finding and cancelling or changing | No separate booking | Query and edit a row | Only with the job id | Only with the schedule name |
+| When conditions change | Drops out on its own | Check right before sending | Check right before sending | Check right before sending |
+| How far ahead | As far as the condition can express | Just a row | Depends on the queue | Far ahead works |
+| How precisely | Late by up to a batch interval | Within the polling interval | The queue handles it | Within a minute |
+| Survives restarts | Nothing written down | Yes | Depends on the queue's durability | Yes |
+| New things to operate | Batch job | Poller | None | None |
+
+### Choosing how to represent scheduled sends
+
+None of the four is right every time. Choose by who sets and calls off a booking, and whether a person needs to see and edit bookings.
+
+-   <strong>If the send time follows from domain state and a few hours late is fine, a batch that finds targets by condition is the better fit.</strong> What you gain is no cancellation logic and no bookings to store. What you give up is error of up to a batch interval and query load on the production DB, and it cannot hold bookings that state cannot express.
+-   <strong>If admins need to see bookings and cancel or change them, a reservation table fits.</strong> What you gain is that finding and editing become a query and a row update, and that bookings can be written in one transaction with the payment. What you give up is the work of building the poller, filtering out duplicates from moving, and cleaning up finished bookings.
+-   <strong>If the system sets and calls off bookings and the queue accepts delays that long, delayed jobs in the queue are enough.</strong> What you gain is that there is nothing to build. What you give up is that bookings cannot be found without the job id, and that days' worth of bookings sit in the queue's storage.
+-   <strong>If you use SQS on AWS and need bookings further out than 15 minutes, a managed scheduler is the better fit.</strong> What you gain is handing off far-future bookings with nothing to operate. What you give up is finding bookings only by schedule name, resending the whole schedule to change it, and bookings that live inside your cloud account.
+
+Some services mix them: the nightly notice as a batch, admin bookings in a reservation table, and the three-day follow-up as a delayed job. However you mix them, the check right before sending remains. A booking is a decision made in advance, so at the moment of sending you have to ask whether that decision still holds.
+
+## Wrapping up
+
+Part 1 broke "where to hand off delivery" into three questions.
+
+-   <strong>How to hand off a send request</strong> — the more servers you run and the less you can afford to lose requests, the further you move toward the outbox and a message queue, and either way you need a queue.
+-   <strong>What to build the queue on</strong> — what you already run and how much you can build decide the answer, and you build whatever the queue does not provide.
+-   <strong>How to represent scheduled sends</strong> — choose by whether a person needs to see and edit bookings or the system sets and calls them off, and either way check again right before sending.
+
+None of the three questions had a single right answer. How many servers you run, what you already operate, and what you cannot afford to lose change the answer. If you are about to split out a send server, start by writing down those conditions.
+
+[Part 2](/blog/bullmq-notification-part-2-rate-limit) covers where to enforce the external API's limit. Even when the worker holds to 100 per five seconds, the external API can still return 429. That happens when the windows we and the external API use to count the limit start at different times, and when the same account is used elsewhere too.
