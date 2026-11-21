@@ -5,17 +5,18 @@
 
 export const upcomingSeriesPosts: Record<'en' | 'ko', Record<string, { order: number; title: string }[]>> = {
 	ko: {
+		'AWS 네트워크': [{ order: 2, title: '서버리스의 VPC 설정과 IP 고정 - Lambda, Fargate, NAT 게이트웨이' }],
 		'EKS 노드 운영하기': [
-			{ order: 2, title: 'EKS 노드와 클러스터 - EC2, 할당 가능량, 노드 그룹' },
-			{ order: 3, title: 'Kubernetes 노드 포화 - 요청값, 스케줄링, 분산' },
-			{ order: 4, title: 'Kubernetes 노드 모니터링 - node exporter, kube-state-metrics, 경보' },
+			{ order: 2, title: 'Kubernetes 노드 포화 - 요청값, 스케줄링, 분산' },
+			{ order: 3, title: 'Kubernetes 노드 모니터링 - node exporter, kube-state-metrics, 경보' },
 		],
 	},
 	en: {
+		'AWS Networking': [{ order: 2, title: 'Serverless VPC Setup and Static IPs - Lambda, Fargate, NAT Gateways' }],
 		'Running EKS Nodes': [
-			{ order: 2, title: 'EKS Nodes and Clusters - EC2, Allocatable Capacity, Node Groups' },
-			{ order: 3, title: 'Kubernetes Node Saturation - Requests, Scheduling, Spread' },
-			{ order: 4, title: 'Kubernetes Node Monitoring - node exporter, kube-state-metrics, Alerts' },
+			{ order: 1, title: 'EKS Nodes and Clusters - EC2, Allocatable Capacity, Node Groups' },
+			{ order: 2, title: 'Kubernetes Node Saturation - Requests, Scheduling, Spread' },
+			{ order: 3, title: 'Kubernetes Node Monitoring - node exporter, kube-state-metrics, Alerts' },
 		],
 	},
 };

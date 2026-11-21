@@ -1,0 +1,240 @@
+---
+title: "EKS 노드와 클러스터 - EC2, 할당 가능량, 노드 그룹"
+description: "EKS는 컨트롤 플레인을 맡고, Pod가 실제로 도는 노드는 내 계정의 EC2다. 노드가 무엇이고 할당 가능량이 어떻게 정해지는지, EC2가 어떤 과정을 거쳐 클러스터에 붙는지 정리한다."
+pubDate: "2026-11-23T21:00:00+09:00"
+tags: ["k8s", "kubernetes", "eks", "ec2", "aws"]
+socialImage: "../../../assets/blog/eks-nodes-and-clusters/og.png"
+series: "EKS 노드 운영하기"
+seriesOrder: 1
+---
+import AllocatableDemo from "@/materials/eks-nodes-and-clusters/AllocatableDemo";
+import EndpointDemo from "@/materials/eks-nodes-and-clusters/EndpointDemo";
+import ExecPathDemo from "@/materials/eks-nodes-and-clusters/ExecPathDemo";
+import MaxPodsDemo from "@/materials/eks-nodes-and-clusters/MaxPodsDemo";
+import NodeGroupDemo from "@/materials/eks-nodes-and-clusters/NodeGroupDemo";
+import NodeJoinDemo from "@/materials/eks-nodes-and-clusters/NodeJoinDemo";
+import PodTriageDemo from "@/materials/eks-nodes-and-clusters/PodTriageDemo";
+import PrefixDelegationDemo from "@/materials/eks-nodes-and-clusters/PrefixDelegationDemo";
+import RequestsFitDemo from "@/materials/eks-nodes-and-clusters/RequestsFitDemo";
+import WarmEniDemo from "@/materials/eks-nodes-and-clusters/WarmEniDemo";
+
+Pod가 한참 뜨지 못한다고 하자. `kubectl describe pod`를 보니 노드에 자리가 없다고 나온다. 여기서 노드는 정확히 무엇이고, 자리는 어떻게 계산할까?
+
+이 글에서는 EKS에서 AWS가 맡는 일과 내가 맡는 일을 나눠 보고, 노드 하나에 Pod가 얼마나 들어가는지 계산한 뒤, EC2 한 대가 클러스터의 노드가 되는 과정을 따라간다. VPC와 서브넷, ENI가 낯설다면 [처음부터 다시 배우는 AWS 네트워크](/ko/blog/aws-vpc-subnet-eni/)를 먼저 읽는 것이 좋다.
+
+## EKS의 관리 범위
+
+### 컨트롤 플레인과 노드
+
+클러스터는 두 층으로 나뉜다. 컨트롤 플레인은 무엇을 어디에 띄울지 정하고, 노드는 Pod를 실제로 돌린다. EKS는 컨트롤 플레인을 맡고, 노드는 내 계정의 EC2다.
+
+| 컨트롤 플레인 | 노드 |
+| --- | --- |
+| API 서버, etcd, 스케줄러, 컨트롤러 매니저가 돈다 | kubelet, 컨테이너 런타임, Pod가 돈다 |
+| AWS가 관리하는 VPC에 있다 | 내 VPC에 있다 |
+| AWS가 운영한다 | 운영 방식에 따라 내가 맡는 범위가 달라진다 |
+
+EKS는 API 서버를 2대 이상, etcd를 3대 두고 리전 안의 가용 영역 3곳에 나눠 둔다. 고장 난 인스턴스는 AWS가 바꾼다.
+
+### 노드 운영 방식
+
+노드를 운영하는 방식은 여러 가지다.
+
+| 방식 | 누가 노드를 관리하나 |
+| --- | --- |
+| 자체 관리형 노드 | 내가 EC2를 직접 띄우고 패치하고 늘린다 |
+| 관리형 노드 그룹 | EKS가 EC2 Auto Scaling 그룹을 만들어 노드의 생성, 업데이트, 종료를 자동화한다. 패치된 AMI로 바꾸는 작업은 내가 시작한다 |
+| Karpenter | 오픈소스 오토스케일러가 부하에 맞는 크기의 노드를 그때그때 띄운다 |
+| Fargate | 노드 없이 Pod 단위로 실행한다 |
+| Auto Mode | 노드와 확장, 네트워크, 스토리지까지 AWS가 관리한다 |
+| Hybrid Nodes | 온프레미스와 엣지 장비를 노드로 쓴다 |
+
+이 글은 관리형 노드 그룹을 기준으로 설명한다.
+
+## 컨트롤 플레인과 노드의 연결
+
+컨트롤 플레인은 AWS가 관리하는 VPC에, 노드는 내 VPC에 있다. `kubectl exec` 한 번을 따라가면 둘을 잇는 길이 보인다.
+
+### kubectl exec의 경로
+
+`kubectl exec`는 이미 떠 있는 컨테이너 안에서 명령을 실행한다. 명령이 끝날 때까지 입출력이 오가는 연결이 열려 있다.
+
+```bash
+kubectl exec -it <pod> -- sh
+```
+
+공개 엔드포인트로 접속한다고 하자. 이 명령은 다음 길로 간다.
+
+<ExecPathDemo client:visible />
+
+1. kubectl이 클러스터 엔드포인트로 요청을 보낸다. 공개 엔드포인트는 AWS가 관리하는 NLB가 받아 API 서버 여러 대에 나눈다.
+2. API 서버가 IAM 인증과 RBAC 권한(`pods/exec`)을 확인한다.
+3. API 서버가 그 Pod가 있는 노드의 kubelet에 연결한다. 이 연결은 EKS가 내 서브넷에 만들어 둔 ENI를 지난다. 이 ENI는 클러스터를 만들 때 2\~4개가 생긴다.
+4. kubelet이 컨테이너 런타임에 실행을 맡기고, 입출력은 같은 길로 돌아온다.
+
+3단계의 ENI는 내 서브넷에 꽂혀 있지만 컨트롤 플레인이 쓴다. 직접 조회하면 그 흔적이 보인다.
+
+```bash
+aws ec2 describe-network-interfaces \
+  --filters Name=description,Values="Amazon EKS my-cluster" \
+  --query 'NetworkInterfaces[].[OwnerId,RequesterId,Attachment.InstanceOwnerId]' \
+  --output text
+```
+
+소유 계정은 내 계정인데, 만든 계정과 붙어 있는 인스턴스의 계정은 내 계정이 아니다. 컨트롤 플레인이 다른 계정에서 돈다는 것을 여기서 볼 수 있다.
+
+### NLB와 ALB
+
+공개 엔드포인트 앞에 있는 것은 NLB다. 앱 앞에 흔히 두는 ALB와 헷갈리기 쉽다.
+
+| ALB | NLB |
+| --- | --- |
+| 7계층(HTTP)에서 요청을 열어 보고 경로와 호스트로 나눈다 | 4계층(TCP)에서 IP와 포트만 보고 연결을 그대로 넘긴다 |
+| 앱 앞에 두어 Ingress로 쓰는 경우가 많다 | EKS가 공개 엔드포인트 앞에 둔다 |
+
+API 서버 앞에 NLB를 두는 이유는 문서에 나와 있지 않으니, 여기서부터는 추론이다. kubeconfig에는 클러스터 자체 인증서(`certificate-authority-data`)가 들어 있고, kubectl은 API 서버가 이 인증서로 서명된 인증서를 내는지 확인한다. 중간에서 TLS를 풀지 않고 그대로 넘겨야 하므로 4계층이 맞다.
+
+### 클러스터 엔드포인트
+
+반대 방향, 노드의 kubelet이 API 서버로 가는 길은 엔드포인트 설정에 달렸다.
+
+| 설정 | 노드에서 API 서버로 가는 길 |
+| --- | --- |
+| 공개만 켬(기본값) | VPC 밖으로 나가 공개 엔드포인트로 간다. AWS 네트워크는 벗어나지 않는다 |
+| 공개와 비공개를 모두 켬 | VPC 안의 비공개 엔드포인트로 간다 |
+| 비공개만 켬 | VPC 안에서만 닿는다. kubectl도 VPC나 연결된 네트워크에서 쳐야 한다 |
+
+공개 엔드포인트의 접근 IP를 제한한다면 노드가 막히지 않게 해야 한다. 문서는 비공개 엔드포인트를 함께 켜거나, 노드가 나가는 주소를 허용 목록에 넣으라고 권한다. 프라이빗 서브넷의 노드라면 그 주소는 NAT 게이트웨이의 공인 IP다.
+
+허용 목록은 공개 엔드포인트에만 영향을 준다. API 서버에서 kubelet으로 가는 구간은 클러스터 보안 그룹이 통제한다. `exec`, `logs`, `port-forward` 같은 명령이 이 구간을 지난다.
+
+<EndpointDemo client:visible />
+
+## 노드
+
+### 노드란
+
+노드는 kubelet과 컨테이너 런타임이 도는 EC2 한 대다. kubelet은 API 서버에서 이 노드에 배정된 Pod를 받아 컨테이너를 띄운다. kube-proxy와 VPC CNI 같은 공용 구성 요소도 노드마다 하나씩 돈다.
+
+### 할당 가능량
+
+인스턴스의 전체 용량을 Pod가 다 쓸 수는 없다. kubelet과 운영체제가 쓸 몫을 먼저 떼기 때문이다. 떼고 남은 값이 할당 가능량(allocatable)이고, 이것이 Pod가 쓸 수 있는 자리다.
+
+```text
+allocatable = capacity - kube-reserved - system-reserved - eviction threshold
+```
+
+축출 임계값(eviction threshold)은 메모리와 임시 저장소에만 있고 CPU에서는 빠지지 않는다. Kubernetes 문서의 예시로 계산해 보자.
+
+<AllocatableDemo client:visible />
+
+<RequestsFitDemo client:visible />
+
+### EKS의 예약값
+
+EKS 최적화 AMI는 kube-reserved를 인스턴스에 맞춰 계산한다.
+
+- <strong>메모리</strong> — `11 × maxPods + 255`MiB다.
+- <strong>CPU</strong> — 첫 코어의 6%, 둘째 코어의 1%, 셋째와 넷째 코어의 0.5%, 그 뒤 코어마다 0.25%다.
+
+AL2023의 `nodeadm`도 같은 공식을 쓰고, 메모리 축출 임계값으로 100Mi를 둔다. 그래서 메모리에서 빠지는 값은 `11 × maxPods + 255 + 100`MiB다. 실제 노드에서 Capacity와 Allocatable의 차이를 재 봐도 이 값과 MiB 단위까지 맞았다.
+
+| 인스턴스 | 빠지는 값 |
+| --- | --- |
+| m7i.xlarge (vCPU 4, maxPods 58) | CPU 80m, 메모리 993MiB |
+| m8g.large (vCPU 2, maxPods 29) | CPU 70m, 메모리 674MiB |
+| t3.small (vCPU 2, maxPods 11) | CPU 70m, 메모리 476MiB |
+
+작은 인스턴스일수록 빠지는 비율이 크다. 메모리 16GiB인 m7i.xlarge에서는 6%쯤이지만, 2GiB인 t3.small에서는 4분의 1쯤이 빠진다. kubelet 설정을 직접 바꾼 노드는 이 공식과 다르다.
+
+## 노드당 Pod 수
+
+### Pod 수 상한
+
+자리를 정하는 기준은 CPU와 메모리만이 아니다. EKS에서는 Pod마다 VPC 서브넷 IP를 하나씩 주므로, 인스턴스가 받을 수 있는 IP 수가 Pod 수의 상한이 된다.
+
+```text
+기본 상한 = ENI 수 × (ENI당 IP 수 − 1) + 2
+```
+
+<MaxPodsDemo client:visible />
+
+−1은 ENI마다 Pod에 줄 수 없는 주 IP 몫이고, +2는 Pod IP를 쓰지 않는 VPC CNI와 kube-proxy 몫이다. [AWS 네트워크 글](/ko/blog/aws-vpc-subnet-eni/)에서 본 두 인스턴스를 넣어 보자.
+
+| 인스턴스 | 기본 상한 |
+| --- | --- |
+| m7i.xlarge (ENI 4장, 장당 IP 15개) | 4 × 14 + 2 = 58 |
+| m8i.xlarge (ENI 4장, 장당 IP 30개) | 4 × 29 + 2 = 118 |
+
+vCPU와 메모리가 같아도 계산값은 두 배 차이가 난다. 다만 관리형 노드 그룹은 커스텀 AMI가 아니면 maxPods를 vCPU 30개 미만에서 110, 30개를 넘으면 250으로 제한한다. 그래서 m8i.xlarge의 실제 상한은 110이다. 메모리 예약은 110이 아니라 118로 계산한 1,653MiB와 맞았는데, 그 이유는 코드로 확인하지 못했다.
+
+작은 인스턴스를 여러 대 쓰면 CPU가 남아도 IP가 먼저 동날 수 있다. kube-reserved 메모리도 maxPods에 비례하므로 두 값은 함께 움직인다.
+
+### 미리 잡아 두는 IP
+
+VPC CNI는 Pod가 뜨기 전에 IP를 미리 잡아 둔다. 기본 설정 `WARM_ENI_TARGET=1`은 ENI 한 장 분량의 IP를 여유로 둔다는 뜻이다.
+
+m7i.xlarge에서 IP를 받는 Pod가 20개라고 하자. ENI 한 장은 Pod에 IP를 14개까지 줄 수 있으니 2장이면 된다. 하지만 2장이면 남는 IP가 8개뿐이라 한 장 분량에 못 미친다. 그래서 한 장이 더 꽂혀 3장, IP 45개가 잡힌다.
+
+<WarmEniDemo client:visible />
+
+그만큼 Pod는 빨리 뜨지만 서브넷 IP를 미리 쓴다.
+
+### prefix delegation
+
+prefix delegation을 켜면 ENI에 보조 IP를 하나씩 붙이는 대신 주소 묶음(prefix)을 붙여 Pod에 줄 IP를 늘릴 수 있다. VPC CNI 1.9.0 이상에서 쓸 수 있다. 이때도 앞에서 본 110과 250 상한은 그대로다.
+
+<PrefixDelegationDemo client:visible />
+
+## 노드 등록 과정
+
+관리형 노드 그룹에서 EC2 한 대가 노드가 되는 과정을 따라가 보자.
+
+<NodeJoinDemo client:visible />
+
+1. <strong>EC2 시작</strong> — 노드 그룹은 EKS가 관리하는 EC2 Auto Scaling 그룹이고 내 계정 안에서 돈다. 원하는 대수에 맞춰 EC2를 띄운다.
+2. <strong>부트스트랩</strong> — EC2가 부팅하면서 kubelet에 클러스터 주소와 인증서를 넣는다. AL2023은 `nodeadm`이 이 일을 한다. 예전 AL2는 `bootstrap.sh`를 썼고, EKS는 2025년 11월 26일부터 EKS 최적화 AL2 AMI를 내지 않는다.
+3. <strong>인증</strong> — kubelet은 노드의 IAM 역할로 API 서버에 자신을 증명한다.
+4. <strong>권한 확인</strong> — 그 IAM 역할이 클러스터에서 무엇을 할 수 있는지는 액세스 항목(access entry)이 정한다. 지금 권장 방식이고, 예전 방식인 `aws-auth` ConfigMap은 deprecated다. 관리형 노드 그룹의 역할은 EKS가 알아서 등록하므로 따로 만들 필요가 없다.
+5. <strong>등록</strong> — kubelet이 Node 객체를 스스로 등록한다. 준비가 끝나면 노드는 Ready가 되고, 스케줄러가 여기에 Pod를 배정할 수 있다.
+
+## 노드 그룹
+
+클러스터는 컨트롤 플레인 하나에 노드 그룹 여러 개가 붙은 구조다. 노드 그룹마다 인스턴스 종류와 대수를 다르게 둘 수 있다. 어떤 Pod를 어느 그룹에 올릴지는 라벨과 테인트로 정한다.
+
+- <strong>라벨</strong> — Pod가 `nodeSelector`로 노드를 고를 때 쓴다.
+- <strong>테인트</strong> — 허용(toleration)이 없는 Pod가 올라오지 못하게 막는다.
+
+전용 그룹을 만들려면 둘을 함께 쓴다. 라벨만 있으면 다른 Pod도 올라올 수 있고, 테인트만 있으면 허용을 단 Pod가 다른 그룹으로 갈 수 있다.
+
+워크로드를 격리하거나 비용을 나눠 보려고 노드 그룹을 나누는 경우가 많다. 격리가 쉬워지는 대신, 자동 확장이 없다면 그 그룹의 자리는 고정된다.
+
+<NodeGroupDemo client:visible />
+
+다음 글에서는 이렇게 작은 전용 그룹이 꽉 찬 상황을 가정해 살펴본다.
+
+## 마치며
+
+<PodTriageDemo client:visible />
+
+EKS를 쓴다고 노드 운영이 사라지지 않는다. 컨트롤 플레인은 AWS가 맡지만, 노드의 크기와 Pod 수, 어떤 Pod를 어느 노드에 올릴지는 여전히 내가 정한다.
+
+다음 글에서는 노드의 자리가 꽉 찼을 때 무슨 일이 생기는지 본다.
+
+## 참고 자료
+
+-   AWS, [EKS 아키텍처](https://docs.aws.amazon.com/eks/latest/userguide/eks-architecture.html)
+-   AWS, [EKS Control Plane](https://docs.aws.amazon.com/eks/latest/best-practices/control-plane.html)
+-   AWS, [클러스터 엔드포인트](https://docs.aws.amazon.com/eks/latest/userguide/cluster-endpoint.html)
+-   AWS, [View Amazon EKS security group requirements for clusters](https://docs.aws.amazon.com/eks/latest/userguide/sec-group-reqs.html)
+-   AWS, [Simplify node lifecycle with managed node groups](https://docs.aws.amazon.com/eks/latest/userguide/managed-node-groups.html)
+-   AWS, [노드 인스턴스 종류 고르기](https://docs.aws.amazon.com/eks/latest/userguide/choosing-instance-type.html)
+-   AWS, [Assign more IP addresses to Amazon EKS nodes with prefixes](https://docs.aws.amazon.com/eks/latest/userguide/cni-increase-ip-addresses.html)
+-   AWS, [Amazon Linux 2023으로 옮기기](https://docs.aws.amazon.com/eks/latest/userguide/al2023.html)
+-   AWS, [액세스 항목 만들기](https://docs.aws.amazon.com/eks/latest/userguide/creating-access-entries.html)
+-   AWS, [Grant IAM users access to Kubernetes with a ConfigMap](https://docs.aws.amazon.com/eks/latest/userguide/auth-configmap.html)
+-   AWS, [EKS의 메모리와 vCPU 예약](https://docs.aws.amazon.com/batch/latest/userguide/memory-cpu-batch-eks.html)
+-   Amazon VPC CNI, [WARM_ENI_TARGET 설명](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/eni-and-ip-target.md)
+-   Amazon EKS AMI, [nodeadm kubelet config](https://github.com/awslabs/amazon-eks-ami/blob/main/nodeadm/internal/kubelet/config.go)
+-   Kubernetes, [Reserve Compute Resources for System Daemons](https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/)
+-   Kubernetes, [Nodes](https://kubernetes.io/docs/concepts/architecture/nodes/)

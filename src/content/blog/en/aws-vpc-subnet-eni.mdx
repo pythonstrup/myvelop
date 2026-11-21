@@ -4,7 +4,7 @@ description: "What VPCs, subnets, route tables, NAT, VPC endpoints, security gro
 pubDate: "2026-11-16T21:00:00+09:00"
 tags: ["aws", "vpc", "subnet", "eni", "nat", "eks"]
 socialImage: "../../../assets/blog/aws-vpc-subnet-eni/og.png"
-series: "Running EKS Nodes"
+series: "AWS Networking"
 seriesOrder: 1
 ---
 import CidrBitsDemo from "@/materials/aws-vpc-subnet-eni/CidrBitsDemo";
@@ -284,7 +284,7 @@ m8i.xlarge	4	30
 m7i.xlarge	4	15
 ```
 
-Both have 4 vCPUs and 16GiB of memory, but the IPs per card differ by a factor of two. On EKS, these values decide how many Pods a node can run. The next post covers how to calculate it.
+Both have 4 vCPUs and 16GiB of memory, but the IPs per card differ by a factor of two. On EKS, these values decide how many Pods a node can run. A separate series on running EKS nodes will cover how to calculate it.
 
 ### Resources that use ENIs
 
@@ -322,7 +322,7 @@ The last two rows of the table are EKS's cards.
 
 In practice, the VPC CNI holds cards and IPs in advance, before Pods start. Those are the IPs the subnet section mentioned nodes holding in advance.
 
-The next post looks closely at how these two kinds of cards are used.
+That series will look closely at how these two kinds of cards are used.
 
 ## Overall VPC structure
 
@@ -336,7 +336,7 @@ A VPC is an address range, and a subnet is a slice of that range per Availabilit
 
 <strong>Before you click a default, look at what that default decides.</strong>
 
-The next post follows how these cards connect the control plane, nodes, and Pods.
+The next post covers how serverless workloads use these pieces: attaching Lambda and Fargate to a VPC and pinning the outbound IP.
 
 ## References
 
