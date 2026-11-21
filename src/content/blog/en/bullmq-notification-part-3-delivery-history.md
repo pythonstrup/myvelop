@@ -1,14 +1,15 @@
 ---
-title: "Running a Notification System with BullMQ, Part 3 - Where to Store Delivery History"
+title: "Designing a Notification Server, Part 3 - Where to Store Delivery History"
 description: "Where should delivery history live? The trade-offs weighed across a dedicated relational DB, a serial S3 pipeline, SNS fan-out, and a Firehose route."
 pubDate: "2026-07-25T21:00:00+09:00"
 tags: ["BullMQ","nodejs","aws","architecture","s3"]
-series: "Running a Notification System with BullMQ"
+series: "Designing a Notification Server"
+seriesOrder: 3
 socialImage: "../../../assets/blog/bullmq-notification-part-3-delivery-history/og.png"
 ---
 ## Introduction
 
-[Part 1](/blog/bullmq-notification-part-1-what-is-bullmq) and [Part 2](/blog/bullmq-notification-part-2-rate-limit) were about getting messages out reliably. This post is about what comes after they are sent.
+[Part 1](/blog/notification-server-part-1-delegating-delivery) and [Part 2](/blog/bullmq-notification-part-2-rate-limit) were about getting messages out reliably. This post is about what comes after they are sent.
 
 What was sent, when, to whom, and with what result has to be recorded somewhere. The question is where. I will weigh a relational database, a serial S3 pipeline, SNS fan-out, and a Firehose route against each other.
 
