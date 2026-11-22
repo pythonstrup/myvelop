@@ -15,7 +15,7 @@ const NEED = 12;
 const Y_MAX = 14;
 const LANE_H = 84;
 const ARIA =
-	"최소만 다르게 둔 인스턴스 두 개를 위아래로 견주는 애니메이션. 위는 최소 0.5 ACU, 아래는 최소 4 ACU다. 한가할 때는 둘 다 바닥에 머물러, 위는 0.5 ACU, 아래는 4 ACU만큼 요금이 나간다. 일이 몰려 12 ACU가 필요해지면 둘 다 계단을 밟아 오르는데, 바닥이 높은 아래쪽이 큰 계단으로 먼저 따라잡고, 바닥이 낮은 위쪽은 작은 계단으로 오래 걸려 그동안 모자란 몫이 더 넓게 칠해진다.";
+	"최소만 다르게 둔 인스턴스 두 개를 위아래로 견주는 애니메이션. 위는 최소 0.5 ACU, 아래는 최소 4 ACU다. 한가할 때는 둘 다 바닥에 머물러, 위는 0.5 ACU, 아래는 4 ACU만큼 요금이 나간다. 일이 몰려 12 ACU가 필요해지면 둘 다 조금씩 늘어난다. 바닥이 높은 아래쪽은 한 번에 크게 늘어 먼저 따라잡고, 바닥이 낮은 위쪽은 조금씩 늘어 오래 걸린다. 그래서 위쪽의 모자란 용량이 더 넓게 칠해진다.";
 
 const demandAt = (i: number) => (i < JUMP_AT ? IDLE : NEED);
 
@@ -115,7 +115,7 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 
 	let lx = legend(ctx, 14, 14, c.blue, c.text, "용량(ACU)");
 	lx = legend(ctx, lx, 14, c.amber, c.text, "필요한 용량");
-	legend(ctx, lx, 14, c.redFill, c.text, "모자란 몫", true);
+	legend(ctx, lx, 14, c.redFill, c.text, "모자란 용량", true);
 
 	lane(ctx, dark, w, 58, LANES[0], upto);
 	lane(ctx, dark, w, 202, LANES[1], upto);

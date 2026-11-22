@@ -51,7 +51,7 @@ const SCENARIOS: Record<"cpu" | "write" | "idle", Scenario> = {
 			{ name: "DatabaseConnections", note: "연결 수", values: series((i) => (inBand(i, CPU_BAND) ? 0.72 + 0.1 * jitter(i, 2) : 0.18 + 0.05 * jitter(i, 3))) },
 		],
 		caption: "CPU가 ACU와 같은 때 오르면 CPU를 먼저 의심한다",
-		aria: "무거운 쿼리가 몰리는 동안 세 지표를 시간축을 맞춰 위아래로 늘어놓은 그림. 가운데 칠한 구간이 쿼리가 몰리는 때다. 맨 위 ServerlessDatabaseCapacity는 구간이 시작되면 계단을 밟아 오르고 끝나면 내려온다. CPUUtilization도 ACU와 같은 모양으로 오르내리지만, 최대 ACU를 기준으로 계산되어 100% 눈금의 절반에 못 미친다. DatabaseConnections도 구간 동안 함께 늘어난다.",
+		aria: "무거운 쿼리가 몰리는 동안 세 지표를 시간축을 맞춰 위아래로 늘어놓은 그림. 가운데 칠한 구간이 쿼리가 몰리는 때다. 맨 위 ServerlessDatabaseCapacity는 구간이 시작되면 조금씩 오르고 끝나면 내려온다. CPUUtilization도 ACU와 같은 모양으로 오르내리지만, 최대 ACU를 기준으로 계산되어 100% 눈금의 절반에 못 미친다. DatabaseConnections도 구간 동안 함께 늘어난다.",
 	},
 	write: {
 		band: WRITE_BAND,
@@ -71,7 +71,7 @@ const SCENARIOS: Record<"cpu" | "write" | "idle", Scenario> = {
 			},
 		],
 		caption: "ACU가 쓰기 지표와 함께 오르면 쓰기를 먼저 의심한다",
-		aria: "큰 쓰기 작업이 도는 동안 네 지표를 시간축을 맞춰 위아래로 늘어놓은 그림. 가운데 칠한 구간이 쓰기 작업이 도는 때다. 맨 위 ServerlessDatabaseCapacity는 작업이 시작되면 계단을 밟아 오르고 끝나면 내려온다. 그 아래 CPUUtilization은 작업 내내 낮게 잔잔하다. WriteIOPS와 StorageNetworkTransmitThroughput은 작업이 시작되자마자 함께 크게 오르고, 끝나면 바로 내려온다.",
+		aria: "큰 쓰기 작업이 도는 동안 네 지표를 시간축을 맞춰 위아래로 늘어놓은 그림. 가운데 칠한 구간이 쓰기 작업이 도는 때다. 맨 위 ServerlessDatabaseCapacity는 작업이 시작되면 조금씩 오르고 끝나면 내려온다. 그 아래 CPUUtilization은 작업 내내 낮게 잔잔하다. WriteIOPS와 StorageNetworkTransmitThroughput은 작업이 시작되자마자 함께 크게 오르고, 끝나면 바로 내려온다.",
 	},
 	idle: {
 		band: IDLE_BAND,
