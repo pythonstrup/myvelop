@@ -194,7 +194,7 @@ const starts = (dur: readonly number[]) =>
 		return acc;
 	}, []);
 
-/** 그룹 카드 하나를 그린다(서드파티 패널 내부). */
+/** 그룹 카드 하나를 그린다(발송 API 패널 내부). */
 function drawGroupCard(
 	ctx: CanvasRenderingContext2D,
 	box: NodeBox,
@@ -275,31 +275,31 @@ const CREATE_CYCLE = CREATE_START[2] + CREATE_DUR[2];
 const CREATE_LABELS = {
 	ko: {
 		captions: [
-			["① 두 워커가 동시에 그룹을 만든다", "서드파티엔 그룹이 둘 — 아직 어느 쪽도 틀리지 않았다"],
-			["② Redis SET NX — 먼저 쓴 쪽만 성공한다", "id = G-1 이 남고, G-2 의 쓰기는 (nil)로 거절된다"],
-			["③ 패자는 자기가 만든 빈 그룹을 지운다", "한 묶음에 그룹은 하나 — 이후 모든 적재는 G-1 로 간다"],
+			["① 두 워커가 동시에 그룹을 만든다", "발송 API에 그룹이 둘 생겼다, 아직 어느 쪽도 틀리지 않았다"],
+			["② Redis SET NX, 먼저 쓴 쪽만 성공한다", "id = G-1이 남고, G-2의 쓰기는 (nil)로 거절된다"],
+			["③ 진 쪽은 자기가 만든 빈 그룹을 지운다", "묶음당 그룹은 하나, 이후 모든 담기는 G-1로 간다"],
 		],
-		w1sub: ["createGroup 호출", "SET NX 시도", "적재 계속"],
+		w1sub: ["createGroup 호출", "SET NX 시도", "담기 계속"],
 		w2sub: ["createGroup 호출", "SET NX 시도", "빈 그룹 정리"],
 		worker: ["워커 1", "워커 2"],
-		panels: ["Redis · 그룹 상태 키", "서드파티 · 그룹 API"],
+		panels: ["Redis · 그룹 상태 키", "발송 API"],
 		empty: "(비어 있음)",
 		count0: "0건",
-		aria: "두 워커가 동시에 서드파티 그룹을 만들어 G-1 과 G-2 가 생기지만, Redis SET NX 에 먼저 쓴 워커 1 의 G-1 만 남고 워커 2 는 (nil)을 받아 자기가 만든 빈 그룹 G-2 를 지우는 세 장면의 애니메이션.",
+		aria: "두 워커가 동시에 발송 API에 그룹을 만들어 G-1과 G-2가 생기지만, Redis SET NX에 먼저 쓴 워커 1의 G-1만 남고 워커 2는 (nil)을 받아 자기가 만든 빈 그룹 G-2를 지우는 세 장면의 애니메이션.",
 	},
 	en: {
 		captions: [
-			["① Two workers create a group at the same time", "the third party now holds two groups — neither is wrong yet"],
-			["② Redis SET NX — only the first write wins", "id = G-1 sticks; the G-2 write is rejected with (nil)"],
-			["③ The loser deletes its own empty group", "one batch, one group — every stage call goes to G-1 from here"],
+			["① Two workers create a group at the same time", "the sending API now holds two groups; neither is wrong yet"],
+			["② Redis SET NX: only the first write wins", "id = G-1 sticks; the G-2 write is rejected with (nil)"],
+			["③ The loser deletes its own empty group", "one batch, one group: every stage call goes to G-1 from here"],
 		],
 		w1sub: ["calling createGroup", "trying SET NX", "staging on"],
 		w2sub: ["calling createGroup", "trying SET NX", "cleaning up"],
 		worker: ["worker 1", "worker 2"],
-		panels: ["Redis · group state keys", "third party · group API"],
+		panels: ["Redis · group keys", "sending API"],
 		empty: "(empty)",
 		count0: "0",
-		aria: "Two workers create third-party groups G-1 and G-2 simultaneously; the first SET NX write keeps G-1, the second gets nil, and the loser deletes its own empty group.",
+		aria: "Two workers create groups G-1 and G-2 on the sending API at the same time; the first SET NX write keeps G-1, the second gets nil, and the loser deletes its own empty group.",
 	},
 } as const;
 
@@ -362,9 +362,9 @@ const DEDUPE_CYCLE = DEDUPE_START[2] + DEDUPE_DUR[2];
 const DEDUPE_LABELS = {
 	ko: {
 		captions: [
-			["① 마지막 두 청크가 거의 동시에 끝난다", "둘 다 기록을 읽고 '완성'을 본다 — 관측자가 둘이다"],
-			["② 둘 다 ADD send-G-1 — jobId 가 같다", "BullMQ 는 같은 jobId 의 두 번째 add 를 조용히 무시한다"],
-			["③ send job 은 하나만 존재한다", "여기까지가 add 시점 — 실행 시점 방어는 결말 마커의 몫이다"],
+			["① 마지막 두 청크가 거의 동시에 끝난다", "둘 다 기록을 읽고 완성을 본다, 관측자가 둘이다"],
+			["② 둘 다 ADD send-G-1, jobId가 같다", "부모 없는 job이라 BullMQ가 두 번째 add를 조용히 무시한다"],
+			["③ send job은 하나만 있다", "여기까지가 넣는 시점이다, 실행 시점의 방어는 따로 필요하다"],
 		],
 		w1sub: ["완성 관측", "ADD send", "send-G-1 처리"],
 		w2sub: ["완성 관측", "ADD send", "대기"],
@@ -373,13 +373,13 @@ const DEDUPE_LABELS = {
 		complete: "완성: 0·1·last",
 		second: "send-G-1 (2번째)",
 		chips: { wait: "대기", run: "처리 중", dup: "흡수됨" },
-		aria: "마지막 두 청크가 거의 동시에 완성을 관측해 둘 다 같은 jobId 의 send job 을 적재하지만, BullMQ 가 두 번째 add 를 조용히 무시해 send job 이 하나만 존재하게 되는 세 장면의 애니메이션.",
+		aria: "마지막 두 청크가 거의 동시에 완성을 보고 둘 다 같은 jobId의 send job을 넣지만, 부모가 없는 job이라 BullMQ가 두 번째 add를 조용히 무시해 send job이 하나만 남는 세 장면의 애니메이션.",
 	},
 	en: {
 		captions: [
-			["① The last two chunks finish almost together", "both read the records and see completion — two observers"],
-			["② Both ADD send-G-1 — the jobId is identical", "BullMQ silently ignores the second add of the same jobId"],
-			["③ Exactly one send job exists", "that covers add time — run-time defense belongs to the done marker"],
+			["① The last two chunks finish almost together", "both read the records and see completion: two observers"],
+			["② Both ADD send-G-1 with the same jobId", "the job has no parent, so BullMQ silently ignores the second add"],
+			["③ Exactly one send job exists", "that covers add time; run time needs its own defense"],
 		],
 		w1sub: ["checking completion", "ADD send", "running send-G-1"],
 		w2sub: ["checking completion", "ADD send", "idle"],
@@ -388,7 +388,7 @@ const DEDUPE_LABELS = {
 		complete: "complete: 0·1·last",
 		second: "send-G-1 (2nd)",
 		chips: { wait: "waiting", run: "running", dup: "absorbed" },
-		aria: "Two chunks observe completion at the same time and both add a send job with the same jobId; BullMQ silently absorbs the second add, so exactly one send job exists.",
+		aria: "Two chunks observe completion at the same time and both add a send job with the same jobId; the job has no parent, so BullMQ silently ignores the second add and exactly one send job exists.",
 	},
 } as const;
 
@@ -460,33 +460,33 @@ const RESEND_CYCLE = RESEND_START[3] + RESEND_DUR[3];
 const RESEND_LABELS = {
 	ko: {
 		captions: [
-			["① 발송은 성공했는데 응답이 오다 끊겼다", "job 은 실패로 기록된다 — 결말 마커는 아직 없다"],
-			["② 재시도 — 1차 게이트, 결말 마커", "(nil): 마커를 남기기 전에 끊겨서 여기서는 못 잡는다"],
-			["③ 2차 게이트 — 서드파티가 보는 사실", "PENDING 이 아니다 = 이미 나갔다, 발송을 생략한다"],
-			["④ 발송은 생략하고 리포트만 회수한다", "발송 1번 · 리포트 1번 — 멱등성은 jobId 가 아니라 이 게이트들이 지킨다"],
+			["① 발송은 성공했는데 응답이 오다 끊겼다", "job은 실패로 기록된다, 발송 마커는 아직 없다"],
+			["② 재시도, 첫 확인은 발송 마커다", "(nil): 마커를 남기기 전에 끊겨서 여기서는 못 잡는다"],
+			["③ 두 번째 확인은 API가 보는 그룹 상태다", "PENDING이 아니면 이미 나갔다, 발송을 건너뛴다"],
+			["④ 발송은 건너뛰고 마커만 남긴다", "발송은 한 번, 지키는 것은 jobId가 아니라 이 두 확인이다"],
 		],
-		wsub: ["sendGroup 호출", "GET done", "GET group", "리포트 발행"],
+		wsub: ["sendGroup 호출", "GET done", "GET group", "마커 기록"],
 		worker: "워커 (send job 재시도)",
-		panels: ["Redis · 그룹 상태 키", "서드파티 · 그룹 API"],
+		panels: ["Redis · 발송 마커", "발송 API"],
 		empty: "(비어 있음)",
 		count: "10,000건",
 		statusReply: "SENDING · 10,000건",
-		aria: "발송 호출은 성공했지만 응답이 유실돼 job 이 실패로 남고, 재시도가 결말 마커에서 (nil)을 보지만 서드파티 상태 조회가 PENDING 이 아님을 알려 발송을 생략하고 리포트만 회수하는 네 장면의 애니메이션.",
+		aria: "발송 트리거는 성공했지만 응답이 끊겨 job이 실패로 남고, 재시도가 발송 마커에서 (nil)을 보지만 발송 API의 그룹 상태가 PENDING이 아니라서 발송을 건너뛰고 마커만 남기는 네 장면의 애니메이션.",
 	},
 	en: {
 		captions: [
-			["① The send succeeded, but the reply was lost", "the job is recorded as failed — no done marker yet"],
-			["② Retry — first gate, the done marker", "(nil): the crash happened before the marker, so this gate misses"],
-			["③ Second gate — what the third party sees", "not PENDING = it already went out; skip the send"],
-			["④ Skip the send, recover only the report", "one send · one report — idempotency lives in these gates, not the jobId"],
+			["① The send succeeded, but the reply was lost", "the job is recorded as failed; no send marker yet"],
+			["② Retry: the first check is the send marker", "(nil): it broke off before the marker, so this check misses"],
+			["③ The second check is the group status on the API", "not PENDING means it already went out; skip the send"],
+			["④ Skip the send and write the marker", "one send: these two checks guard it, not the jobId"],
 		],
-		wsub: ["calling sendGroup", "GET done", "GET group", "publishing report"],
+		wsub: ["calling sendGroup", "GET done", "GET group", "writing marker"],
 		worker: "worker (send job retry)",
-		panels: ["Redis · group state keys", "third party · group API"],
+		panels: ["Redis · send marker", "sending API"],
 		empty: "(empty)",
 		count: "10,000",
 		statusReply: "SENDING · 10,000",
-		aria: "A send call succeeds but the reply is lost, so the job fails; the retry reads nil from the done marker, but the third-party status query shows the group is no longer PENDING, so it skips the send and recovers only the report.",
+		aria: "A send trigger succeeds but the reply is lost, so the job fails; the retry reads nil from the send marker, but the group status on the sending API is no longer PENDING, so it skips the send and only writes the marker.",
 	},
 } as const;
 
@@ -710,41 +710,41 @@ const ROLLOVER_CYCLE = ROLLOVER_START[3] + ROLLOVER_DUR[3];
 const ROLLOVER_LABELS = {
 	ko: {
 		captions: [
-			["① 마지막 승인이 상한을 넘는다", "HINCRBY 반환값 — 두 청크가 나란히 초과를 본다"],
-			["② SET NX — 세대를 닫는 자는 하나다", "진 쪽은 재시도 가능한 에러로 물러난다"],
-			["③ 가득 찬 그룹은 내보내고, 새 그룹을 만든다", "gen 은 1 → 2 로 정확히 한 번 오른다"],
-			["④ 진 쪽은 재시도로 돌아와 새 세대에 합류한다", "빈 세대 없이 적재가 이어진다"],
+			["① 마지막 자리 잡기가 상한을 넘긴다", "HINCRBY 반환값을 보고 두 청크가 나란히 초과를 안다"],
+			["② SET NX, 세대를 닫는 쪽은 하나다", "진 쪽은 재시도할 수 있는 오류로 물러난다"],
+			["③ 가득 찬 그룹을 내보내고 새 그룹을 만든다", "gen은 1에서 2로 정확히 한 번 오른다"],
+			["④ 진 쪽은 재시도로 돌아와 새 세대에 합류한다", "빈 세대 없이 담기가 이어진다"],
 		],
-		w1sub: ["HINCRBY 승인", "SET NX 시도", "롤오버 수행", "적재 계속"],
-		w2sub: ["HINCRBY 승인", "SET NX 시도", "물러남", "G-2 에 적재"],
+		w1sub: ["HINCRBY 자리 잡기", "SET NX 시도", "넘김 수행", "담기 계속"],
+		w2sub: ["HINCRBY 자리 잡기", "SET NX 시도", "물러남", "G-2에 담기"],
 		worker: ["워커 1", "워커 2"],
-		panels: ["Redis · 세대 키", "서드파티 · 그룹 API"],
+		panels: ["Redis · 세대 키", "발송 API"],
 		gen1: "1세대",
 		gen2: "2세대",
-		aria: "마지막 두 청크의 HINCRBY 승인이 나란히 상한을 넘겨 둘 다 세대를 닫으려 하지만, SET NX 를 먼저 쓴 워커 1 만 롤오버를 수행해 가득 찬 G-1 을 내보내고 G-2 를 만들며, 진 워커 2 는 재시도로 돌아와 올라간 세대의 G-2 에 담는 네 장면의 애니메이션.",
+		aria: "두 청크의 HINCRBY 자리 잡기가 나란히 상한 1만 건을 넘겨 둘 다 세대를 닫으려 하지만, SET NX를 먼저 쓴 워커 1만 넘김을 수행해 가득 찬 G-1을 내보내고 G-2를 만들며, 진 워커 2는 재시도로 돌아와 올라간 세대의 G-2에 담는 네 장면의 애니메이션.",
 	},
 	en: {
 		captions: [
-			["① The last approvals cross the cap", "HINCRBY return values — two chunks see the overflow together"],
-			["② SET NX — exactly one closes the generation", "the loser backs off with a retryable error"],
-			["③ Ship the full group, create the next one", "gen goes 1 → 2 exactly once"],
+			["① The last slot claims cross the cap", "two chunks see the overflow together in HINCRBY's reply"],
+			["② SET NX: exactly one closes the generation", "the loser backs off with a retryable error"],
+			["③ Ship the full group, create the next one", "gen goes from 1 to 2 exactly once"],
 			["④ The loser retries and joins the new generation", "staging continues with no empty generation"],
 		],
-		w1sub: ["HINCRBY approval", "trying SET NX", "rolling over", "staging on"],
-		w2sub: ["HINCRBY approval", "trying SET NX", "backing off", "staging to G-2"],
+		w1sub: ["HINCRBY claim", "trying SET NX", "rolling over", "staging on"],
+		w2sub: ["HINCRBY claim", "trying SET NX", "backing off", "staging to G-2"],
 		worker: ["worker 1", "worker 2"],
-		panels: ["Redis · generation keys", "third party · group API"],
+		panels: ["Redis · generation keys", "sending API"],
 		gen1: "gen 1",
 		gen2: "gen 2",
-		aria: "Two chunks' HINCRBY approvals cross the cap together and both try to close the generation; only the first SET NX write rolls over — shipping the full G-1 and creating G-2 — while the loser retries and joins the new generation.",
+		aria: "Two chunks' HINCRBY slot claims cross the 10,000 cap together and both try to close the generation; only the first SET NX write rolls over, shipping the full G-1 and creating G-2, while the loser retries and joins the new generation.",
 	},
 } as const;
 
 const ROLLOVER_MSGS: readonly Msg[] = [
-	{ act: 0, p0: 0.05, p1: 0.3, from: "w1", to: "r", label: "HINCRBY +5,000", c: "blue" },
-	{ act: 0, p0: 0.35, p1: 0.58, from: "r", to: "w1", label: "10,000", c: "red" },
-	{ act: 0, p0: 0.18, p1: 0.45, from: "w2", to: "r", label: "HINCRBY +5,000", c: "amber" },
-	{ act: 0, p0: 0.5, p1: 0.72, from: "r", to: "w2", label: "15,000", c: "red" },
+	{ act: 0, p0: 0.05, p1: 0.3, from: "w1", to: "r", label: "HINCRBY +1,000", c: "blue" },
+	{ act: 0, p0: 0.35, p1: 0.58, from: "r", to: "w1", label: "11,000", c: "red" },
+	{ act: 0, p0: 0.18, p1: 0.45, from: "w2", to: "r", label: "HINCRBY +1,000", c: "amber" },
+	{ act: 0, p0: 0.5, p1: 0.72, from: "r", to: "w2", label: "12,000", c: "red" },
 	{ act: 1, p0: 0.05, p1: 0.3, from: "w1", to: "r", label: "SET roll.1 NX", c: "blue" },
 	{ act: 1, p0: 0.33, p1: 0.5, from: "r", to: "w1", label: "OK", c: "green" },
 	{ act: 1, p0: 0.22, p1: 0.47, from: "w2", to: "r", label: "SET roll.1 NX", c: "amber" },
@@ -779,10 +779,10 @@ function makeRolloverScene(lang: Lang) {
 		drawWorkerBox(ctx, B.w1, L.worker[0], L.w1sub[act], c.blue, c);
 		drawWorkerBox(ctx, B.w2, L.worker[1], L.w2sub[act], c.amber, c);
 
-		drawRedisRow(ctx, B.r, 0, "cap", "8,000", c);
+		drawRedisRow(ctx, B.r, 0, "cap", "10,000", c);
 		drawRedisRow(ctx, B.r, 1, "gen", act > 2 || (act === 2 && p > 0.54) ? "2" : "1", c);
-		const appr = act > 0 || p > 0.45 ? "15,000" : p > 0.3 ? "10,000" : "5,000";
-		drawRedisRow(ctx, B.r, 2, "appr.1", appr, c);
+		const appr = act > 0 || p > 0.45 ? "12,000" : p > 0.3 ? "11,000" : "10,000";
+		drawRedisRow(ctx, B.r, 2, "slot.1", appr, c);
 
 		// 좁은 폭에서는 부제가 상태 칩과 겹쳐 생략한다 — 세대 정보는 Redis 행과 캡션에 있다.
 		const compact = w < 560;
