@@ -38,7 +38,7 @@ const LANES = [simulate(0.5), simulate(4)];
 function captionAt(upto: number) {
 	if (upto < JUMP_AT) return "① 한가할 때는 바닥만큼 요금이 나간다";
 	if (upto < LANES[0].caughtAt) return "② 바빠지면 바닥이 높은 쪽이 먼저 따라잡는다";
-	return "③ 최소는 한가할 때의 요금과 바빠졌을 때의 속도를 맞바꾼다";
+	return "③ 최솟값은 한가할 때의 요금과 바빠졌을 때의 속도를 맞바꾼다";
 }
 
 function lane(ctx: CanvasRenderingContext2D, dark: boolean, w: number, top: number, L: (typeof LANES)[number], upto: number) {

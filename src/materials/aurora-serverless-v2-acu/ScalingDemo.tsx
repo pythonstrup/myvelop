@@ -44,7 +44,7 @@ function captionAt(i: number) {
 	if (s < 0.12) return "① 평소에는 최소에 머문다";
 	if (s >= 0.62) return "④ 작업이 끝나면 용량도 조금씩 줄어든다";
 	if (SIM.cap[i] < MAX) return "② 조금씩 늘어난다. 작을 때는 느는 폭도 작다";
-	return "③ 최대에 닿으면 더 늘지 않는다. 모자란 만큼 느려진다";
+	return "③ 최댓값에 닿으면 더 늘지 않는다. 모자란 만큼 느려진다";
 }
 
 function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) {

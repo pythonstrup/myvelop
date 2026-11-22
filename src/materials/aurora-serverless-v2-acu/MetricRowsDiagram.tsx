@@ -78,7 +78,7 @@ const SCENARIOS: Record<"cpu" | "write" | "idle", Scenario> = {
 		rows: [
 			{
 				name: "ServerlessDatabaseCapacity",
-				note: "최소까지 내려오지 않는다",
+				note: "최솟값까지 내려오지 않는다",
 				values: series((i) => (4 + 0.25 * jitter(i, 6)) / 8),
 				accent: true,
 				ref: { value: 1 / 8, label: "최소 1 ACU" },
