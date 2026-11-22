@@ -1,0 +1,857 @@
+---
+title: "PostgreSQL GIN 인덱스 - 역색인, jsonb, 실행 계획"
+description: "jsonb 열에 담긴 필드를 찾을 때 쓰는 GIN 인덱스가 무엇인지, B-tree와 어떻게 다른지, 어떤 질문에 답하고 무엇을 대가로 치르는지 실행 계획과 함께 정리했다."
+pubDate: "2026-11-22T11:45:17+09:00"
+tags: ["postgresql", "gin", "jsonb", "인덱스"]
+series: "PostgreSQL"
+socialImage: "../../../assets/blog/postgresql-gin-index/og.png"
+---
+
+import BookIndexDiagram from "@/materials/postgresql-gin-index/BookIndexDiagram";
+import InvertedIndexDiagram from "@/materials/postgresql-gin-index/InvertedIndexDiagram";
+import PostingListIntersectDiagram from "@/materials/postgresql-gin-index/PostingListIntersectDiagram";
+import PagesReadDiagram from "@/materials/postgresql-gin-index/PagesReadDiagram";
+import LeafOrderDiagram from "@/materials/postgresql-gin-index/LeafOrderDiagram";
+import OpsKeysDiagram from "@/materials/postgresql-gin-index/OpsKeysDiagram";
+import PendingListDiagram from "@/materials/postgresql-gin-index/PendingListDiagram";
+import LimitPagesDiagram from "@/materials/postgresql-gin-index/LimitPagesDiagram";
+
+## 들어가며
+
+이슈 트래커를 만든다고 하자. 티켓마다 상태, 우선순위, 담당자 같은 필드가 붙는다. 팀마다 쓰는 필드가 달라서 필드는 사용자가 직접 만들고 지운다. 필드가 생길 때마다 테이블에 열을 더할 수는 없으니, 티켓의 필드 값을 jsonb 열 하나에 모아 담는다.
+
+```sql
+create table tickets (
+  id         bigint generated always as identity primary key,
+  created_at timestamptz not null,
+  data       jsonb not null
+);
+```
+
+`data`에는 이런 값이 들어간다고 하자.
+
+```json
+{"status": "open", "priority": 2, "assignees": ["kim", "lee"]}
+```
+
+이제 담당자에 kim이 있는 티켓을 찾아야 한다. 인덱스가 없으면 PostgreSQL은 모든 행의 `data`를 열어 본다. 행이 많아지면 그만큼 느려진다.
+
+평범한 열이라면 B-tree 인덱스를 하나 만들면 된다. jsonb 안의 필드에도 식 인덱스로 B-tree를 만들 수 있다.
+
+```sql
+create index on tickets ((data->>'status'));
+```
+
+그런데 필드는 사용자가 정한다. 어느 필드로 찾을지 미리 알 수 없고, 필드가 생길 때마다 인덱스를 하나씩 더 만들어야 한다. 필드가 수십 개면 인덱스도 수십 개가 되고, 행을 쓸 때마다 그 인덱스를 전부 고쳐야 한다.
+
+그래서 jsonb 열 전체에 GIN 인덱스를 하나 둔다.
+
+```sql
+create index tickets_data_gin on tickets using gin (data jsonb_path_ops);
+```
+
+이 인덱스 하나가 `data` 안의 필드를 모두 덮는다. 필드가 새로 생겨도 인덱스를 더 만들 필요가 없다.
+
+인덱스 하나가 어떻게 모든 필드를 덮을까? 그리고 그 대가로 무엇을 못 하게 될까?
+
+글에 나오는 실행 계획은 직접 만든 합성 데이터로 뜬 것이다. `tickets`에 20만 행을 넣었고, `data` 값은 한 행에 평균 1.6KB쯤 된다. PostgreSQL 17에서 병렬 실행을 끄고 쟀다.
+
+## 역색인
+
+책 뒤에 있는 찾아보기를 떠올려 보자. 본문은 쪽마다 무슨 내용이 있는지 적는다. 찾아보기는 거꾸로 낱말마다 그 낱말이 나오는 쪽 번호를 적는다. 「인덱스」가 나오는 쪽을 찾을 때 본문을 처음부터 넘기는 사람은 없다. 찾아보기에서 「인덱스」를 찾고 적힌 쪽으로 바로 간다.
+
+<BookIndexDiagram />
+
+GIN은 Generalized Inverted Index의 줄임말이다. 역색인(inverted index)이 바로 이 찾아보기다.
+
+### 키와 행 목록
+
+`tickets`에 행이 셋 있다고 하자.
+
+| id | data |
+| --- | --- |
+| 1 | `{"status": "open", "assignees": ["kim", "lee"]}` |
+| 2 | `{"status": "closed", "assignees": ["park"]}` |
+| 3 | `{"status": "open", "assignees": ["kim"]}` |
+
+테이블은 행마다 무슨 값이 있는지 적는다. 1번 행을 보면 상태가 open이고 담당자가 kim과 lee라는 걸 안다. 반대로 kim이 맡은 행을 알려면 행을 하나씩 다 열어 봐야 한다.
+
+역색인은 이 표를 뒤집는다. 행마다 `data`에서 필드와 값을 하나씩 떼어 내고, 떼어 낸 것마다 그것이 나온 행 번호를 적는다.
+
+| 키 | 행 |
+| --- | --- |
+| `assignees: kim` | 1, 3 |
+| `assignees: lee` | 1 |
+| `assignees: park` | 2 |
+| `status: closed` | 2 |
+| `status: open` | 1, 3 |
+
+이제 kim이 맡은 티켓은 `assignees: kim` 한 줄만 읽으면 1번과 3번이라는 걸 안다.
+
+조건이 둘이어도 같다. 상태가 open이면서 lee가 맡은 티켓을 찾는다면 `status: open`과 `assignees: lee` 두 줄을 읽고, 양쪽에 다 있는 행 번호만 남긴다.
+
+<PostingListIntersectDiagram />
+
+남는 것은 1번 행이다. 행 번호를 고르는 동안 테이블의 행은 하나도 열지 않았다.
+
+공식 문서는 이 표의 낱말을 이렇게 부른다. 인덱스에 넣는 묶음 값을 item이라 하고, 여기서는 한 행의 `data`가 item이다. item에서 떼어 낸 원소 하나하나가 key다. key마다 그 key가 든 행 번호를 모은 목록을 posting list라 한다. 1번 행은 키 셋의 목록에 동시에 들어간다. 한 행에 키가 여러 개 있으니 한 행 번호가 여러 목록에 나온다. 반대로 키는 인덱스에 한 번만 적힌다. 같은 값을 가진 행이 아무리 많아도 키는 한 줄이고 행 번호만 늘어난다.
+
+필드가 새로 생겨도 이 구조는 그대로다. 새 필드의 값이 새 키로 들어올 뿐이다. 들어가며에서 물은 「인덱스 하나가 어떻게 모든 필드를 덮나」의 답이 이것이다. GIN은 열의 값을 통째로 정렬해 두지 않고, 열 안에 든 원소를 모두 키로 떼어 적는다.
+
+이름의 Generalized는 GIN 자체가 자신이 빠르게 만드는 연산을 모른다는 뜻이다. 값과 질문에서 키를 어떻게 떼어 낼지, 키 몇 개가 맞은 행이 정말 질문에 맞는지 어떻게 가릴지는 자료형마다 연산자 클래스가 정한다. 배열이면 원소가, 전문 검색이면 낱말이, jsonb면 필드와 값이 키가 된다. jsonb의 연산자 클래스 두 가지는 키를 떼는 방법이 달라서 4장에서 다시 본다.
+
+### 내부 구조
+
+키가 수백만 개면 키 목록에서 원하는 키를 찾는 일도 빨라야 한다. 그래서 GIN은 키 위에 B-tree를 세운다. 잎 페이지의 항목마다 키와 그 키의 행 번호 목록이 붙는다. 목록이 짧으면 키 옆에 그대로 적고, 이것이 posting list다. 목록이 길면 행 번호만 모은 B-tree를 따로 만들어 가리키고, 이것을 posting tree라 한다.
+
+세 행의 예를 이 구조로 그리면 다음과 같다.
+
+<InvertedIndexDiagram />
+
+그림은 읽기 쉽게 키를 글자로 적었다. 실제 `jsonb_path_ops`의 키는 필드와 값을 섞어 만든 해시 값이라 정렬 순서도 해시 값의 순서다.
+
+GIN 안에도 B-tree가 있다는 점이 헷갈릴 수 있다. 정렬하는 대상이 다르다. 보통 B-tree는 행의 값을 정렬하고 잎에서 행 하나를 가리킨다. GIN 안의 B-tree는 키를 정렬하고 잎에서 행 목록을 가리킨다. 이 차이가 3장의 주제다.
+
+### 실행 계획
+
+20만 행에서 kim이 맡은 티켓을 찾아 보자. `@>`는 왼쪽 jsonb가 오른쪽 jsonb를 포함하는지 묻는 연산자다. 자세한 것은 4장에서 다룬다.
+
+```sql
+explain (analyze, buffers)
+select id from tickets where data @> '{"assignees": ["kim"]}';
+```
+
+```
+Bitmap Heap Scan on tickets  (cost=27.59..6731.52 rows=2000 width=8) (actual time=0.972..16.137 rows=5956 loops=1)
+  Recheck Cond: (data @> '{"assignees": ["kim"]}'::jsonb)
+  Heap Blocks: exact=5691
+  Buffers: shared hit=5698
+  ->  Bitmap Index Scan on tickets_data_gin  (cost=0.00..27.09 rows=2000 width=0) (actual time=0.585..0.585 rows=5956 loops=1)
+        Index Cond: (data @> '{"assignees": ["kim"]}'::jsonb)
+        Buffers: shared hit=7
+```
+
+계획은 안쪽에서 바깥쪽으로 읽는다.
+
+- <strong>Bitmap Index Scan on tickets_data_gin</strong> — GIN에서 kim의 키를 찾아 행 번호 5,956개를 얻었다. 인덱스 페이지는 7개만 읽었다.
+- <strong>Bitmap Heap Scan on tickets</strong> — 얻은 행 번호로 테이블 페이지를 찾아가 행을 읽었다. 5,956행이 페이지 5,691개에 흩어져 있었다.
+
+맨 위 노드의 `Buffers: shared hit=5698`은 두 단계가 읽은 페이지를 더한 값이다. 바깥 노드의 Buffers에는 안쪽 노드가 읽은 페이지도 들어간다. 인덱스 7페이지와 테이블 5,691페이지를 합하면 5,698이다.
+
+GIN을 쓰지 못하게 하고 같은 쿼리를 실행하면 Seq Scan이 테이블 50,000페이지를 모두 읽는다. 20만 행을 다 열어 보고 194,044행을 버린다.
+
+<PagesReadDiagram />
+
+다섯 번 잰 중앙값은 GIN을 쓴 쪽이 9.8ms, 테이블 전체를 읽은 쪽이 115ms였다.
+
+`Bitmap`이라는 이름은 3장에서, `Recheck Cond` 줄은 5장에서 다룬다.
+
+## B-tree와 GIN
+
+2장 끝에서 GIN 안에도 B-tree가 있지만 정렬하는 대상이 다르다고 했다. 이 장에서는 그 차이가 실행 계획에 무엇을 남기는지 본다.
+
+`tickets`의 `created_at`에는 평범한 B-tree 인덱스가 하나 있다고 하자. 이 장의 실행 계획은 이 인덱스와 2장의 GIN 인덱스를 함께 쓴다.
+
+```sql
+create index tickets_created_at on tickets (created_at);
+```
+
+### 정렬하는 대상
+
+B-tree는 행의 값을 정렬한다. `tickets_created_at`에서 한 행은 한 번 나오고, 잎을 왼쪽부터 읽으면 행이 `created_at` 순서대로 나온다.
+
+GIN은 키를 정렬한다. 잎을 읽으면 키 순서대로 행 목록이 나온다. 그런데 2장의 1번 행은 `assignees: kim`, `assignees: lee`, `status: open` 세 목록에 모두 들어 있다. 한 행이 여러 목록에 흩어져 있어서, 잎을 끝까지 읽어도 행의 순서라고 부를 만한 것이 생기지 않는다.
+
+2장의 세 행에 `created_at`이 1번은 10월 5일, 2번은 10월 2일, 3번은 10월 9일로 들어 있다고 하자. 두 인덱스의 잎을 나란히 놓으면 다음과 같다.
+
+<LeafOrderDiagram />
+
+| | B-tree | GIN |
+| --- | --- | --- |
+| 정렬하는 것 | 행의 값 | 값에서 떼어 낸 키 |
+| 한 행이 인덱스에 나오는 횟수 | 한 번 | 키 수만큼 |
+| 잎을 차례로 읽으면 | 행이 값 순서대로 나온다 | 키마다 행 목록이 나온다 |
+| 결과를 내는 순서 | 값의 순서 | 정해지지 않음 |
+
+PostgreSQL에 물어봐도 답은 같다. `can_order`는 그 종류의 인덱스가 정렬된 결과를 낼 수 있는지를 나타낸다.
+
+```sql
+select amname, pg_indexam_has_property(oid, 'can_order') as can_order
+from pg_am
+where amname in ('btree', 'gin');
+```
+
+| amname | can_order |
+| --- | --- |
+| btree | t |
+| gin | f |
+
+공식 문서도 PostgreSQL이 지원하는 인덱스 가운데 정렬된 결과를 낼 수 있는 것은 B-tree뿐이라고 적는다.
+
+### 행을 넘기는 두 방법
+
+인덱스가 찾은 행을 넘기는 방법은 두 가지다. 하나는 행을 찾는 대로 하나씩 넘기는 방법이고, 실행 계획에는 Index Scan으로 나온다. 다른 하나는 맞는 행의 자리를 한꺼번에 모아 넘기는 방법이고, Bitmap Index Scan으로 나온다.
+
+B-tree는 두 방법을 다 쓰고, GIN은 뒤의 방법만 쓴다.
+
+```sql
+select c.relname,
+       pg_index_has_property(c.oid, 'index_scan') as index_scan,
+       pg_index_has_property(c.oid, 'bitmap_scan') as bitmap_scan
+from pg_class c
+where c.relname in ('tickets_created_at', 'tickets_data_gin');
+```
+
+| relname | index_scan | bitmap_scan |
+| --- | --- | --- |
+| tickets_created_at | t | t |
+| tickets_data_gin | f | t |
+
+공식 문서는 인덱스가 내부 구조에 맞지 않는 쪽 방법을 구현하지 않아도 된다고 적는다. GIN이 그런 경우다. 2장에서 본 것처럼 GIN은 키마다 따로 적은 목록을 맞춰 본 뒤에야 답을 내고, 행의 자리를 다 모아서 한 번에 넘기는 방법만 구현했다.
+
+비트맵 스캔을 끄면 차이가 바로 보인다. `enable_bitmapscan`은 플래너가 비트맵 스캔을 고르지 않게 하는 실험용 설정이다.
+
+```sql
+set enable_bitmapscan = off;
+explain select id from tickets where created_at >= '2026-10-20';
+explain select id from tickets where data @> '{"assignees": ["kim"]}';
+```
+
+```
+Index Scan using tickets_created_at on tickets  (cost=0.42..19933.56 rows=5203 width=8)
+  Index Cond: (created_at >= '2026-10-20 00:00:00+00'::timestamp with time zone)
+
+Seq Scan on tickets  (cost=0.00..52500.00 rows=2000 width=8)
+  Filter: (data @> '{"assignees": ["kim"]}'::jsonb)
+```
+
+B-tree는 Index Scan으로 갈아탔다. GIN은 갈아탈 길이 없어서 테이블 전체를 읽는 Seq Scan으로 내려갔다. 2장에서 GIN을 쓰지 못하게 했을 때 Seq Scan이 나온 것도 이 때문이다.
+
+`Bitmap`이라는 이름은 행의 자리를 모아 두는 모양에서 왔다. 2장 표의 행 번호는 읽기 쉽게 `id`로 적었지만, 인덱스가 실제로 적는 것은 행이 놓인 자리다. 테이블 페이지 번호와 페이지 안 순번의 쌍이고, PostgreSQL은 이것을 TID라고 부른다.
+
+Bitmap Index Scan은 조건에 맞는 행의 TID를 모두 모아 메모리에 비트맵을 만든다. 비트맵은 테이블 페이지마다 칸을 두고, 그 페이지에서 맞는 행의 순번에 표시한다. Bitmap Heap Scan은 이 비트맵을 페이지 번호 순서로 훑으며 표시가 있는 페이지를 읽는다. 같은 페이지에 맞는 행이 여럿 있어도 그 페이지는 한 번만 읽는다.
+
+2장 계획의 `Heap Blocks: exact=5691`은 비트맵이 5,691페이지 모두에서 어느 행인지까지 적었다는 뜻이다. 비트맵에 쓸 수 있는 메모리는 `work_mem`까지인데, 이것이 모자라면 PostgreSQL은 일부 페이지의 순번을 버리고 페이지 번호만 남긴다. 이런 페이지를 lossy라 하고, 그 페이지에서는 모든 행을 조건으로 다시 확인한다. 다시 확인하는 일은 5장의 `Recheck Cond`에서 이어서 본다.
+
+### 두 인덱스 겹치기
+
+비트맵은 서로 겹칠 수 있다. 두 비트맵을 AND로 겹치면 양쪽에 다 표시된 자리만 남고, OR로 겹치면 어느 한쪽에라도 표시된 자리가 남는다. 그래서 서로 다른 인덱스 둘을 한 쿼리에서 함께 쓸 수 있다.
+
+10월 20일부터 만든 티켓 가운데 kim이 맡은 것을 찾아 보자.
+
+```sql
+explain (analyze, buffers)
+select id from tickets
+where data @> '{"assignees": ["kim"]}'
+  and created_at >= '2026-10-20';
+```
+
+```
+Bitmap Heap Scan on tickets  (cost=126.81..330.56 rows=52 width=8) (actual time=1.789..2.626 rows=173 loops=1)
+  Recheck Cond: ((data @> '{"assignees": ["kim"]}'::jsonb) AND (created_at >= '2026-10-20 00:00:00+00'::timestamp with time zone))
+  Heap Blocks: exact=173
+  Buffers: shared hit=198
+  ->  BitmapAnd  (cost=126.81..126.81 rows=52 width=0) (actual time=1.747..1.747 rows=0 loops=1)
+        Buffers: shared hit=25
+        ->  Bitmap Index Scan on tickets_data_gin  (cost=0.00..27.09 rows=2000 width=0) (actual time=0.870..0.870 rows=5956 loops=1)
+              Index Cond: (data @> '{"assignees": ["kim"]}'::jsonb)
+              Buffers: shared hit=7
+        ->  Bitmap Index Scan on tickets_created_at  (cost=0.00..99.44 rows=5203 width=0) (actual time=0.622..0.623 rows=5386 loops=1)
+              Index Cond: (created_at >= '2026-10-20 00:00:00+00'::timestamp with time zone)
+              Buffers: shared hit=18
+```
+
+- <strong>Bitmap Index Scan on tickets_data_gin</strong> — GIN에서 kim이 맡은 행 5,956개의 자리를 모았다.
+- <strong>Bitmap Index Scan on tickets_created_at</strong> — B-tree에서 10월 20일부터 만든 행 5,386개의 자리를 모았다.
+- <strong>BitmapAnd</strong> — 두 비트맵을 겹쳐 양쪽에 다 있는 자리만 남겼다. `rows=0`은 이 노드가 행 수를 세지 않아서 나오는 값이다. 공식 문서도 BitmapAnd와 BitmapOr는 구현상 실제 행 수를 늘 0으로 적는다고 밝힌다.
+- <strong>Bitmap Heap Scan on tickets</strong> — 남은 자리를 따라 테이블 173페이지에서 173행을 읽었다.
+
+kim 하나로만 찾을 때는 테이블을 5,691페이지 읽었다. 만든 시각 조건을 B-tree로 함께 걸러 내니 173페이지로 줄었다. 인덱스 두 개에서 읽은 25페이지를 더해도 맨 위 노드의 Buffers는 198이다.
+
+2장에서 GIN이 `status: open`과 `assignees: lee` 두 목록을 겹친 것과 같은 생각이다. 그때는 GIN 안에서 키 목록끼리 겹쳤고, 이번에는 서로 다른 인덱스가 만든 비트맵끼리 겹쳤다.
+
+### 정렬은 B-tree가 맡는다
+
+비트맵은 행을 테이블에 놓인 순서로 읽는다. 그래서 인덱스가 가진 순서는 비트맵을 거치면 사라진다. 공식 문서도 비트맵을 쓰면 원래 인덱스의 순서가 사라지므로 `ORDER BY`가 있을 때 정렬 단계가 따로 필요하다고 적는다. B-tree도 비트맵으로 읽으면 순서를 잃는다. 인덱스의 순서를 결과에 그대로 쓰려면 B-tree를 Index Scan으로 읽어야 한다.
+
+최근에 만든 티켓 50개를 보자.
+
+```sql
+explain (analyze, buffers)
+select id, created_at from tickets
+order by created_at desc
+limit 50;
+```
+
+```
+Limit  (cost=0.42..51.72 rows=50 width=16) (actual time=0.014..0.124 rows=50 loops=1)
+  Buffers: shared hit=53
+  ->  Index Scan Backward using tickets_created_at on tickets  (cost=0.42..205188.90 rows=200000 width=16) (actual time=0.013..0.119 rows=50 loops=1)
+        Buffers: shared hit=53
+```
+
+B-tree 잎을 끝에서부터 거꾸로 읽고, 50행이 차자 멈췄다. `Backward`가 거꾸로 읽었다는 뜻이다. 20만 행 가운데 50행만 열었고 읽은 페이지는 53개다.
+
+이번에는 kim이 맡은 티켓을 같은 순서로 모두 보자.
+
+```sql
+explain analyze
+select id, created_at from tickets
+where data @> '{"assignees": ["kim"]}'
+order by created_at desc;
+```
+
+```
+Sort  (cost=6841.18..6846.18 rows=2000 width=16) (actual time=10.290..10.620 rows=5956 loops=1)
+  Sort Key: created_at DESC
+  Sort Method: quicksort  Memory: 379kB
+  ->  Bitmap Heap Scan on tickets  (cost=27.59..6731.52 rows=2000 width=16) (actual time=1.522..9.274 rows=5956 loops=1)
+        Recheck Cond: (data @> '{"assignees": ["kim"]}'::jsonb)
+        Heap Blocks: exact=5691
+        ->  Bitmap Index Scan on tickets_data_gin  (cost=0.00..27.09 rows=2000 width=0) (actual time=0.845..0.845 rows=5956 loops=1)
+              Index Cond: (data @> '{"assignees": ["kim"]}'::jsonb)
+```
+
+아래쪽은 2장의 계획과 같고, 맨 위에 Sort가 붙었다. Bitmap Heap Scan이 넘긴 5,956행은 테이블에 놓인 순서였고, Sort가 이를 모두 받아 메모리 379kB에서 `created_at` 순서로 다시 줄 세웠다.
+
+두 조건을 같이 걸면 플래너가 둘 중 하나를 골라야 한다. kim이 맡은 티켓 가운데 최근 것 50개를 찾아 보자.
+
+```sql
+explain (analyze, buffers)
+select id, created_at from tickets
+where data @> '{"assignees": ["kim"]}'
+order by created_at desc
+limit 50;
+```
+
+```
+Limit  (cost=0.42..5142.63 rows=50 width=16) (actual time=0.135..2.424 rows=50 loops=1)
+  Buffers: shared hit=1484
+  ->  Index Scan Backward using tickets_created_at on tickets  (cost=0.42..205688.90 rows=2000 width=16) (actual time=0.134..2.419 rows=50 loops=1)
+        Filter: (data @> '{"assignees": ["kim"]}'::jsonb)
+        Rows Removed by Filter: 1423
+        Buffers: shared hit=1484
+```
+
+플래너는 GIN을 쓰지 않았다. B-tree를 최근 것부터 읽으면서 kim이 없는 1,423행을 버리고, kim의 티켓이 50개 차자 멈췄다. 읽은 페이지는 1,484개로, GIN으로 5,956행을 모두 모으며 읽는 5,698페이지보다 적다.
+
+이 계산은 조건에 맞는 행이 얼마나 흔한지에 달려 있다. 맞는 행이 드물면 B-tree를 한참 읽어야 50행이 차고, 그때는 GIN으로 모아서 정렬하는 쪽이 적게 읽는다. 플래너는 맞는 행의 수를 어림해서 둘 중 하나를 고르는데, 이 어림이 크게 어긋나면 느린 쪽을 고른다. 이 갈림길은 6장에서 자세히 본다.
+
+정리하면 두 인덱스는 답하는 질문이 다르다. GIN은 「이 키가 든 행이 어디 있나」에 답하고, B-tree는 「값 순서로 앞에서 몇 개」와 「이 범위에 드는 행」에 답한다. jsonb 열에 GIN을 하나 두어 필드를 모두 덮더라도, 정렬과 범위 조건에 쓰는 열에는 B-tree가 따로 있어야 한다.
+
+## jsonb 연산자와 연산자 클래스
+
+2장에서 값과 질문에서 키를 어떻게 떼어 낼지는 연산자 클래스가 정한다고 했다. jsonb에는 연산자 클래스가 두 가지 있고, 어느 쪽으로 만드느냐에 따라 인덱스를 쓸 수 있는 연산자와 인덱스 크기, 찾을 때 읽는 페이지가 달라진다. 먼저 GIN이 돕는 연산자부터 보자.
+
+### GIN이 돕는 연산자
+
+jsonb에서 GIN 인덱스를 쓸 수 있는 연산자는 여섯 개다.
+
+| 연산자 | 묻는 것 | 예 |
+| --- | --- | --- |
+| `@>` | 왼쪽이 오른쪽을 포함하나 | `data @> '{"status": "open"}'` |
+| `?` | 이 이름의 필드가 있나 | `data ? 'due'` |
+| `?\|` | 이름 가운데 하나라도 있나 | `data ?\| array['due', 'labels']` |
+| `?&` | 이름이 모두 있나 | `data ?& array['due', 'labels']` |
+| `@?` | jsonpath에 맞는 값이 있나 | `data @? '$.priority ? (@ == 3)'` |
+| `@@` | jsonpath 조건이 참인가 | `data @@ '$.priority == 3'` |
+
+`?`가 붙은 셋은 필드 이름을 묻는다. 마감일 필드 `due`를 쓰는 팀이 있다고 하자. `data ? 'due'`는 마감일이 붙은 티켓을 찾는다. `@?`와 `@@`는 이 장 끝에서 본다.
+
+가장 많이 쓰는 것은 `@>`다. 이름 그대로 포함하는지를 묻는다. 오른쪽에 적은 필드와 값이 왼쪽에 모두 들어 있으면 참이고, 왼쪽에 다른 필드가 더 있어도 상관없다. 배열은 오른쪽의 원소가 왼쪽 배열에 모두 들어 있으면 포함한다고 본다. 순서와 중복은 따지지 않는다.
+
+```sql
+select '{"status": "open", "assignees": ["kim", "lee"]}'::jsonb @> '{"assignees": ["kim"]}';        -- true
+select '{"status": "open", "assignees": ["kim", "lee"]}'::jsonb @> '{"assignees": ["lee", "kim"]}'; -- true
+select '{"status": "open", "assignees": ["kim"]}'::jsonb @> '{"assignees": ["kim", "lee"]}';        -- false
+```
+
+그래서 `@>`는 같은지가 아니라 포함하는지를 묻는다. 2장에서 kim이 맡은 티켓으로 찾은 5,956행에는 kim 혼자 맡은 티켓과 kim이 lee와 함께 맡은 티켓이 섞여 있다. kim 혼자 맡은 티켓만 골라야 할 때 어떻게 하는지는 6장에서 본다.
+
+인덱스를 쓰려면 연산자 왼쪽에 인덱스를 만든 열을 그대로 두어야 한다. `data`에서 필드를 꺼낸 식을 왼쪽에 두면 GIN을 쓰지 못한다.
+
+```sql
+explain (costs off) select id from tickets where data->'assignees' @> '["kim"]';
+explain (costs off) select id from tickets where data->>'status' = 'open';
+```
+
+```
+Seq Scan on tickets
+  Filter: ((data -> 'assignees'::text) @> '["kim"]'::jsonb)
+
+Seq Scan on tickets
+  Filter: ((data ->> 'status'::text) = 'open'::text)
+```
+
+GIN은 `data` 열에 만들었다. `data->'assignees'`와 `data->>'status'`는 `data`에서 꺼낸 새 값이라 이 인덱스와 상관이 없다. 같은 질문을 `data`를 왼쪽에 두고 다시 쓰면 인덱스를 쓴다.
+
+| 인덱스를 못 쓰는 꼴 | 인덱스를 쓰는 꼴 |
+| --- | --- |
+| `data->'assignees' @> '["kim"]'` | `data @> '{"assignees": ["kim"]}'` |
+| `data->>'status' = 'open'` | `data @> '{"status": "open"}'` |
+
+공식 문서도 필드를 꺼낸 식에는 열에 만든 GIN을 쓰지 못한다고 적는다. 그런 식으로 자주 찾는다면 그 식에 인덱스를 따로 만들라고 권한다.
+
+### 두 연산자 클래스
+
+`using gin (data)`처럼 연산자 클래스를 적지 않으면 `jsonb_ops`로 만들어진다. 들어가며에서 만든 인덱스는 `jsonb_path_ops`를 골랐다.
+
+```sql
+create index tickets_data_ops on tickets using gin (data);                 -- jsonb_ops
+create index tickets_data_gin on tickets using gin (data jsonb_path_ops);  -- jsonb_path_ops
+```
+
+둘은 키를 떼어 내는 방법이 다르다. 2장의 1번 행 `{"status": "open", "assignees": ["kim", "lee"]}`에서 떼어 내는 키를 나란히 놓아 보자.
+
+<OpsKeysDiagram />
+
+jsonb_ops는 필드 이름과 값을 따로따로 키로 적는다. jsonb_path_ops는 값마다 키를 하나 만들고, 그 값에 이르는 필드 이름을 값과 함께 섞어 해시 값 하나로 적는다. 2장의 키 표는 jsonb_path_ops의 키를 읽기 쉽게 글자로 적은 것이다.
+
+이 차이에서 세 가지가 갈린다.
+
+첫째, 쓸 수 있는 연산자가 다르다. jsonb_path_ops는 필드 이름만 따로 적지 않으므로 이름을 묻는 `?` 셋을 돕지 못한다. jsonb_ops는 여섯 연산자를 모두 돕는다. `data ? 'due'`의 계획을 두 인덱스에서 각각 보면 다음과 같다.
+
+```
+-- jsonb_path_ops만 있을 때
+Seq Scan on tickets
+  Filter: (data ? 'due'::text)
+
+-- jsonb_ops가 있을 때
+Bitmap Heap Scan on tickets
+  Recheck Cond: (data ? 'due'::text)
+  ->  Bitmap Index Scan on tickets_data_ops
+        Index Cond: (data ? 'due'::text)
+```
+
+둘째, 크기가 다르다. 같은 20만 행에 만들었을 때 jsonb_ops는 16MB, jsonb_path_ops는 12MB였다.
+
+셋째, `@>`로 찾을 때 읽는 양이 다르다. jsonb_ops로 kim이 맡은 티켓을 찾으면 `assignees`와 `kim` 두 키의 목록을 읽고 겹쳐야 한다. 그런데 `assignees`는 모든 티켓에 있는 필드라서 그 목록에는 20만 행이 다 들어 있다. jsonb_path_ops는 `assignees` → `kim` 키 하나의 목록만 읽으면 된다.
+
+jsonb_ops 인덱스만 남기고 2장의 쿼리를 다시 실행하면 다음과 같다.
+
+```
+Bitmap Heap Scan on tickets  (cost=40.56..6744.49 rows=2000 width=8) (actual time=2.263..18.396 rows=5956 loops=1)
+  Recheck Cond: (data @> '{"assignees": ["kim"]}'::jsonb)
+  Heap Blocks: exact=5691
+  Buffers: shared hit=5767
+  ->  Bitmap Index Scan on tickets_data_ops  (cost=0.00..40.06 rows=2000 width=0) (actual time=1.561..1.562 rows=5956 loops=1)
+        Index Cond: (data @> '{"assignees": ["kim"]}'::jsonb)
+        Buffers: shared hit=76
+```
+
+찾은 행과 테이블에서 읽은 5,691페이지는 2장과 같다. 인덱스에서 읽은 페이지만 jsonb_path_ops의 7개에서 76개로 늘었다. 공식 문서도 jsonb_path_ops가 보통 훨씬 작고, 데이터에 자주 나오는 키가 질문에 들어 있을 때 특히 더 좁게 찾는다고 적는다.
+
+jsonb_path_ops에도 못 하는 것이 있다. 값이 하나도 없는 구조에는 키를 만들지 않는다. 그래서 `data @> '{"labels": {}}'`처럼 빈 객체를 포함하는지 묻는 질문은 인덱스 전체를 훑어야 한다.
+
+| | jsonb_ops | jsonb_path_ops |
+| --- | --- | --- |
+| 만드는 법 | 기본값 | `jsonb_path_ops`를 적는다 |
+| 키 | 필드 이름과 값을 따로 | 필드 이름과 값을 섞은 해시 |
+| 돕는 연산자 | `@>` `?` `?\|` `?&` `@?` `@@` | `@>` `@?` `@@` |
+| 크기 | 16MB | 12MB |
+| kim을 찾을 때 읽은 인덱스 페이지 | 76 | 7 |
+
+이 글의 이슈 트래커처럼 「이 필드가 이 값인 티켓」을 주로 찾는다면 jsonb_path_ops가 맞다. 「이 필드가 붙은 티켓」도 찾아야 한다면 jsonb_ops를 쓴다.
+
+### jsonpath
+
+`@?`와 `@@`는 jsonpath라는 작은 질의 언어를 받는다. `$`는 `data` 전체를, `$.priority`는 그 안의 `priority` 필드를 가리킨다. `? ( )` 안은 조건이고, `@`는 지금 보고 있는 값이다.
+
+GIN은 jsonpath를 통째로 이해하지 못한다. 공식 문서에 따르면 jsonpath에서 「경로 `==` 상수」 꼴의 조건만 뽑아 그 경로와 값으로 키를 찾는다. 같다는 조건은 인덱스를 쓰고, 크다는 조건은 쓰지 못한다.
+
+```sql
+explain (costs off) select id from tickets where data @? '$.priority ? (@ == 3)';
+explain (costs off) select id from tickets where data @? '$.priority ? (@ > 3)';
+```
+
+```
+Bitmap Heap Scan on tickets
+  Recheck Cond: (data @? '$."priority"?(@ == 3)'::jsonpath)
+  ->  Bitmap Index Scan on tickets_data_gin
+        Index Cond: (data @? '$."priority"?(@ == 3)'::jsonpath)
+
+Seq Scan on tickets
+  Filter: (data @? '$."priority"?(@ > 3)'::jsonpath)
+```
+
+`== 3`은 `data @> '{"priority": 3}'`과 같은 키로 찾는다. `> 3`은 키 하나로 바꿀 수 없는 범위 조건이다. 두 인덱스를 다 두어도 `> 3`은 Seq Scan으로 나왔다. GIN은 「이 키가 든 행」에 답할 뿐이고, 범위는 3장에서 본 것처럼 B-tree의 몫이다. 범위로 자주 찾는 필드가 정해져 있다면 들어가며의 식 인덱스처럼 그 필드에만 B-tree를 따로 둔다.
+
+정리하면 GIN이 돕는 것은 `data`를 왼쪽에 둔 여섯 연산자이고, jsonb_path_ops는 그 가운데 셋을 돕는다. jsonpath는 같다는 조건만 인덱스로 찾는다.
+
+## GIN의 비용
+
+3장에서 GIN이 정렬된 결과를 내지 못한다는 것을 봤다. 이 장에서는 GIN이 치르는 비용을 셋 더 본다. 키가 맞은 행을 테이블에서 다시 확인하는 일, 한 행을 쓸 때 고쳐야 하는 키가 많은 일, 그 쓰기를 미뤄 두는 대기 목록이다.
+
+### 다시 확인하기
+
+2장 계획에는 `Recheck Cond` 줄이 있었다. GIN이 넘기는 행은 키가 맞은 행이지, 질문에 맞는다고 확정된 행이 아니다. 키만 보고 확정할 수 없을 때 연산자 클래스는 테이블에서 행을 읽어 질문으로 다시 확인하라고 표시한다. jsonb의 두 연산자 클래스는 키가 맞은 행을 늘 다시 확인하게 한다. `Recheck Cond`가 그때 쓰는 조건이다.
+
+키는 맞았는데 질문에는 맞지 않는 행은 어떻게 생길까. 담당자가 한 명일 때는 배열 대신 문자열로 저장한 티켓이 섞여 있다고 하자.
+
+```json
+{"assignees": "choi"}
+{"assignees": ["choi"]}
+```
+
+`{"assignees": ["choi"]}`를 `@>`로 찾으면 문자열 쪽은 맞지 않는다. 문자열은 배열을 포함하지 않기 때문이다. 그런데 jsonb_path_ops는 값이 배열 안에 있는지를 키에 담지 않는다. 그래서 두 행에서 똑같은 키 `assignees` → `choi`를 떼어 낸다.
+
+```sql
+explain analyze
+select id from tickets where data @> '{"assignees": ["choi"]}';
+```
+
+```
+Bitmap Heap Scan on tickets  (cost=27.59..6731.52 rows=2000 width=8) (actual time=0.934..22.603 rows=980 loops=1)
+  Recheck Cond: (data @> '{"assignees": ["choi"]}'::jsonb)
+  Rows Removed by Index Recheck: 959
+  Heap Blocks: exact=1902
+  ->  Bitmap Index Scan on tickets_data_gin  (cost=0.00..27.09 rows=2000 width=0) (actual time=0.551..0.552 rows=1939 loops=1)
+        Index Cond: (data @> '{"assignees": ["choi"]}'::jsonb)
+```
+
+- <strong>Bitmap Index Scan on tickets_data_gin</strong> — 키가 맞은 1,939행의 자리를 넘겼다.
+- <strong>Bitmap Heap Scan on tickets</strong> — 테이블 1,902페이지에서 행을 읽어 다시 확인했다. 문자열로 저장된 959행을 버리고 980행이 남았다. `Rows Removed by Index Recheck`가 버린 행의 수다.
+
+버린 959행도 테이블에서 읽은 뒤에야 버린다. 인덱스가 넓게 넘길수록 테이블에서 헛되이 여는 행과 페이지가 늘어난다.
+
+jsonb_ops에서도 같은 일이 생긴다. `?`는 맨 위 단계의 이름만 묻는데, jsonb_ops의 키에는 그 키가 어느 깊이에서 나왔는지가 적혀 있지 않다. 게다가 jsonb_ops는 배열 안의 문자열을 필드 이름과 같은 꼴의 키로 적는다. 그래서 맨 위에 `kim`이라는 필드가 없어도 `data ? 'kim'`은 인덱스에서 5,956행을 받는다. `assignees` 배열 안의 kim이 같은 키로 들어가 있기 때문이다.
+
+```
+Bitmap Heap Scan on tickets  (cost=27.59..6731.52 rows=2000 width=8) (actual time=14.087..14.088 rows=0 loops=1)
+  Recheck Cond: (data ? 'kim'::text)
+  Rows Removed by Index Recheck: 5956
+  Heap Blocks: exact=5691
+  ->  Bitmap Index Scan on tickets_data_ops  (cost=0.00..27.09 rows=2000 width=0) (actual time=0.615..0.616 rows=5956 loops=1)
+        Index Cond: (data ? 'kim'::text)
+```
+
+테이블 5,691페이지를 읽어 5,956행을 모두 다시 확인했고, 남은 행은 없다.
+
+3장에서 본 lossy도 다시 확인을 늘린다. `work_mem`을 가장 작은 값인 64kB로 줄이고 2장의 쿼리를 다시 실행해 보자.
+
+```sql
+set work_mem = '64kB';
+explain analyze
+select id from tickets where data @> '{"assignees": ["kim"]}';
+```
+
+```
+Bitmap Heap Scan on tickets  (cost=27.59..8560.25 rows=2000 width=8) (actual time=0.829..17.500 rows=5956 loops=1)
+  Recheck Cond: (data @> '{"assignees": ["kim"]}'::jsonb)
+  Rows Removed by Index Recheck: 15717
+  Heap Blocks: exact=367 lossy=5324
+  ->  Bitmap Index Scan on tickets_data_gin  (cost=0.00..27.09 rows=2000 width=0) (actual time=0.760..0.761 rows=5956 loops=1)
+        Index Cond: (data @> '{"assignees": ["kim"]}'::jsonb)
+```
+
+`Heap Blocks`가 exact 367페이지와 lossy 5,324페이지로 나뉘었다. lossy 페이지에서는 어느 행이 맞는지 모르므로 그 페이지의 행을 모두 다시 확인했고, 그렇게 버린 행이 15,717개다. 읽은 페이지는 2장과 같은 5,691개지만 다시 확인한 행이 크게 늘었다. 기본값 4MB에서는 모든 페이지가 exact였다.
+
+`Rows Removed by Index Recheck`가 크면 인덱스가 넓게 넘기고 있다는 뜻이다. 같은 필드에 모양이 다른 값이 섞여 있는지, `Heap Blocks`에 lossy가 있는지를 본다.
+
+### 쓰기
+
+B-tree는 행 하나를 넣을 때 항목 하나를 넣는다. GIN은 그 행에서 떼어 낸 키마다 목록을 고친다. 이 글의 합성 데이터에서는 한 행에서 키가 네다섯 개 나온다. UPDATE도 마찬가지다. `data`의 필드 하나만 바꿔도 PostgreSQL은 새 행을 만들고, 새 행의 키를 모두 다시 넣는다.
+
+인덱스만 다른 빈 테이블 세 개에 `tickets`의 5만 행을 넣는 시간을 다섯 번씩 재서 중앙값을 냈다.
+
+| 인덱스 | 5만 행 INSERT |
+| --- | --- |
+| 없음 | 171ms |
+| GIN, `fastupdate` 켬(기본) | 276ms |
+| GIN, `fastupdate` 끔 | 665ms |
+
+`fastupdate`를 끄면 인덱스가 없을 때보다 네 배 가까이 걸린다. 기본으로 켜져 있는 `fastupdate`는 새 키를 그 자리에서 목록에 끼워 넣지 않는다. 정렬하지 않은 대기 목록(pending list)에 쌓아 두었다가 나중에 한꺼번에 옮긴다.
+
+옮기는 때는 넷이다. VACUUM이 돌 때, autovacuum이 테이블을 ANALYZE할 때, `gin_clean_pending_list()`를 부를 때, 대기 목록이 `gin_pending_list_limit`(기본 4MB)보다 커질 때다. 손으로 실행한 ANALYZE는 대기 목록을 비우지 않았다. 한꺼번에 옮길 때는 인덱스를 처음 만들 때처럼 키를 모아서 넣으므로 하나씩 끼워 넣는 것보다 싸다.
+
+위 표의 276ms에는 옮기는 일이 들어 있지 않다. 넣은 직후 대기 목록은 495페이지였고, 이것을 `gin_clean_pending_list()`로 옮기는 데 62ms가 걸렸다. 둘을 더해도 `fastupdate`를 끈 쪽보다 훨씬 짧다.
+
+### 대기 목록의 대가
+
+대기 목록은 정렬되어 있지 않다. 그래서 검색할 때마다 대기 목록을 처음부터 끝까지 읽는다. 2장의 세 행이 본 구조에 들어 있고, 4번부터 6번까지 새로 넣은 행의 키가 대기 목록에 쌓여 있다고 하자.
+
+<PendingListDiagram />
+
+실제 크기로 보자. `tickets`와 같은 꼴의 테이블 `tickets_copy`에 5만 행을 넣고, 대기 목록이 495페이지 쌓인 채로 kim이 맡은 티켓을 찾아 보자.
+
+```
+Bitmap Heap Scan on tickets_copy  (cost=2114.91..3793.23 rows=500 width=8) (actual time=5.018..6.661 rows=1418 loops=1)
+  Recheck Cond: (data @> '{"assignees": ["kim"]}'::jsonb)
+  Heap Blocks: exact=1359
+  Buffers: shared hit=1856
+  ->  Bitmap Index Scan on tickets_copy_gin  (cost=0.00..2114.79 rows=500 width=0) (actual time=4.892..4.893 rows=1418 loops=1)
+        Index Cond: (data @> '{"assignees": ["kim"]}'::jsonb)
+        Buffers: shared hit=497
+```
+
+VACUUM으로 대기 목록을 비운 뒤 같은 쿼리를 실행하면 다음과 같다.
+
+```
+Bitmap Heap Scan on tickets_copy  (cost=15.46..1693.77 rows=500 width=8) (actual time=0.258..1.100 rows=1418 loops=1)
+  Recheck Cond: (data @> '{"assignees": ["kim"]}'::jsonb)
+  Heap Blocks: exact=1359
+  Buffers: shared hit=1363
+  ->  Bitmap Index Scan on tickets_copy_gin  (cost=0.00..15.33 rows=500 width=0) (actual time=0.144..0.144 rows=1418 loops=1)
+        Index Cond: (data @> '{"assignees": ["kim"]}'::jsonb)
+        Buffers: shared hit=4
+```
+
+인덱스에서 읽은 페이지가 497개에서 4개로 줄었다. 대기 목록이 있을 때는 Bitmap Index Scan에만 4.9ms가 걸렸고, 비운 뒤에는 0.14ms였다. 플래너도 대기 목록의 크기를 알고 있어서 Bitmap Index Scan의 비용을 2114.79와 15.33으로 다르게 어림했다.
+
+대가가 하나 더 있다. 대기 목록이 한도를 넘으면, 넘치게 만든 INSERT가 목록을 비우는 일까지 맡는다. 같은 꼴의 빈 테이블에 1,000행씩 60번 나눠 넣으며 한 번마다 시간을 쟀다. 대부분은 6ms 안팎이었다. 51번째까지 505페이지 쌓인 대기 목록이 52번째 INSERT에서 4MB를 넘었고, 그 한 번은 70~104ms가 걸렸다. 세 번 되풀이했고, 다른 차례는 가장 느린 것도 30ms였다.
+
+공식 문서도 이 두 가지를 대기 목록의 단점으로 든다. 검색이 대기 목록까지 훑어야 하고, 목록을 넘치게 만든 쓰기는 다른 쓰기보다 훨씬 느리다. 쓰기 속도보다 응답 시간이 고른 것이 더 중요하면 `fastupdate`를 끄라고 권한다.
+
+대기 목록을 다루는 손잡이는 몇 가지가 있다. autovacuum이 자주 돌면 목록이 짧게 유지된다. `gin_pending_list_limit`을 인덱스마다 따로 정할 수도 있다. 값을 줄이면 목록이 짧아지는 대신 비우는 일이 잦아진다.
+
+```sql
+alter index tickets_data_gin set (gin_pending_list_limit = 1024);  -- 단위는 kB
+```
+
+많은 행을 한꺼번에 넣을 때는 GIN을 지우고 다 넣은 뒤 다시 만드는 편이 낫다고 공식 문서는 권한다.
+
+| 비용 | 어디서 보이나 | 살펴볼 것 |
+| --- | --- | --- |
+| 다시 확인 | `Rows Removed by Index Recheck` | 같은 필드에 모양이 다른 값이 섞였는지, lossy가 생겼는지 |
+| 쓰기 | INSERT와 UPDATE 시간 | `fastupdate`, 대량으로 넣는 순서 |
+| 대기 목록 | Bitmap Index Scan의 `Buffers` | autovacuum 주기, `gin_pending_list_limit` |
+
+## 실전 패턴
+
+지금까지 본 것을 실제 쿼리에 옮기면 자주 만나는 장면이 셋 있다. GIN이 답할 수 있는 넓은 조건으로 후보를 좁히는 것, 그 조건이 `LIMIT`과 만났을 때 생기는 함정, 그리고 결과 크기에 따라 GIN을 켜고 끄는 것이다.
+
+### 넓은 조건으로 좁히고 정확한 조건으로 거르기
+
+4장에서 `@>`는 같은지가 아니라 포함하는지를 묻는다고 했다. 이번에는 kim 혼자 맡은 티켓만 찾아 보자. 담당자 배열이 정확히 `["kim"]`인 티켓이다.
+
+```sql
+explain (analyze, buffers)
+select id from tickets where data->'assignees' = '["kim"]';
+```
+
+```
+Seq Scan on tickets  (cost=0.00..53000.00 rows=1000 width=8) (actual time=0.515..202.750 rows=2004 loops=1)
+  Filter: ((data -> 'assignees'::text) = '["kim"]'::jsonb)
+  Rows Removed by Filter: 197996
+  Buffers: shared hit=12886 read=37114
+```
+
+맞는 2,004행을 찾으려고 20만 행을 모두 열었다. `shared hit`는 PostgreSQL이 메모리에 올려 둔 페이지를, `read`는 그 밖에서 읽어 온 페이지를 센다. 둘을 더한 50,000이 테이블 전체다. 4장에서 본 대로 `data->'assignees'`는 `data`에서 꺼낸 값이라 GIN을 쓰지 못한다.
+
+여기에 GIN이 답할 수 있는 넓은 조건을 하나 더 붙인다. kim 혼자 맡은 티켓은 kim이 맡은 티켓에 반드시 들어간다.
+
+```sql
+explain (analyze, buffers)
+select id from tickets
+where data @> '{"assignees": ["kim"]}'
+  and data->'assignees' = '["kim"]';
+```
+
+```
+Bitmap Heap Scan on tickets  (cost=27.10..6741.02 rows=10 width=8) (actual time=1.409..9.495 rows=2004 loops=1)
+  Recheck Cond: (data @> '{"assignees": ["kim"]}'::jsonb)
+  Filter: ((data -> 'assignees'::text) = '["kim"]'::jsonb)
+  Rows Removed by Filter: 3952
+  Heap Blocks: exact=5691
+  Buffers: shared hit=5698
+  ->  Bitmap Index Scan on tickets_data_gin  (cost=0.00..27.09 rows=2000 width=0) (actual time=0.810..0.810 rows=5956 loops=1)
+        Index Cond: (data @> '{"assignees": ["kim"]}'::jsonb)
+        Buffers: shared hit=7
+```
+
+- <strong>Bitmap Index Scan on tickets_data_gin</strong> — 넓은 조건으로 kim이 맡은 5,956행을 골랐다.
+- <strong>Bitmap Heap Scan on tickets</strong> — 고른 행만 읽어 정확한 조건으로 걸렀다. `Filter`가 정확한 조건이고, `Rows Removed by Filter`는 kim이 lee와 함께 맡아서 버린 3,952행이다.
+
+결과는 똑같이 2,004행이다. 읽은 페이지는 50,000개에서 5,698개로 줄었고, 다섯 번 잰 중앙값은 116ms에서 9.9ms가 되었다.
+
+이 방법에는 전제가 하나 있다. 정확한 조건에 맞는 행은 넓은 조건에도 반드시 맞아야 한다. 이 전제가 깨지면 결과에서 행이 조용히 빠진다.
+
+5장의 choi가 그런 경우다. choi 한 명이 맡은 티켓은 `"choi"`와 `["choi"]` 두 꼴로 저장되어 있다. 두 꼴을 모두 받는 정확한 조건만 걸면 1,939행이 나온다. 여기에 배열 꼴만 생각한 넓은 조건을 붙여 보자.
+
+```sql
+explain analyze
+select id from tickets
+where data @> '{"assignees": ["choi"]}'
+  and data->'assignees' in ('"choi"', '["choi"]');
+```
+
+```
+Bitmap Heap Scan on tickets  (cost=27.10..6741.03 rows=20 width=8) (actual time=0.455..2.094 rows=980 loops=1)
+  Recheck Cond: (data @> '{"assignees": ["choi"]}'::jsonb)
+  Rows Removed by Index Recheck: 959
+  Filter: ((data -> 'assignees'::text) = ANY ('{"\"choi\"","[\"choi\"]"}'::jsonb[]))
+  Heap Blocks: exact=1902
+  ->  Bitmap Index Scan on tickets_data_gin  (cost=0.00..27.09 rows=2000 width=0) (actual time=0.232..0.232 rows=1939 loops=1)
+        Index Cond: (data @> '{"assignees": ["choi"]}'::jsonb)
+```
+
+결과는 980행이다. 문자열 꼴의 959행은 넓은 조건을 다시 확인하는 단계에서 빠졌다. 문자열은 배열을 포함하지 않기 때문이다. 오류도 경고도 없이 결과가 절반으로 줄었다.
+
+넓은 조건은 정확한 조건이 받아들이는 모양을 모두 덮어야 한다. 모양마다 넓은 조건을 하나씩 두고 OR로 잇는다.
+
+```sql
+explain analyze
+select id from tickets
+where (data @> '{"assignees": ["choi"]}' or data @> '{"assignees": "choi"}')
+  and data->'assignees' in ('"choi"', '["choi"]');
+```
+
+```
+Bitmap Heap Scan on tickets  (cost=54.21..12320.96 rows=40 width=8) (actual time=0.498..1.961 rows=1939 loops=1)
+  Recheck Cond: ((data @> '{"assignees": ["choi"]}'::jsonb) OR (data @> '{"assignees": "choi"}'::jsonb))
+  Filter: ((data -> 'assignees'::text) = ANY ('{"\"choi\"","[\"choi\"]"}'::jsonb[]))
+  Heap Blocks: exact=1902
+  ->  BitmapOr  (cost=54.21..54.21 rows=4000 width=0) (actual time=0.330..0.331 rows=0 loops=1)
+        ->  Bitmap Index Scan on tickets_data_gin  (cost=0.00..27.09 rows=2000 width=0) (actual time=0.219..0.220 rows=1939 loops=1)
+              Index Cond: (data @> '{"assignees": ["choi"]}'::jsonb)
+        ->  Bitmap Index Scan on tickets_data_gin  (cost=0.00..27.09 rows=2000 width=0) (actual time=0.111..0.111 rows=1939 loops=1)
+              Index Cond: (data @> '{"assignees": "choi"}'::jsonb)
+```
+
+3장에서 본 BitmapOr가 두 비트맵을 합쳤고, 1,939행이 모두 돌아왔다. 5장에서 본 대로 jsonb_path_ops는 두 꼴에서 같은 키를 떼어 내므로 두 비트맵은 같은 1,939행을 가리킨다. 그래도 OR가 필요한 것은 다시 확인하는 단계가 `Recheck Cond`를 실제로 따지기 때문이다. 배열 꼴의 조건 하나만 두면 거기서 문자열 꼴이 빠진다.
+
+### LIMIT과 만나면
+
+3장 끝에서 kim이 맡은 최근 티켓 50개를 찾을 때 플래너는 GIN 대신 B-tree를 골랐다. B-tree를 최근 것부터 읽으며 거르다가 50행이 차면 멈추는 방법이다. 이 방법이 유리한지는 맞는 행이 얼마나 흔한지에 달려 있다.
+
+담당자 셋으로 최근 50개를 찾아 보자. 한 번은 정확한 조건만 걸고, 한 번은 넓은 조건을 더한다.
+
+```sql
+-- 정확한 조건만
+select id, created_at from tickets
+where data->'assignees' = '["park"]'
+order by created_at desc limit 50;
+
+-- 넓은 조건을 더함
+select id, created_at from tickets
+where data @> '{"assignees": ["park"]}'
+  and data->'assignees' = '["park"]'
+order by created_at desc limit 50;
+```
+
+| 담당자 | 맞는 행 | 정확한 조건만 | 넓은 조건을 더하면 |
+| --- | --- | --- | --- |
+| park | 60,151 (30%) | B-tree, 152페이지, 0.48ms | GIN, 38,060페이지, 182ms |
+| kim 혼자 | 2,004 (1%) | B-tree, 5,176페이지, 7.8ms | GIN, 5,698페이지, 9.3ms |
+| choi | 980 (0.5%) | B-tree, 14,030페이지, 13.9ms | GIN, 1,907페이지, 5.6ms |
+
+choi는 배열 꼴 `["choi"]`만 찾았다. 시간은 다섯 번 잰 중앙값이다. 읽은 페이지를 막대로 놓으면 다음과 같다.
+
+<LimitPagesDiagram />
+
+흔한 park에서는 넓은 조건을 더한 쪽이 250배를 읽었고, 드문 choi에서는 7분의 1만 읽었다. park의 두 계획은 다음과 같다.
+
+```
+Limit  (cost=0.42..10310.21 rows=50 width=16) (actual time=0.007..0.075 rows=50 loops=1)
+  Buffers: shared hit=152
+  ->  Index Scan Backward using tickets_created_at on tickets  (cost=0.42..206196.32 rows=1000 width=16) (actual time=0.007..0.071 rows=50 loops=1)
+        Filter: ((data -> 'assignees'::text) = '["park"]'::jsonb)
+        Rows Removed by Filter: 99
+        Buffers: shared hit=152
+```
+
+```
+Limit  (cost=6741.19..6741.21 rows=10 width=16) (actual time=206.272..206.281 rows=50 loops=1)
+  Buffers: shared hit=87 read=37973
+  ->  Sort  (cost=6741.19..6741.21 rows=10 width=16) (actual time=206.270..206.275 rows=50 loops=1)
+        Sort Key: created_at DESC
+        Sort Method: top-N heapsort  Memory: 28kB
+        Buffers: shared hit=87 read=37973
+        ->  Bitmap Heap Scan on tickets  (cost=27.10..6741.02 rows=10 width=16) (actual time=13.896..199.763 rows=60151 loops=1)
+              Recheck Cond: (data @> '{"assignees": ["park"]}'::jsonb)
+              Filter: ((data -> 'assignees'::text) = '["park"]'::jsonb)
+              Heap Blocks: exact=38042
+              Buffers: shared hit=87 read=37973
+              ->  Bitmap Index Scan on tickets_data_gin  (cost=0.00..27.09 rows=2000 width=0) (actual time=8.520..8.520 rows=60151 loops=1)
+                    Index Cond: (data @> '{"assignees": ["park"]}'::jsonb)
+                    Buffers: shared hit=3 read=15
+```
+
+정확한 조건만 걸었을 때는 B-tree를 최근 것부터 149행 읽고 멈췄다. 넓은 조건을 더하자 플래너는 GIN으로 park의 티켓 60,151행을 모두 모으고, 테이블 38,042페이지를 읽은 뒤 50행만 남겼다. 같은 결과를 내는 데 380배쯤 오래 걸렸다.
+
+choi는 반대다. 드물어서 B-tree를 최근 것부터 13,951행이나 읽어야 50행이 찬다. 이때는 GIN으로 후보 1,939행만 모아 정렬하는 쪽이 빠르다.
+
+세 경우 모두 플래너는 넓은 조건이 붙으면 GIN을, 정확한 조건만 있으면 B-tree를 골랐다. 행이 얼마나 흔한지를 보고 고른 것이 아니다.
+
+### 플래너가 모르는 것
+
+park 계획의 어림을 다시 보자. 넓은 조건을 더한 Bitmap Heap Scan의 어림은 `rows=10`인데 실제는 60,151행이다. `@>`만 따로 걸면 어떤 값이든 어림이 같다.
+
+```sql
+explain select id from tickets where data @> '{"assignees": ["kim"]}';   -- rows=2000, 실제 5,956
+explain select id from tickets where data @> '{"assignees": ["park"]}';  -- rows=2000, 실제 60,151
+explain select id from tickets where data @> '{"status": "closed"}';     -- rows=2000, 실제 140,456
+```
+
+2,000은 20만 행의 1%다. 정확한 조건 `data->'assignees' = ...`은 늘 1,000행, 곧 0.5%로 어림한다. 둘을 함께 걸면 2,000행의 0.5%인 10행이 된다.
+
+이 1%와 0.5%는 PostgreSQL이 통계가 없을 때 쓰는 기본값이다. ANALYZE는 열마다 자주 나오는 값과 값의 분포를 표본으로 모아 두는데, 1KB가 넘는 값은 표본에서 뺀다. 이 글의 합성 데이터에는 티켓 본문 필드가 있어서 `data`가 한 행에 평균 1.6KB다. 그래서 표본이 하나도 남지 않았다.
+
+```sql
+select avg_width,
+       most_common_vals is null as no_mcv,
+       histogram_bounds is null as no_hist
+from pg_stats
+where tablename = 'tickets' and attname = 'data';
+```
+
+| avg_width | no_mcv | no_hist |
+| --- | --- | --- |
+| 1630 | t | t |
+
+본문 필드를 뺀 같은 데이터로 표를 하나 더 만들어 ANALYZE하면 `data`가 평균 79바이트로 줄고 표본이 남는다. 플래너는 그 표본 문서에 `@>`를 직접 따져 보고 비율을 어림한다.
+
+| 조건 | 실제 | 1.6KB 문서의 어림 | 79바이트 문서의 어림 |
+| --- | --- | --- | --- |
+| `@> '{"assignees": ["park"]}'` | 60,151 | 2,000 | 60,188 |
+| `@> '{"assignees": ["kim"]}'` | 5,956 | 2,000 | 5,684 |
+| `@> '{"status": "closed"}'` | 140,456 | 2,000 | 141,641 |
+
+어림이 맞자 플래너도 맞게 골랐다. 그 표에서 park의 최근 50개는 넓은 조건을 더해도 B-tree를 골랐고, choi의 최근 50개는 GIN을 골랐다.
+
+결과가 큰 쿼리도 같다. closed는 140,456행으로 전체의 70%인데, 1.6KB 표에서 플래너는 2,000행으로 어림하고 GIN을 골랐다. 다섯 번 잰 중앙값은 207ms였다. 비트맵을 끄고 Seq Scan으로 읽으면 84ms였다. 읽은 페이지는 49,674개와 50,000개로 거의 같았다. 테이블 대부분을 읽어야 한다면 GIN을 거치는 것이 오히려 손해다. 79바이트 표에서는 플래너가 처음부터 Seq Scan을 골랐다.
+
+그러니 이 함정은 GIN 자체보다 어림이 틀린 데서 온다. 계획의 `rows`가 테이블의 정확히 1%나 0.5%로 나오면 기본값으로 어림했다는 신호다. jsonb 문서가 1KB를 넘는다면 `pg_stats`에서 통계가 비어 있는지 확인해 본다.
+
+### 결과 크기로 켜고 끄기
+
+플래너가 결과 크기를 모르면, 아는 쪽이 정해 준다. 애플리케이션은 담당자별 티켓 수처럼 결과 크기를 미리 알거나 어림할 수 있는 경우가 많다. 그 크기에 따라 넓은 조건을 넣거나 뺀다.
+
+| 결과 크기 | 쿼리 | 나오는 계획 |
+| --- | --- | --- |
+| 작다 | 넓은 조건과 정확한 조건 | GIN으로 모아서 정렬 |
+| 크다 | 정확한 조건만 | `LIMIT`이 있으면 B-tree를 순서대로 읽다가 멈춤, 없으면 Seq Scan |
+
+전제를 지킨 넓은 조건은 결과를 바꾸지 않는다. 넣든 빼든 결과는 같고 계획만 바뀐다. 그래서 크기에 따라 조건을 넣고 빼도 안전하다.
+
+이 데이터의 최근 50개 쿼리에서는 맞는 행이 1% 안팎일 때 두 쪽이 비슷했다. kim 혼자 맡은 티켓이 7.8ms와 9.3ms였다. 그보다 드물면 넓은 조건을 넣는 쪽이, 흔하면 빼는 쪽이 빨랐다. 경계는 데이터와 `LIMIT` 크기에 따라 달라지므로 자기 데이터로 재서 정한다.
+
+정리하면 GIN이 답할 수 있는 넓은 조건으로 후보를 좁히고 정확한 조건으로 거른다. 넓은 조건은 정확한 조건의 모든 모양을 덮어야 한다. 플래너가 결과 크기를 모르면 GIN이 오히려 느릴 수 있으니, 결과가 크면 넓은 조건을 뺀다.
+
+## 정리
+
+### 실행 계획에서 볼 것
+
+이 글에서 본 실행 계획의 줄을 모으면 다음과 같다.
+
+| 계획에서 보이는 것 | 뜻 | 나온 곳 |
+| --- | --- | --- |
+| GIN 인덱스의 `Bitmap Index Scan` | GIN이 키로 맞는 행의 자리를 모았다. GIN은 이 방법으로만 읽는다. | 2장, 3장 |
+| `Bitmap Heap Scan` | 모은 자리를 페이지 번호 순서로 읽었다. 인덱스의 순서는 여기서 사라진다. | 2장, 3장 |
+| `Heap Blocks`의 `lossy` | `work_mem`이 모자라 페이지 번호만 남겼다. 그 페이지의 행은 모두 다시 확인한다. | 3장, 5장 |
+| `Recheck Cond` | 키가 맞은 행을 테이블에서 다시 확인하는 조건이다. jsonb에서는 늘 나온다. | 2장, 5장 |
+| `Rows Removed by Index Recheck` | 다시 확인에서 버린 행이다. 크면 인덱스가 넓게 넘기고 있다. | 5장, 6장 |
+| `Filter`와 `Rows Removed by Filter` | 인덱스가 거르지 못한 조건으로 행을 걸렀다. 넓은 조건 뒤의 정확한 조건이 여기 나온다. | 6장 |
+| `BitmapAnd`, `BitmapOr` | 비트맵 여러 장을 겹치거나 합쳤다. 실제 행 수는 늘 0으로 적힌다. | 3장, 6장 |
+| `Bitmap Heap Scan` 위의 `Sort` | 비트맵이 순서를 잃어서 정렬을 따로 했다. | 3장, 6장 |
+| `Limit` 아래의 `Index Scan Backward` | B-tree를 순서대로 읽다가 행이 차서 멈췄다. | 3장, 6장 |
+| `Seq Scan`과 `Filter`만 있음 | GIN을 쓰지 못했다. 왼쪽이 열이 아닌 식이거나, 범위 조건이거나, 연산자 클래스가 돕지 않는 연산자다. 결과가 커서 플래너가 Seq Scan을 골랐을 수도 있다. | 4장, 6장 |
+| Bitmap Index Scan의 `Buffers`가 유난히 큼 | 대기 목록이 쌓였다. | 5장 |
+| 어림 `rows`가 테이블의 정확히 1%나 0.5% | 통계 없이 기본값으로 어림했다. | 6장 |
+| `Buffers: shared hit=… read=…` | 읽은 페이지 수다. 바깥 노드는 안쪽 노드가 읽은 것까지 더한다. | 2장, 6장 |
+
+### 들어가며의 두 질문
+
+인덱스 하나가 어떻게 모든 필드를 덮을까? GIN은 열의 값을 통째로 정렬하지 않는다. 값 안에 든 필드와 값을 모두 키로 떼어 내고, 키마다 그 키가 든 행 목록을 적는다. 필드가 새로 생기면 키가 늘어날 뿐이다.
+
+그 대가로 무엇을 못 하게 될까? GIN은 정렬된 결과를 내지 못하고 범위를 훑지 못한다. 그 일은 B-tree가 맡는다. 키가 맞은 행은 테이블에서 다시 확인해야 하고, 한 행을 쓸 때 고칠 키가 많다. 쓰기를 미뤄 두는 대기 목록은 검색을 느리게 할 수 있다. 그리고 플래너가 jsonb 안의 분포를 모를 때가 많아서, 결과 크기에 따라 GIN을 켜고 끄는 판단은 쿼리를 짜는 쪽이 거들어야 한다.
