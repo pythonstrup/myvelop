@@ -1,32 +1,33 @@
 ---
-title: "Designing a Notification Server, Part 5 - The Queue Guarantees No Order: Concurrency in Group Sends"
-description: "Grouping 10,000+ notifications makes chunk jobs finish out of order. waiting-children keeps one group and one send; invariants check the five races closed."
+title: "Group-Send Concurrency with BullMQ - An Unordered Queue and waiting-children"
+description: "Grouping a bulk send of one category makes chunk jobs finish out of order. waiting-children keeps one group and one send; invariants check five races closed."
 pubDate: "2026-08-20T21:00:00+09:00"
+updatedDate: "2026-11-22T21:00:00+09:00"
 tags: ["BullMQ", "waiting-children", "architecture", "concurrency", "redis"]
-series: "Designing a Notification Server"
-seriesOrder: 5
-socialImage: "../../../assets/blog/bullmq-notification-part-5-queue-order/og.png"
+series: "Working with BullMQ"
+seriesOrder: 2
+socialImage: "../../../assets/blog/bullmq-waiting-children-group-send/og.png"
 ---
 
-import WaitingChildrenDemo from "@/materials/bullmq-notification-part-5-queue-order/WaitingChildrenDemo";
-import PrematureSendDemo from "@/materials/bullmq-notification-part-5-queue-order/PrematureSendDemo";
-import GroupFanInDiagram from "@/materials/bullmq-notification-part-5-queue-order/GroupFanInDiagram";
-import FlowProducerMismatchDemo from "@/materials/bullmq-notification-part-5-queue-order/FlowProducerMismatchDemo";
-import { CreateRaceDemo, HeartbeatWatchdogDemo, ReportOnceDemo, ResendGuardDemo, RestageDemo, RolloverRaceDemo, SendDedupeDemo } from "@/materials/bullmq-notification-part-5-queue-order/GroupRaceDemos";
+import WaitingChildrenDemo from "@/materials/bullmq-waiting-children-group-send/WaitingChildrenDemo";
+import PrematureSendDemo from "@/materials/bullmq-waiting-children-group-send/PrematureSendDemo";
+import GroupFanInDiagram from "@/materials/bullmq-waiting-children-group-send/GroupFanInDiagram";
+import FlowProducerMismatchDemo from "@/materials/bullmq-waiting-children-group-send/FlowProducerMismatchDemo";
+import { CreateRaceDemo, HeartbeatWatchdogDemo, ReportOnceDemo, ResendGuardDemo, RestageDemo, RolloverRaceDemo, SendDedupeDemo } from "@/materials/bullmq-waiting-children-group-send/GroupRaceDemos";
 
 ## Introduction
 
-[Part 2](/blog/bullmq-notification-part-2-rate-limit) tuned the rate limit, and [Part 3](/blog/bullmq-notification-part-3-delivery-history) and [Part 4](/blog/bullmq-notification-part-4-reading-history) covered delivery history. Through all of that, the send itself stayed simple. One chunk job sent its share right away, and that was it.
+[What Is BullMQ](/blog/what-is-bullmq) laid out BullMQ's structure and core features. This post takes one of them, parent-child jobs, and puts it into a real send flow. Until then, the send itself was simple. One chunk job sent its share right away, and that was it. The design questions around it, such as where to hand off delivery and how to respect rate limits, are covered separately in the [Designing a Notification Server](/blog/notification-server-part-1-delegating-delivery) series.
 
-This installment is about adding a feature that collects a bulk send into a group. The subject is less the feature itself than the problems that came from building it. From the moment the notification server starts consuming the jobs the batch server throws, neither arrival order nor processing timing is guaranteed — yet on top of that, there must be exactly one group and exactly one send. Dealing with that concurrency is what led me to BullMQ's parent-child jobs (waiting-children). This post covers where waiting-children fits and where it doesn't, and how the concurrency races this flow created were solved one by one and then verified for completeness.
+Specifically, it is about adding a feature that collects a bulk send into a group. The subject is less the feature itself than the problems that came from building it. From the moment the notification server starts consuming the jobs the batch server throws, neither arrival order nor processing timing is guaranteed — yet on top of that, there must be exactly one group and exactly one send. Dealing with that concurrency is what led me to BullMQ's parent-child jobs (waiting-children). This post covers where waiting-children fits and where it doesn't, and how the concurrency races this flow created were solved one by one and then verified for completeness.
 
 ## Group Sends: Collect Everything, Then Send Once
 
-In retargeting-style bulk sends, more than 10,000 same-category notification messages go out at once. Until now, the batch server sliced the targets into chunks, added them as jobs, and each job sent its share immediately — and in that structure, a batch is just a heap of individual sends. There is nowhere to ask, at the batch level, how far a campaign has gone and what came of it.
+Suppose a bulk send pushes out a large batch of same-category AlimTalk messages at once. Until now, the batch server sliced the targets into chunks, added them as jobs, and each job sent its share immediately — and in that structure, a batch is just a heap of individual sends. There is nowhere to ask, at the batch level, how far a campaign has gone and what came of it.
 
 The third party has a group API for exactly this. You create a group, stage messages into it in parts, and trigger the send once after everything is in. Collect one category into one group, and both the send and the result lookup fall out at the group level. And since staging and sending are separated, a mid-flight failure ends not as "sent wrong" but as <strong>"not sent"</strong> — a fail-closed safety that comes along for free.
 
-Our side of the flow looks like this. The target query runs to millions of rows, so the batch server cannot read them in one go, and the third party also caps how much a single request can carry. So the batch server slices the targets into chunks and adds them as jobs, and each chunk job, instead of sending, only stages into the group while recording its share in a Redis hash. After writing the record it checks whether everything is in now, and the job that sees completion triggers the send. Not the chunk that was staged last — <strong>the chunk that finished processing last</strong> pulls the trigger. The queue guarantees no order.
+The flow looks like this. There are too many targets for the batch server to read in one go, and the third party also caps how much a single request can carry. So the batch server slices the targets into chunks and adds them as jobs, and each chunk job, instead of sending, only stages into the group while recording its share in a Redis hash. After writing the record it checks whether everything is in now, and the job that sees completion triggers the send. Not the chunk that was staged last — <strong>the chunk that finished processing last</strong> pulls the trigger. The queue guarantees no order.
 
 The whole structure, with scattered chunks converging on one group, looks like this.
 
@@ -40,7 +41,7 @@ What happens if this is handled badly? If the chunk carrying the last-marker fin
 
 <PrematureSendDemo client:visible lang="en" />
 
-One more problem stacks on top: where the calls live. The third-party calls around a group are not just staging — there are group creation and the send trigger, and at first both were called inline in the middle of processing a chunk job. But an inline call is one the limiter tuned in [Part 2](/blog/bullmq-notification-part-2-rate-limit) cannot count, and one whose retries, backoff, and failure records — everything a job simply gets from the queue — have to be rebuilt inside the handler. So on the principle that <strong>every call to the third party must be a job</strong>, both were pulled out into internal jobs. Staging already is one: one chunk job sends one request.
+One more problem stacks on top: where the calls live. The third-party calls around a group are not just staging — there are group creation and the send trigger, and at first both were called inline in the middle of processing a chunk job. But an inline call is one the queue's limiter cannot count, and one whose retries, backoff, and failure records — everything a job simply gets from the queue — have to be rebuilt inside the handler. So on the principle that <strong>every call to the third party must be a job</strong>, both were pulled out into internal jobs. Staging already is one: one chunk job sends one request.
 
 ## Dependencies Between Jobs: waiting-children
 

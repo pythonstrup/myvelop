@@ -1,0 +1,331 @@
+---
+title: "Designing a Notification Server, Part 2 - How to Respect an External API's Rate Limit"
+description: "Even when the worker holds to 100 per five seconds, the API can return 429. Part 2 weighs how to count the limit, back off, and divide it on a shared account."
+pubDate: "2026-07-20T21:00:00+09:00"
+updatedDate: "2026-11-22T21:00:00+09:00"
+tags: ["architecture", "rate limit", "redis"]
+series: "Designing a Notification Server"
+seriesOrder: 2
+socialImage: "../../../assets/blog/bullmq-notification-part-2-rate-limit/og.png"
+---
+
+import WindowEdgeDiagram from "@/materials/bullmq-notification-part-2-rate-limit/WindowEdgeDiagram";
+import SlidingLogDiagram from "@/materials/bullmq-notification-part-2-rate-limit/SlidingLogDiagram";
+import BackoffLanesDiagram from "@/materials/bullmq-notification-part-2-rate-limit/BackoffLanesDiagram";
+import SharedAccountDiagram from "@/materials/bullmq-notification-part-2-rate-limit/SharedAccountDiagram";
+
+## Introduction
+
+In [Part 1](/blog/notification-server-part-1-delegating-delivery), we gathered send requests in a queue and let only the worker call the external API. With the calls to the external API gathered in the worker, the worker is also where the limit gets respected. If the external API's limit is 100 requests per five seconds, we put a limiter on the worker that counts 100 per five seconds.
+
+Even with the limiter in place, though, `429 Too Many Requests` can come back. The worker's count never once went over 100, yet the external API answers that the limit was exceeded. There are two causes. The five seconds we count may not be the five seconds the external API counts, and someone other than us may be using the same account.
+
+What a limiter holds to is the number we count. It does not hold to the number the external API counts. Part 2 breaks the decisions that narrow the gap between those two numbers into three questions.
+
+1. How to count the limit
+2. How to back off when the limit is exceeded
+3. How to divide the limit when several services share one account
+
+## How to count the limit
+
+A limit of "100 per five seconds" leaves something out. It does not say when the five seconds start, or whether the clock is cut into five-second blocks or the count runs back five seconds from now. RFC 6585, which defines 429, also states that it does not specify how the server counts requests. If the external API's documentation does not tell you this either, the safe way is to send so that whichever five seconds the external API looks at, it never sees more than 100.
+
+Even with the same 100 per five seconds, what happens at the edges depends on how you count. Suppose our window starts at 0 seconds, and at second 4, while the window is still nearly empty, a burst of announcements comes in. The worker sends 100 between 4 and 5 seconds, and as soon as a new window opens at 5 seconds, it sends another 100. If the external API counts 3 to 8 seconds as one window, 200 land inside it.
+
+<WindowEdgeDiagram lang="en" scene={1} />
+
+Chapter 4 of *System Design Interview – An Insider's Guide* also gives this situation as the weakness of the fixed window counter. With a limit of 5 per minute, sending 5 in the 30 seconds before the edge and 5 in the 30 seconds after puts 10 in the minute centered on the edge, twice the limit.
+
+Let's compare the candidates on these criteria.
+
+-   Whichever five seconds the external API looks at, does it stay within 100?
+-   How many can it send in five seconds?
+-   Can it send a burst that built up after a quiet spell all at once?
+-   What does it store, and what do you have to build yourself?
+
+There are four candidates: a fixed window, a fixed window sliced finer, a sliding window, and a token bucket.
+
+### 1. Count with a fixed window
+
+Cut the clock into five-second windows and count the sends in each. When the window changes, reset the count to 0. In Redis it takes one `INCR` and one expiry, which makes it the simplest. The limiter BullMQ provides out of the box has this shape too.
+
+Its weak spot is the edge in the figure above. Even if each window stays at 100, five seconds that span two windows can hold up to 200. Aligning the start of our windows with the external API's makes the problem go away, but often there is no way to know when the other side's windows start.
+
+<details>
+<summary>How BullMQ's limiter counts</summary>
+
+BullMQ raises the queue's counter with `INCR` when a job moves from waiting to active. Only when the counter becomes 1, that is, for the first job in a window, does it set an expiry of `duration` with `PEXPIRE`. It is a fixed window that starts not on the clock's five-second marks but at the moment the first job comes in. A failed job that is retried moves to active again, so a retry also counts as one.
+
+</details>
+
+This option fits when you know the external API counts with the same edges as you, or when you can handle your send volume even with the per-window limit cut in half.
+
+### 2. Slice the window finer
+
+Leave the limiter as it is and only shorten the window. Change 100 per five seconds to 20 per second and the average stays the same, while even a burst at an edge overflows by only 20 at a time.
+
+The overflow only shrinks, though; it does not go away. If the external API's five seconds start in the middle of one of our one-second windows, they span six windows. If 20 pile up at the end of the first window and 20 at the start of the last, those five seconds hold 120.
+
+<WindowEdgeDiagram lang="en" scene={2} />
+
+To keep from overflowing, set the per-window limit by dividing 100 by the number of windows the five seconds can span. The shorter the window, the more windows they span, and since the per-window limit has to be rounded down to a whole number, shrinking the window does not always make things better.
+
+| Window length | Windows spanned | Limit per window | Most the external API sees | Sent in five seconds |
+| --- | --- | --- | --- | --- |
+| 5 seconds | 2 | 50 | 100 | 50 |
+| 1 second | 6 | 16 | 96 | 80 |
+| 0.5 seconds | 11 | 9 | 99 | 90 |
+| 0.1 seconds | 51 | 1 | 51 | 50 |
+
+You only change the settings of the limiter you already use, but in exchange you leave 10–20% of the limit unused. If network latency is uneven, the time you send and the time a request arrives drift apart, so you need a little more headroom.
+
+This option fits when you want to keep using the queue library's limiter as it is, and you can handle your send volume while leaving 10–20% of the limit unused.
+
+### 3. Count with a sliding window
+
+Instead of cutting windows, count back five seconds from now. Record every send time, and before sending, check that fewer than 100 entries fall within the last five seconds. If 100 are already there, wait until the oldest entry slides out of the five seconds.
+
+Suppose it is now 6.2 seconds and 100 were sent in the last five seconds. If the oldest entry is at 1.3 seconds, the next send waits until 6.3 seconds.
+
+<SlidingLogDiagram lang="en" />
+
+Measured at any moment, the last five seconds never exceed 100, so whichever five seconds the external API looks at, it never sees more than 100. You do not need to know when the other side's windows start, and you use the limit to the full.
+
+The weakness textbooks point to is memory. A timestamp is kept for every request, so an API server that limits each user can grow to millions of keys, with the timestamps to keep growing just as much. A notification server is a different case. There is one account's limit to respect, and at most 100 timestamps to keep.
+
+The real cost is that you have to build it yourself. If your queue's limiter is a fixed window, the worker has to check for itself before calling the external API and push the job back if there is no room. With several workers, the check and the record have to happen in one step, so you end up putting a Lua script on top of a Redis sorted set.
+
+<details>
+<summary>An approximation that keeps two numbers instead of timestamps</summary>
+
+A sliding window can also be approximated with two numbers. Keep only the counts for the previous window and the current one, multiply the previous window's count by the fraction that still overlaps, and add it to the current window's count. Cloudflare, which uses this approach, analyzed 400 million requests and reported that 0.003% were wrongly allowed or blocked.
+
+This approximation assumes requests came in evenly across the previous window. If 100 were packed at the end of the previous window, then 0.5 seconds into the current window the previous window counts as 90, so 10 more go out. The actual last five seconds hold 110. Where there are many keys, this much error is a fair price for the memory saved, but for a notification server that has to hold one account's limit precisely, keeping timestamps is the better choice.
+
+</details>
+
+This option fits when you do not know how the other side counts but need to use the limit to the full, and you have the capacity to build the limiter yourself.
+
+### 4. Count with a token bucket
+
+Tokens fill a bucket at a steady rate, and each send takes one out. Once the bucket is full, no more pile up. If tokens built up during a quiet spell, a burst of requests goes out right away, as many as the bucket holds. Stripe has said it uses this approach to limit API requests and keeps the state in Redis.
+
+In any five seconds, the most that can go out is the tokens in the bucket at the start plus the tokens added during those five seconds. To respect the external API's 100 per five seconds, that sum must not exceed 100.
+
+-   Refill 20 per second and 100 are added in five seconds, leaving no room to save any up in the bucket.
+-   Refill 18 per second with a bucket of 10, and the sum is 100. You can send a burst of 10 right away, but in exchange you send only up to 90 per five seconds.
+
+The bigger the bucket, the more the average has to come down. If the external API states its limit in bucket form from the start, such as "20 per second, bursts of up to 30," you can carry those numbers over as they are, so this approach fits best.
+
+It stores two things: the number of tokens left and the time of the last refill.
+
+<details>
+<summary>Bucket-style implementations</summary>
+
+Nginx's `limit_req` limits requests with the leaky bucket method. redis-cell is a Redis module that provides GCRA, a variant of the leaky bucket, as a single `CL.THROTTLE` command. It takes the maximum burst, the count per period, and the period as arguments, and since the limit is passed on every call, it can be changed while running. GCRA records the theoretical arrival time at which the next request may come in, and reads and updates that time on every request.
+
+</details>
+
+This option fits when the external API states its limit in bucket form, or when a burst that built up after a quiet spell has to be cleared quickly.
+
+### The four side by side
+
+|  | Fixed window | Sliced fixed window | Sliding window | Token bucket |
+| --- | --- | --- | --- | --- |
+| Most the external API sees in five seconds | 200 | 96–99 | 100 | 100 |
+| Sent in five seconds | 100 | 80–90 | 100 | 90 (with a bucket of 10) |
+| A burst at once | 100 | 9–16 | 100 | Up to the bucket size |
+| What it stores | One number | One number | Up to 100 send times | Two numbers |
+| What you build | Nothing | Per-window limit calculation | Check-and-record script, pushing jobs back | Check script or module |
+
+### Choosing how to count
+
+None of the four always wins. Choose by how much you know about how the other side counts, and how much of the limit you can afford to leave unused.
+
+-   <strong>If your send volume stays under half the limit, a fixed window is enough.</strong> What you gain is using the limiter the queue provides as it is. What you give up is that the per-window limit has to be cut in half to keep from overflowing at the edges.
+-   <strong>If you do not want to replace the limiter you already use, slice the window and calculate a lower per-window limit.</strong> What you gain is that one setting does it. What you give up is 10–20% of the limit.
+-   <strong>If you do not know how the other side counts but need to use the limit to the full, a sliding window fits.</strong> What you gain is respecting the limit no matter where the other side's edges fall. What you give up is building and maintaining the limiter and the logic that pushes jobs back yourself.
+-   <strong>If the limit is stated in bucket form or bursts have to be cleared quickly, a token bucket fits.</strong> What you gain is sending a burst right away, up to the bucket size. What you give up is that the average has to come down as much as the bucket grows.
+
+## How to back off when the limit is exceeded
+
+Even a well-chosen way of counting still gets 429s. The external API may lower its limit, someone else may be using the same account, and network latency may make requests arrive in a bunch. How the worker reacts decides whether it ends with one 429 or swells into dozens.
+
+Suppose the external API's five-second window fills up at second 3. Every request sent before the window closes at 5 seconds is rejected. The worker's limiter does not know about the other side's window, so it sees room left and keeps sending. At 20 per second for 2 seconds, 40 are rejected.
+
+Let's compare the candidates on these criteria.
+
+-   Do other jobs keep getting rejected after a 429?
+-   Does it follow the wait time the external API gives?
+-   Do rejections eat into the retry count?
+-   When the amount the external API can accept drops, does it drop along with it?
+
+There are three candidates: resending only the failed jobs, pausing the whole queue for a while, and lowering the send rate on your own.
+
+### 1. Resend only the failed jobs after an interval
+
+Leave it to the retries the queue provides by default. A job that gets a 429 is marked as failed and retried after an interval. The interval is commonly exponential backoff, which doubles with each attempt. Add jitter, which multiplies it by a random value, and jobs that failed at the same moment do not all come back at the same moment. The AWS SDK calculates the retry wait as `random(0, 1) × min(20s, base delay × 2^retry count)`.
+
+Only the failed job backs off. The other jobs keep going out as the limiter allows and are rejected until the external API's window closes. Each rejected job uses up one retry, so a job that merely hit the limit can end in final failure after just a few rounds.
+
+Failures from a wrong template or a malformed phone number share the same retry count. These fail the same way however many times they are resent. Only by keeping failures that resending cannot fix out of retries from the start do you have retries left for 429s. In BullMQ, throwing `UnrecoverableError` inside a job moves it straight to failed, regardless of how many attempts remain.
+
+This option fits when 429s come rarely, one or two at a time, and your send volume is well below the limit.
+
+### 2. Pause the whole queue for a while
+
+On a single 429, the whole queue stops taking jobs for a set time. If the external API gives a wait time in the `Retry-After` header, pause for that long. RFC 6585 only says a 429 response may include this header and does not require it, so you have to decide how long to pause when the header is missing. A rejected job is not counted as a failure but goes back to waiting.
+
+In the earlier example, if the worker gets `Retry-After: 2` at second 3, it sends nothing until 5 seconds. The rejections end at one, and the retry count does not go down.
+
+What you give up lies in how much the pause covers. One 429 stops every send in that queue, so the verification codes that Part 1 wanted to send ahead of announcements wait too. If one queue sends to several accounts or several external APIs, unrelated sends stop as well. This approach only really fits once queues are split per account.
+
+<details>
+<summary>In BullMQ</summary>
+
+Calling `queue.rateLimit(ms)` puts the whole queue under a limit for that long, and the next jobs wait. Throwing `Worker.RateLimitError()` inside a job sends it back to waiting instead of moving it to failed. The official documentation stresses not to forget to throw this error, because the job can only go back to waiting if it is told apart from a failure. `worker.rateLimit(ms)`, which did the same thing, is scheduled for removal in v6.
+
+</details>
+
+This option fits when one queue sends to only one account, and it is clear that once a 429 comes, anything you send is rejected until that window closes.
+
+### 3. Lower the send rate on your own
+
+When a 429 comes, slow the limiter down, and when there has been no 429 for a while, speed it back up little by little. Cutting sharply on a rejection and increasing slowly while successes continue is the same idea as TCP congestion control. The AWS SDK's adaptive retry mode works this way. A client-side rate limiter watches throttling responses and adjusts the send rate, delaying not only retries but first attempts too.
+
+Suppose we send at 100 per five seconds, halve the rate on a 429, and raise it by 5 for every five seconds that pass without a 429. If someone else is using the same account at 30 per five seconds, our share is 70. The rate climbs from 50, gets a 429 once it passes 70, and drops by half again. It homes in on the share that is left, but while it rises and falls, the average stays below that share.
+
+What you gain is following what the external API can accept without knowing it. If someone else on the same account takes a bigger share or the external API lowers its limit, the rate comes down to match.
+
+What you give up is just as clear. You have to take 429s on purpose to find the limit, and while the rate rises and falls, you cannot use the whole limit. The limiter's rate has to change while running, so you often have to build it yourself. AWS, too, recommends adaptive mode for cases that concentrate requests on a single resource, get throttled often, and can tolerate latency, and does not recommend it as the default.
+
+This option fits when you do not know the external API's limit exactly or it changes often, and you cannot control others using the same account.
+
+### The three side by side
+
+Here is what each of the three sends next when, as in the earlier example, the external API's window fills up at second 3.
+
+<BackoffLanesDiagram lang="en" />
+
+|  | Retry failed jobs only | Pause the whole queue | Lower the rate |
+| --- | --- | --- | --- |
+| Other jobs after a 429 | Keep sending and get rejected | Stop | Go out at the lowered rate |
+| `Retry-After` | Applied to the failed job only | Applied to the whole queue | Combined with a pause |
+| Retry count | Drops by one per rejection | Does not drop | Uses fewer, as there are fewer rejections |
+| When the API accepts less | Cannot follow | Cannot follow | Drops with it |
+| What you build | Nothing | Code that picks out 429s and pauses | A limiter that changes its rate |
+
+### Choosing how to back off
+
+You do not have to pick only one of the three. You can mix them, for example by pausing the queue and starting at a lower rate when it reopens. Which one to build on depends on how often 429s come, and why.
+
+-   <strong>If 429s come rarely, one or two at a time, resending only the failed jobs is enough.</strong> What you gain is using the queue's default retries as they are. What you give up is that when 429s bunch up, rejections keep coming and the retry count drops fast.
+-   <strong>If the queue serves only one account and a 429 blocks the whole window, pause the whole queue.</strong> What you gain is that rejections end at one. What you give up is that urgent sends wait too.
+-   <strong>If you do not know the share that is left or it changes often, lower the rate on your own.</strong> What you gain is following the limit as it changes. What you give up is finding the limit by taking 429s, and not using the whole limit in the meantime.
+
+Whichever you choose, some sends never make it out. Suppose the external API did not respond for 30 minutes. If jobs that used up their retries are deleted right away, the record of whom to resend to disappears with them. Keep failed jobs for a set period, and once the external API is back, you can pick out only the failures and enqueue them again. BullMQ lets you give `removeOnFail` a retention period, and SQS supports redrive, which moves messages that piled up in a dead-letter queue back to the original queue.
+
+## How to divide the limit when several services share one account
+
+Gathering delivery in one place in Part 1 happened inside one service. The external API's account can be used outside the service too. Suppose there is one more service that uses the same sender account. That service does not know about our queue and does not look at our counter. If our worker sends 60 per five seconds and the other service sends 60 per five seconds, each is within the limit by its own limiter, but 120 reach the account.
+
+The problem from Part 1's introduction, where the API server, the admin system, and the batch job shared one limit, has come back outside the service boundary. The difference this time is that we cannot change the other side's code.
+
+Let's compare the candidates on these criteria.
+
+-   Is the account's limit held by a single number?
+-   When a 429 happens, can you tell which side went over?
+-   When one side uses less, can the other use its share?
+-   How tightly are the two services tied to each other?
+
+There are four candidates: splitting the account, allocating the limit, sharing the counter, and sharing the send worker. Here are the paths to the external API in the four, side by side.
+
+<SharedAccountDiagram lang="en" />
+
+### 1. Split the account
+
+If each service uses its own account, each gets its own limit. Each puts its own limiter on its own account and that is it, and when a 429 happens, it is clear who went over. The two services share nothing with each other.
+
+The reasons an account cannot be split usually lie in contracts and cost rather than technology. The sender profile may be tied to the account, pricing may be per account so that splitting raises the unit cost, or templates may already have been approved under that account. It also remains true that when one side is idle, the other cannot use its share.
+
+This option fits when contracts and pricing allow the account to be split. If that condition holds, it is worth considering before the other three.
+
+### 2. Allocate the limit
+
+Divide one account's limit in advance. Agree that our service uses 60 per five seconds and the other service 40, and each puts its number into its own limiter. There is no infrastructure to share, so you can start as soon as you agree.
+
+For the sum to hold, both services have to meet the conditions from the first question. If both count with a fixed window, each can overflow up to double at an edge, so up to 200 reach the account. If both count with a sliding window, no five seconds exceed 60 and 40, so the sum stays within 100 too. Still, we have no way to confirm that the other side really counts that way.
+
+Fixed shares are a cost too. Even while the other service is idle, we send only 60. When a 429 happens, telling who went over means matching up the two services' logs.
+
+This option fits when the two services cannot share any infrastructure and can only agree. In that case, set each share a little low, and let rate lowering from the second question absorb the remaining error.
+
+### 3. Share the counter
+
+Both services check a single counter in the same store before sending. Each keeps its own send path and takes a slot from the shared counter before calling the external API. Like Envoy's global rate limit service from Part 1, the counter can also be split out into a service of its own that both services ask.
+
+The account's limit comes back to a single number. When one side is idle, the other uses the slots left over, and if the counter records who took each slot, you can also tell who went over when a 429 happens.
+
+In exchange, both services have to reach the same store and count the same way. If one counts with a fixed window and the other with a sliding window, sharing a counter is pointless. If the shared store stops, both services' sends stop with it. There is also no priority in the order slots are handed out, so the other service's announcements can take the slots our verification codes would have gotten.
+
+This option fits when both services can reach the same store, and each wants to keep its own send path and retries.
+
+### 4. Share the send worker
+
+Gather the worker that calls the external API into one, and have the other service put its send requests on that worker's queue too. With only one place calling the external API, one limiter is the account's limit. Priority, retries, and backing off are decided in one place too.
+
+The catch is what goes on the queue. Put "send this template to this user" on it, and the worker has to know the other service's user data and templates too. That means reaching the other service's DB, which is too high a price to pay just to respect one limit. So split the work of finishing the content from the work of sending it. Each service reads its own DB, fills in the template to build a finished message, and puts only that message on the queue. The worker just sends it to the external API without needing to know which service it came from.
+
+Chapter 10 of *System Design Interview – An Insider's Guide* also splits a notification system into notification servers and workers. Once the notification servers have verified the recipient, fetched the templates and settings, built the content to send, and put it on a queue, the workers take it off the queue and deliver it to the external service. The book splits them for decoupling and buffering, but as a result, the calls to the external API narrow down to one place.
+
+Splitting them also separates failures by kind. Failures from a wrong template or number are filtered out before they reach the queue, so most failures the worker sees are ones that resending can fix. The retry count from the second question can go entirely to 429s.
+
+What you give up is that the two become coupled. The other service's sends depend on our worker, so the worker becomes a point of failure for both services. The two have to agree on the message format and stay in step every time it changes, and decide who runs the queue and the worker. If the other service cannot reach our queue, this option does not work.
+
+This option fits when the account cannot be split, and you want to decide not only the limit but also priority and backing off in one place.
+
+### The four side by side
+
+|  | Split accounts | Allocated limit | Shared counter | Shared send worker |
+| --- | --- | --- | --- | --- |
+| Number that holds the limit | One per account | One share per service | One shared counter | The worker's one limiter |
+| Who caused a 429 | Clear | Match up the logs | Told from the counter's records | Only one worker |
+| Unused share | Cannot be used | Cannot be used | Can be used | Can be used |
+| Priority | Each within its account | Each within its share | None | Set in one queue |
+| What is shared | Nothing | An agreement | Store, counting method | Queue, worker, message format |
+| What stands in the way | Contracts, pricing | How the other side counts | Reaching the same store | Reaching the same queue, operating responsibility |
+
+### Choosing how to divide the limit
+
+The four are in order of how much is shared. The more you share, the more precisely you respect the limit and the more of the unused share you can use, but the more tightly the two services are tied to each other.
+
+-   <strong>If contracts and pricing allow it, split the account.</strong> What you gain is that there is nothing to share. What you give up is that neither side can use the other's unused share.
+-   <strong>If nothing can be shared, allocate the limit and leave headroom.</strong> What you gain is starting with nothing but an agreement. What you give up is any way to confirm that the other side keeps to its share. Pair it with rate lowering and you can absorb the remaining error.
+-   <strong>If both reach the same store and each wants to keep its own send path, share the counter.</strong> What you gain is holding the limit with a single number while leaving the send paths as they are. What you give up is that the counting method has to match and there is no priority.
+-   <strong>If priority and backing off also have to be decided in one place, share the send worker.</strong> What you gain is extending the delivery that Part 1 gathered inside one service beyond the service. What you give up is that the worker becomes a point of failure for both services, and the responsibility for running it has to be divided.
+
+## Wrapping up
+
+Part 2 broke "how to respect the external API's limit" into three questions.
+
+-   <strong>How to count the limit</strong> — the less you know about how the other side counts and the more you need to use the limit to the full, the further you move from a fixed window toward a sliding window.
+-   <strong>How to back off when the limit is exceeded</strong> — if 429s are rare, resend only the failed jobs; if the whole window is blocked, pause the queue; if you do not know the share that is left, lower the rate.
+-   <strong>How to divide the limit when several services share one account</strong> — how much the two services can share decides the answer.
+
+In all three questions, what you know about the external API changed the answer: how it counts, whether it tells you how long to wait, and who else uses the same account. What a limiter holds to is the number we count. Start by writing down where it parts ways with the number the external API counts.
+
+[Part 3](/blog/bullmq-notification-part-3-delivery-history) covers where to store the delivery history. Jobs left in the queue are deleted once the set period passes. What was sent, when, to whom, and with what result has to be kept separately, outside the queue.
+
+## References
+
+-   [RFC 6585 - Additional HTTP Status Codes, 4. 429 Too Many Requests](https://www.rfc-editor.org/rfc/rfc6585#section-4)
+-   [BullMQ - Rate limiting](https://docs.bullmq.io/guide/rate-limiting)
+-   [BullMQ - Stop retrying jobs](https://docs.bullmq.io/patterns/stop-retrying-jobs)
+-   [BullMQ - prepareJobForProcessing.lua](https://github.com/taskforcesh/bullmq/blob/master/src/commands/includes/prepareJobForProcessing.lua)
+-   [Cloudflare - How we built rate limiting capable of scaling to millions of domains](https://blog.cloudflare.com/counting-things-a-lot-of-different-things/)
+-   [Stripe - Scaling your API with rate limiters](https://stripe.com/blog/rate-limiters)
+-   [redis-cell](https://github.com/brandur/redis-cell)
+-   [NGINX - ngx_http_limit_req_module](https://nginx.org/en/docs/http/ngx_http_limit_req_module.html)
+-   [AWS SDKs and Tools - Retry behavior](https://docs.aws.amazon.com/sdkref/latest/guide/feature-retry-behavior.html)
+-   [Amazon SQS - Dead-letter queue redrive](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-configure-dead-letter-queue-redrive.html)
+-   Alex Xu, *System Design Interview – An Insider's Guide*, ch. 4 "Design a Rate Limiter" and ch. 10 "Design a Notification System"

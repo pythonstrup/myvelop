@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 660" role="img" aria-labelledby="ml-title ml-desc">
   <title id="ml-title">Message history model</title>
-  <desc id="ml-desc">A notification history row is written only after the result is final. When the third-party response arrives, each message is attributed by subtracting messageList and failedMessageList from the sent set, leaving either ACCEPTED or FAILED. A full 4xx rejection is a failure that still came with a response, so it is absorbed into FAILED. Only a missing response throws, and BullMQ retries it; ERROR is written only once all three attempts are exhausted. One message ends as exactly one history row, with no state transitions.</desc>
+  <desc id="ml-desc">A notification history row is written only after the result is final. When the third-party response arrives, each message is matched against the success and failure lists, and anything left over is attributed so that every message ends as either ACCEPTED or FAILED. A full 4xx rejection is a failure that still came with a response, so it is absorbed into FAILED. Only a missing response throws, and the queue retries it; ERROR is written only once all three attempts are exhausted. One message ends as exactly one history row, with no state transitions.</desc>
 
   <defs>
     <marker id="ml-arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -62,7 +62,7 @@
       <rect width="44" height="44" rx="8" fill="#2563EB"/>
       <path d="M12 15 h20 M12 22 h20 M12 29 h20" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round"/>
     </g>
-    <text class="node-title" x="108" y="310">BullMQ job</text>
+    <text class="node-title" x="108" y="310">queue job</text>
     <text class="small" x="108" y="332">= "tried to send"</text>
   </g>
 
@@ -89,7 +89,7 @@
       <circle cx="27" cy="22" r="9" fill="none" stroke="#FFFFFF" stroke-width="3"/>
     </g>
     <text class="node-title" x="638" y="182">Message attribution</text>
-    <text class="small" x="638" y="202">matched by customFields · to</text>
+    <text class="small" x="638" y="202">matched by a per-message key</text>
     <text class="mono" x="638" y="224">sent − accepted − failed</text>
   </g>
 
@@ -101,7 +101,7 @@
       <path d="M22 11 A11 11 0 1 1 11 22" fill="none" stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round"/>
       <path d="M17 6 L23 11 L17 16" fill="none" stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
     </g>
-    <text class="node-title" x="638" y="462">BullMQ retry</text>
+    <text class="node-title" x="638" y="462">queue retry</text>
     <text class="mono" x="638" y="482">attempts: 3 · exp backoff</text>
     <text class="small" x="638" y="504">only when exhausted</text>
   </g>
@@ -114,7 +114,7 @@
       <path d="M12 23 l7 7 l13 -15" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
     </g>
     <text class="node-title" x="994" y="144">ACCEPTED</text>
-    <text class="mono" x="994" y="166">matched in messageList</text>
+    <text class="mono" x="994" y="166">in the success list</text>
   </g>
 
   <!-- FAILED -->
@@ -125,7 +125,7 @@
       <path d="M14 14 L30 30 M30 14 L14 30" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" fill="none"/>
     </g>
     <text class="node-title" x="994" y="242">FAILED</text>
-    <text class="mono" x="994" y="264">failedList · difference</text>
+    <text class="mono" x="994" y="264">failure list · leftovers</text>
     <text class="mono" x="994" y="284">includes 4xx rejections</text>
   </g>
 
@@ -159,7 +159,7 @@
   <text class="edge-label" x="486" y="497" text-anchor="middle">retry call</text>
 
   <!-- footnotes -->
-  <text class="foot" x="40" y="592">There is no REQUESTED state — the record of "we tried to send" is the BullMQ job itself, and the history DB would only copy it.</text>
+  <text class="foot" x="40" y="592">There is no REQUESTED state — the record of "we tried to send" is the queue job itself, and the history DB would only copy it.</text>
   <text class="foot" x="40" y="614">A full 4xx rejection (CLIENT_ERROR) is a failure that <tspan font-weight="700">came with a response</tspan> → absorbed into FAILED. It never throws, so the job ends as completed.</text>
   <text class="foot" x="40" y="636">The set difference attributes even messages missing from the response, so no row is left open — no reconciliation batch or timeout sweeper is needed.</text>
 </svg>

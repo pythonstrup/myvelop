@@ -1,7 +1,8 @@
 ---
 title: "Designing a Notification Server, Part 1 - Where to Hand Off Delivery"
 description: "Calling the messaging API wherever a notification is needed scatters rate limits, scheduling, and failure tracking. Part 1 weighs where to hand off delivery."
-pubDate: "2026-11-15T21:00:00+09:00"
+pubDate: "2026-05-18T23:35:46+09:00"
+updatedDate: "2026-11-22T21:00:00+09:00"
 socialImage: "../../../assets/blog/notification-server-part-1-delegating-delivery/og.png"
 tags: ["architecture", "queue", "redis"]
 series: "Designing a Notification Server"
@@ -40,7 +41,7 @@ Here is what happens when what each place sends under the limit meets at the ext
 
 <ScatteredLimitDemo client:visible lang="en" />
 
-At this point, someone suggests gathering delivery in one place and splitting it out into its own server. This series covers the trade-offs you will face while building that notification server. In order, it looks at what to hand delivery to, where to enforce the external API's limit, where to store the delivery history and how to read it, and what gets crossed when bulk sends go out in groups. For each decision, it lines up the candidates and weighs what each one gains and gives up. If you are about to split out a delivery server yourself, you can read it as a list of things to check before deciding.
+At this point, someone suggests gathering delivery in one place and splitting it out into its own server. This series covers the trade-offs you will face while building that notification server. In order, it looks at what to hand delivery to, how to respect the external API's limit, and where to store the delivery history and how to read it. For each decision, it lines up the candidates and weighs what each one gains and gives up. If you are about to split out a delivery server yourself, you can read it as a list of things to check before deciding.
 
 Part 1 covers the first of those trade-offs: where to hand off delivery. That question breaks down into three.
 
@@ -570,4 +571,4 @@ Part 1 broke "where to hand off delivery" into three questions.
 
 None of the three questions had a single right answer. How many servers you run, what you already operate, and what you cannot afford to lose change the answer. If you are about to split out a send server, start by writing down those conditions.
 
-[Part 2](/blog/bullmq-notification-part-2-rate-limit) covers where to enforce the external API's limit. Even when the worker holds to 100 per five seconds, the external API can still return 429. That happens when the windows we and the external API use to count the limit start at different times, and when the same account is used elsewhere too.
+[Part 2](/blog/bullmq-notification-part-2-rate-limit) covers how to respect the external API's limit. Even when the worker holds to 100 per five seconds, the external API can still return 429. That happens when the windows we and the external API use to count the limit start at different times, and when the same account is used elsewhere too.

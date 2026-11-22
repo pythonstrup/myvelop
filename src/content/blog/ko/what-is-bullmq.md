@@ -5,6 +5,8 @@ pubDate: "2026-05-18T23:35:46+09:00"
 updatedDate: "2026-06-04T22:32:30+09:00"
 socialImage: "../../../assets/blog/what-is-bullmq/01.png"
 tags: ["BullMQ","nodejs","redis","typescript"]
+series: "BullMQ 다루기"
+seriesOrder: 1
 ---
 
 ## 들어가며

@@ -99,10 +99,10 @@
 /blog/25/ /blog/bullmq-notification-part-4-reading-history/ 301
 /ko/blog/25 /ko/blog/bullmq-notification-part-4-reading-history/ 301
 /ko/blog/25/ /ko/blog/bullmq-notification-part-4-reading-history/ 301
-/blog/26 /blog/bullmq-notification-part-5-queue-order/ 301
-/blog/26/ /blog/bullmq-notification-part-5-queue-order/ 301
-/ko/blog/26 /ko/blog/bullmq-notification-part-5-queue-order/ 301
-/ko/blog/26/ /ko/blog/bullmq-notification-part-5-queue-order/ 301
+/blog/26 /blog/bullmq-waiting-children-group-send/ 301
+/blog/26/ /blog/bullmq-waiting-children-group-send/ 301
+/ko/blog/26 /ko/blog/bullmq-waiting-children-group-send/ 301
+/ko/blog/26/ /ko/blog/bullmq-waiting-children-group-send/ 301
 /blog/27 /blog/dissecting-parquet/ 301
 /blog/27/ /blog/dissecting-parquet/ 301
 /ko/blog/27 /ko/blog/dissecting-parquet/ 301
@@ -117,3 +117,7 @@
 /blog/bullmq-notification-part-1-what-is-bullmq/ /blog/what-is-bullmq/ 301
 /ko/blog/bullmq-notification-part-1-what-is-bullmq /ko/blog/what-is-bullmq/ 301
 /ko/blog/bullmq-notification-part-1-what-is-bullmq/ /ko/blog/what-is-bullmq/ 301
+/blog/bullmq-notification-part-5-queue-order /blog/bullmq-waiting-children-group-send/ 301
+/blog/bullmq-notification-part-5-queue-order/ /blog/bullmq-waiting-children-group-send/ 301
+/ko/blog/bullmq-notification-part-5-queue-order /ko/blog/bullmq-waiting-children-group-send/ 301
+/ko/blog/bullmq-notification-part-5-queue-order/ /ko/blog/bullmq-waiting-children-group-send/ 301

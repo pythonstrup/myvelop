@@ -43,8 +43,8 @@ export const topicHubs: TopicHub[] = [
 	{
 		title: { en: 'Designing a Notification Server', ko: '알림 서버 설계하기' },
 		summary: {
-			en: 'The series on the trade-offs behind a notification server: where to hand off delivery, rate limits, where delivery history lives and how to read it, and group sends that do not keep order.',
-			ko: '알림 서버를 설계하며 따진 트레이드오프를 다루는 연재입니다. 발송을 어디에 맡길지, rate limit, 발송 이력을 쌓고 읽는 방법, 순서가 섞이는 그룹 발송을 다룹니다.',
+			en: 'The series on the trade-offs behind a notification server: where to hand off delivery, how to respect rate limits, and where delivery history lives and how to read it.',
+			ko: '알림 서버를 설계하며 따지는 트레이드오프를 다루는 연재입니다. 발송을 어디에 맡길지, 외부 API의 한도를 어떻게 지킬지, 발송 이력을 어디에 쌓고 어떻게 읽을지를 다룹니다.',
 		},
 		series: { en: 'Designing a Notification Server', ko: '알림 서버 설계하기' },
 	},

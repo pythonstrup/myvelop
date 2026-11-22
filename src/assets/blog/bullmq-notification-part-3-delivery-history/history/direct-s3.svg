@@ -96,7 +96,7 @@
     <rect class="node" x="340" y="390" width="200" height="66" rx="12"/>
     <use href="#icon-lambda" x="348" y="399" width="48" height="48"/>
     <text class="node-title" x="404" y="420">Lambda</text>
-    <text class="small" x="404" y="442">batch transform · WIF</text>
+    <text class="small" x="404" y="442">batch transform</text>
   </g>
 
   <!-- Analysis platform -->
