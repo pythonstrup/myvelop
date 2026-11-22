@@ -1,0 +1,354 @@
+---
+title: "waiting-children과 FlowProducer - BullMQ에서 job 사이의 의존 다루기"
+description: "처리 중에 자식 job을 기다리는 waiting-children과 트리를 한 번에 넣는 FlowProducer. 가상의 발송 흐름을 두 설계로 만들어 경합이 어디서 생기고 사라지는지 비교한다."
+pubDate: "2026-08-20T21:00:00+09:00"
+updatedDate: "2026-11-22T21:00:00+09:00"
+tags: ["BullMQ", "waiting-children", "FlowProducer", "architecture", "concurrency"]
+series: "BullMQ 다루기"
+seriesOrder: 2
+socialImage: "../../../assets/blog/bullmq-waiting-children-group-send/og.png"
+---
+
+import WaitingChildrenDemo from "@/materials/bullmq-waiting-children-group-send/WaitingChildrenDemo";
+import PrematureSendDemo from "@/materials/bullmq-waiting-children-group-send/PrematureSendDemo";
+import GroupFanInDiagram from "@/materials/bullmq-waiting-children-group-send/GroupFanInDiagram";
+import PlanFlowDiagram from "@/materials/bullmq-waiting-children-group-send/PlanFlowDiagram";
+import { CreateRaceDemo, ResendGuardDemo, RolloverRaceDemo, SendDedupeDemo } from "@/materials/bullmq-waiting-children-group-send/GroupRaceDemos";
+
+## 들어가며
+
+[BullMQ란](/ko/blog/what-is-bullmq) 글에서 BullMQ의 구조와 핵심 기능을 정리했다. 이번 글은 그 가운데 job 사이의 의존을 다루는 두 기능을 하나의 발송 흐름 위에서 써 본다. 처리 중에 자식 job을 기다리는 waiting-children과, 부모 자식 트리를 한 번에 넣는 FlowProducer다. 발송을 어디에 맡기고 한도를 어떻게 지킬지 같은 설계 판단은 [알림 서버 설계하기](/ko/blog/notification-server-part-1-delegating-delivery) 시리즈에서 따로 다룬다.
+
+예로 쓸 흐름은 그룹 발송이다. 대량 발송을 외부 발송 API의 그룹에 나눠 담고, 다 담기면 한 번에 보낸다. 요구는 두 문장이다. 그룹은 필요한 만큼만 만들고, 각 그룹은 다 담긴 뒤에 한 번만 보낸다. 그런데 큐는 순서를 보장하지 않고 워커는 여럿이라, 이 두 문장을 지키는 데 드는 장치는 <strong>누가 언제 정하느냐</strong>에 따라 크게 달라진다.
+
+이 글은 같은 요구를 두 설계로 만든다. 설계 A는 청크 job이 처리하면서 정하고, 설계 B는 계획 job 하나가 미리 정한다. 둘을 만들어 경합이 나는 자리를 세어 보고, 어느 쪽이 맞는 조건을 정리한다. 글에 나오는 발송 API와 숫자는 모두 설명을 위해 만든 가상의 것이다.
+
+## 가정한 발송 API와 지켜야 할 문장
+
+발송 API가 이런 그룹 기능을 준다고 해 보자.
+
+- 그룹을 만들면 그룹 id가 돌아온다.
+- 그룹에 메시지를 담는다. 요청 하나에 최대 1,000건까지 담을 수 있다.
+- 다 담은 뒤 발송을 트리거하면 그룹 전체가 한 번에 나간다.
+- 그룹 하나에는 최대 1만 건까지 담긴다. 넘치는 메시지는 오류 없이 버려진다.
+- 같은 그룹에 같은 수신자를 다시 담으면 API가 걸러 낸다.
+- 이미 트리거된 그룹은 다시 트리거되지 않는다.
+
+담는 것과 보내는 것이 나뉘어 있어서, 도중에 무언가 실패한 그룹은 "잘못 나감"이 아니라 <strong>"안 나감"</strong>으로 끝난다. 진행 상황과 결과를 묶음 단위로 볼 수 있다는 것도 이 기능을 쓰는 이유다.
+
+보낼 대상은 2만 5천 건이고, 한 번에 읽기엔 많아 1,000건씩 페이지로 읽는다고 하자. 대상 목록은 묶음이 시작될 때 고정된다. 청크 하나가 담기 요청 하나라서 청크 job은 25개가 되고, 그룹 상한이 1만 건이라 그룹은 셋(1만, 1만, 5천 건)이 필요하다. 청크 job은 같은 큐에 들어가 여러 워커에 흩어진다.
+
+<GroupFanInDiagram />
+
+이 흐름이 지켜야 할 문장을 먼저 적는다. 경합은 머리로 떠올리면 다 떠올렸다는 보장이 없다. 대신 문장마다 "이걸 깨려면 누가 어디로 동시에 들어와야 하는가"를 물으면 경합이 따라 나온다. 뒤에서 두 설계의 경합을 셀 때 이 네 문장이 기준이 된다.
+
+- 그룹은 1만 건을 넘지 않게, 필요한 만큼만 만든다.
+- 각 그룹은 담을 몫이 전부 담겼을 때만 발송한다.
+- 각 그룹은 정확히 한 번 발송한다.
+- 묶음의 리포트는 한 번 나간다.
+
+외부 API를 부르는 일은 그룹 생성, 담기, 발송 트리거 셋이다. 두 설계 모두 이 셋을 <strong>각각 job으로</strong> 만든다. 큐에 건 limiter는 job을 세기 때문에 job 안에서 직접 부른 호출은 세지 못하고, 재시도와 백오프, 실패 기록도 호출이 job이어야 큐가 맡아 준다. 그래서 job 이름은 셋이다.
+
+- `group.create`: 그룹을 만들고 id를 돌려준다.
+- `group.stage`: 청크 하나를 그룹에 담는다.
+- `group.send`: 그룹의 발송을 트리거한다.
+
+## 설계 A: 청크가 처리하면서 정한다
+
+첫 설계에서 청크를 만드는 쪽은 그룹을 전혀 모른다. 대상을 1,000건씩 잘라 `group.stage` job을 넣기만 하고, 그룹을 언제 만들지, 어느 그룹에 담을지, 언제 보낼지는 청크 job이 처리하면서 정한다. 만드는 쪽이 단순하고, 청크가 나오는 대로 바로 담기 시작한다는 장점이 있다.
+
+### 그룹이 없으면 자식을 낳고 잠든다
+
+청크 job이 담으려는 순간 그룹이 아직 없을 수 있다. 그룹 생성도 job이어야 하니 청크는 `group.create`를 큐에 넣고, 그룹이 생길 때까지 <strong>기다렸다가 이어서</strong> 담아야 한다. 큐는 비동기라 다른 job의 결과를 그 자리에서 받을 수 없다. 이 "기다렸다가 이어서"를 맡는 기능이 waiting-children이다.
+
+```ts
+// 설계 A: 청크 job 처리 중
+let groupId = await redis.get(`batch:${batchId}:group`);
+if (!groupId) {
+  await groups.add("group.create", { batchId }, {
+    jobId: `create-${batchId}-${seq}`,
+    parent: { id: job.id!, queue: job.queueQualifiedName },
+    failParentOnFailure: true,
+  });
+  if (await job.moveToWaitingChildren(token)) {
+    throw new WaitingChildrenError();
+  }
+  // 자식이 벌써 끝났다면 잠들지 않고 여기로 온다
+  groupId = await redis.get(`batch:${batchId}:group`);
+}
+await stage(groupId, chunk);
+```
+
+순서대로 읽으면 이렇다.
+
+1. `parent`로 자신을 지정해 자식을 넣는다. "자식이 끝나면 나를 깨워 달라"는 연결이다.
+2. `moveToWaitingChildren(token)`으로 자신을 waiting-children 상태로 옮긴다. 끝나지 않은 자식이 있으면 `true`가 돌아온다.
+3. `WaitingChildrenError`를 던진다. 실패가 아니라 상태가 바뀌었다는 신호라서 재시도 횟수(`attemptsMade`)도 늘지 않는다.
+
+자식이 끝나면 부모는 대기열로 돌아와 <strong>처음부터 다시 실행된다.</strong> 멈춘 자리부터 이어지는 것이 아니다. 위 코드에서는 첫머리의 Redis 조회가 이 재진입을 받아 준다. 다시 실행될 때는 그룹 id가 조회되므로 곧바로 담기로 넘어간다. 대신 그룹이 없던 청크는 워커 슬롯을 두 번 쓴다.
+
+<WaitingChildrenDemo client:visible />
+
+<details>
+<summary>재시도 횟수와 시작 횟수</summary>
+
+BullMQ 문서는 `WaitingChildrenError`나 `DelayedError` 같은 특별한 오류로 job을 옮길 때 `attemptsMade`가 늘지 않는다고 밝힌다. 처리를 시작한 횟수는 따로 세며, 이 횟수에 상한을 두려면 `maxStartedAttempts`를 쓴다. 잠들었다 깨기를 여러 번 하는 job이라면 이 값을 넉넉히 잡아야 한다.
+
+</details>
+
+### 같은 jobId로는 함께 기다릴 수 없다
+
+청크 여럿이 거의 동시에 들어와 모두 그룹이 없다고 보면, 각자 자식을 낳는다. 그룹 생성은 묶음당 한 번이니 jobId도 `create-${batchId}` 하나로 지으면 될 것 같지만, 그러면 두 번째 청크부터 add가 실패한다. 같은 jobId의 job이 이미 <strong>살아 있는 다른 부모</strong>에 붙어 있으면, BullMQ는 새 부모로 바꿔 걸지 않고 `ParentJobCannotBeReplaced` 오류를 낸다. 자식 하나를 여러 부모가 함께 기다리는 구조는 만들 수 없다.
+
+그래서 jobId를 청크마다 따로 짓는다(`create-${batchId}-${seq}`). 그러면 부모마다 자식이 하나씩 생기고, 그룹 생성 job이 여럿 동시에 돈다. 이 경합은 Redis의 `SET NX`로 푼다. 각자 그룹을 만든 뒤 id를 `SET NX`로 쓰면 먼저 쓴 쪽의 그룹만 남고, 진 쪽은 자기가 만든 빈 그룹을 지운다. 늦게 실행된 자식은 이미 저장된 id를 보고 그대로 끝난다.
+
+<CreateRaceDemo client:visible />
+
+결과는 맞지만 대가가 있다. 청크 열 개가 겹치면 그룹 생성 호출이 최대 열 번, 삭제 호출이 최대 아홉 번 나간다. 모두 limiter의 몫을 쓰고, 삭제가 실패하면 빈 그룹이 남는다.
+
+<details>
+<summary>같은 jobId로 다시 add하면 BullMQ가 하는 일</summary>
+
+이미 있는 jobId로 add하면 BullMQ는 새 job을 만들지 않는다. 새 add에 `parent`가 없으면 중복 이벤트만 남기고 무시한다. `parent`가 있으면 기존 job의 부모를 본다. 기존 job에 부모가 없거나, 같은 부모이거나, 부모가 이미 사라졌다면 새 부모로 연결을 걸거나 갱신한다. 기존 job이 살아 있는 다른 부모에 붙어 있으면 -7, 곧 `ParentJobCannotBeReplaced`를 돌려주고 add가 오류를 던진다. 소스는 [handleDuplicatedJob.lua](https://github.com/taskforcesh/bullmq/blob/master/src/commands/includes/handleDuplicatedJob.lua)에 있다.
+
+</details>
+
+### 다 담겼는지는 건수로 센다
+
+그룹을 언제 보낼지 정하는 것도 청크의 몫이다. 마지막 청크에 표시를 달고 "마지막이 끝나면 보낸다"고 하면 틀린다. 큐는 순서를 보장하지 않아서, 마지막 표시가 붙은 청크가 중간 청크보다 먼저 끝날 수 있다.
+
+<PrematureSendDemo client:visible />
+
+그래서 판정은 건수로 한다. 청크가 담기를 마치면 Redis 해시에 자기 번호를 기록하고, 기록이 그 그룹에 담길 몫과 맞을 때만 발송한다. 마지막 표시는 "끝 번호가 몇이다"라는 정보만 준다. 중간이 비어 있으면 건수가 맞지 않아 아무 일도 일어나지 않는다. 기록은 담기 요청이 성공한 <strong>뒤에</strong> 남긴다. 담다가 끊긴 청크는 기록이 없으니 재시도가 통째로 다시 담고, 이미 담긴 수신자는 API가 걸러 낸다.
+
+이번에는 완성을 보는 청크가 여럿일 수 있다. 마지막 두 청크가 거의 동시에 끝나면 둘 다 건수가 맞는 것을 본다. 이것은 jobId로 푼다. 발송 job의 jobId를 `send-${groupId}`처럼 그룹에서 파생시키면 둘이 동시에 add해도 BullMQ가 하나만 받는다. 발송 job에는 부모가 없어서 두 번째 add는 조용히 무시된다. 앞 절에서 함정이었던 jobId 중복이 여기서는 도구가 된다.
+
+<SendDedupeDemo client:visible />
+
+### 상한도 처리 중에 지켜야 한다
+
+그룹 상한 1만 건도 청크가 지켜야 한다. 만드는 쪽이 그룹을 모르니, 어느 청크가 몇 번째 그룹에 들어갈지도 처리 시점에 정해진다. 그룹이 차면 새 그룹을 여는데, 이 그룹 하나하나를 세대라고 부르자. 세대 넘김이 처리 중에 일어나면서 경합이 넷 더 생긴다.
+
+- <strong>세대를 닫는 쪽은 하나여야 한다.</strong> 둘이 닫으면 세대 번호가 두 번 올라 빈 세대가 생긴다. 닫는 쪽을 `SET NX`로 정하고, 진 쪽은 재시도할 수 있는 오류로 물러났다가 올라간 세대에 합류한다.
+- <strong>세대의 자리는 반납하지 않는다.</strong> 청크는 담기 전에 `HINCRBY`로 자리를 잡고, 반환값이 상한 안이면 그 세대에 들어간다. 실패한 청크의 자리를 되돌리면 이미 닫힌 세대에 늦은 청크가 끼어들 틈이 생긴다. 반납하지 않으면 그 틈이 없다. 재시도가 자리를 두 번 잡아도 세대가 조금 일찍 닫힐 뿐이다.
+- <strong>배정은 담기보다 먼저 기록한다.</strong> 넘김 뒤에 돌아온 재시도가 새 세대에 담기면, 그룹이 달라 API의 중복 거르기가 작동하지 않고 같은 수신자에게 두 번 나간다. 청크가 어느 세대에 속하는지 담기 전에 적어 두면 재시도는 항상 원래 그룹으로 돌아간다.
+- <strong>닫힌 세대도 담는 중인 청크를 기다린다.</strong> 자리는 잡았지만 아직 담는 중인 청크가 있으면 발송 job이 오류를 던지고 재시도로 다시 확인한다. 그대로 보내면 그 청크가 빠진 채 나간다.
+
+두 청크가 나란히 상한을 넘기고, 하나가 세대를 닫고, 진 쪽이 새 세대에 합류하는 장면이다.
+
+<RolloverRaceDemo client:visible />
+
+자리 잡기와 배정 기록은 서로 다른 Redis 명령이다. 그 사이에서 프로세스가 멈추면 닫힌 세대의 발송이 그 청크를 못 보고 나갈 수 있다. Lua 스크립트로 둘을 묶으면 막을 수 있지만 장치가 하나 더 는다.
+
+### 경합을 모아 보면
+
+리포트도 같은 문제를 겪는다. 결말을 보는 청크가 여럿이니 리포트도 `SET NX`로 한 번만 통과시킨다. 앞의 네 문장을 기준으로 설계 A의 경합을 모으면 이렇다.
+
+| 경합이 나는 자리 | 언제 나나 | 막는 장치 |
+| --- | --- | --- |
+| 그룹 생성 | 여러 청크가 동시에 그룹이 없다고 본다 | `SET NX`, 진 쪽은 빈 그룹 삭제 |
+| 도착 순서 역전 | 마지막 표시가 중간보다 먼저 끝난다 | 건수 판정 |
+| 발송 트리거 | 여러 청크가 동시에 완성을 본다 | `send-${groupId}` jobId |
+| 세대를 닫는 쪽 | 여러 청크가 동시에 상한을 넘긴다 | `SET NX` |
+| 닫힌 세대의 늦은 청크 | 반납된 자리에 늦은 청크가 들어온다 | 반납하지 않는 `HINCRBY` |
+| 넘김 뒤의 재시도 | 재시도가 새 세대에 담긴다 | 배정을 담기보다 먼저 기록 |
+| 담는 중인 청크 | 닫힌 세대에 아직 담는 청크가 있다 | 발송 job이 오류를 던지고 재시도 |
+| 리포트 | 여러 청크가 동시에 결말을 본다 | `SET NX` |
+
+여덟 줄 모두 <strong>같은 역할을 여러 job이 나눠 맡아서</strong> 나는 경합이다. 그룹을 만드는 쪽도, 세대를 닫는 쪽도, 발송을 정하는 쪽도, 리포트를 내는 쪽도 청크 전부다. 재시도에서 오는 경합도 따로 있는데, 그것은 설계 B에도 똑같이 남으니 뒤에서 함께 다룬다.
+
+## 설계 B: 계획 job 하나가 미리 정한다
+
+설계 A의 경합은 정할 일을 청크 전부가 나눠 가져서 생겼다. 그렇다면 정할 일을 <strong>한 job에 모으면</strong> 그 자리 자체가 없어진다. 쓰는 쪽이 하나면 상호 배제가 필요 없다는 single-writer 원칙이다. 설계 B는 대상을 읽는 일을 `batch.plan`이라는 계획 job에 맡기고, 그룹과 세대에 관한 결정을 모두 이 job이 미리 내린다.
+
+### 세대는 읽으면서 나눈다
+
+계획 job은 대상을 1,000건씩 읽으면서 건수를 누적하고, 누적이 1만 건에 닿으면 거기서 세대를 끊는다. 청크는 많아야 1,000건이니 세대 하나가 1만 건을 넘을 일이 없다. 처리 중에 걸러지는 수신자가 있어 실제로 담기는 건수가 줄어도 마찬가지다. 대가는 그룹이 조금 덜 찰 수 있다는 것뿐이다.
+
+이렇게 나누면 청크가 어느 세대에 속하는지가 job data에 들어간 채로 만들어진다. 재시도가 다른 세대로 갈 길이 처음부터 없다.
+
+### 그룹은 계획 job이 기다려서 받는다
+
+세대마다 그룹이 하나 필요하다. 계획 job은 `group.create`를 자식으로 넣고 waiting-children으로 기다린다. 설계 A와 같은 기능이지만 이번에는 기다리는 부모가 <strong>하나뿐</strong>이다. jobId를 세대마다 하나(`create-${batchId}-${gen}`)로 지어도 다른 부모와 부딪힐 일이 없고, 그룹 생성은 세대마다 한 번만 일어난다. `SET NX`도 빈 그룹 삭제도 필요 없다.
+
+계획 job은 여러 번 잠들었다 깨므로, 다음에 할 단계를 job data에 저장해 둔다. BullMQ 문서가 [Process Step Jobs](https://docs.bullmq.io/patterns/process-step-jobs)라는 이름으로 소개하는 방식이다. 깨어난 계획 job은 저장된 단계부터 이어 가고, 자식이 돌려준 그룹 id는 `getChildrenValues()`로 읽는다.
+
+```ts
+// 설계 B: 계획 job. 단계를 job data에 저장해 두고 깨어날 때마다 이어 간다.
+async function plan(job: Job, token: string) {
+  const { batchId } = job.data;
+  while (true) {
+    const { gen, step } = job.data;
+
+    if (step === "create") {
+      await groups.add("group.create", { batchId, gen }, {
+        jobId: `create-${batchId}-${gen}`,
+        parent: { id: job.id!, queue: job.queueQualifiedName },
+        failParentOnFailure: true,
+      });
+      await job.updateData({ ...job.data, step: "fanout" });
+      if (await job.moveToWaitingChildren(token)) {
+        throw new WaitingChildrenError();
+      }
+      continue;
+    }
+
+    // step === "fanout": 그룹 id를 받아 이 세대를 넣는다
+    const values = await job.getChildrenValues();
+    const groupId = values[`${groups.qualifiedName}:create-${batchId}-${gen}`];
+    const { chunks, hasMore } = await readGeneration(batchId, gen);
+    await addGeneration(job, groupId, gen, chunks); // 다음 절
+    if (!hasMore) return;
+    await job.updateData({ ...job.data, gen: gen + 1, step: "create" });
+  }
+}
+```
+
+`readGeneration`은 이 세대의 대상을 1,000건씩 최대 열 페이지 읽어 청크로 돌려준다. 대상 목록이 고정되어 있으니, 계획 job이 어느 단계에서 다시 실행되어도 같은 세대에서는 같은 청크가 나온다.
+
+### 세대는 flow 하나로 넣는다
+
+그룹 id를 받으면 그 세대의 청크를 FlowProducer로 한 번에 넣는다. `group.send`가 부모이고, 청크마다 하나씩인 `group.stage`가 자식이다. FlowProducer는 트리 전체를 원자적으로 넣고, 부모는 자식이 <strong>전부</strong> 끝난 뒤에야 실행된다. 설계 A에서 건수 판정과 `send-${groupId}` jobId로 지키던 두 문장, "다 담겼을 때만"과 "한 번만"을 BullMQ가 맡는 셈이다. 도착 순서가 뒤집혀도, 마지막 두 청크가 동시에 끝나도 부모는 하나이고 한 번 실행된다.
+
+```ts
+// 한 세대를 flow 하나로 넣는다. send가 부모, stage가 자식이다.
+async function addGeneration(job: Job, groupId: string, gen: number, chunks: Chunk[]) {
+  const { batchId } = job.data;
+  await flows.add({
+    name: "group.send",
+    queueName: "groups",
+    data: { groupId },
+    opts: {
+      jobId: `send-${batchId}-${gen}`,
+      parent: { id: job.parent!.id, queue: job.parent!.queueKey }, // 리포트 job 밑에 붙인다
+      ignoreDependencyOnFailure: true,
+    },
+    children: chunks.map((chunk) => ({
+      name: "group.stage",
+      queueName: "groups",
+      data: { groupId, chunk },
+      opts: { jobId: `stage-${batchId}-${chunk.seq}`, failParentOnFailure: true },
+    })),
+  });
+}
+```
+
+설계 A가 FlowProducer를 쓸 수 없던 이유는 트리를 넣는 시점에 자식이 무엇인지 몰랐기 때문이다. 설계 B에서는 계획 job이 세대 하나를 다 읽은 뒤에 넣으므로 자식을 전부 안다.
+
+### 리포트는 맨 위의 job이 한 번 낸다
+
+`group.send`를 계획 job의 자식으로 붙이면 될 것 같지만, 그러면 세대가 하나씩 줄을 선다. waiting-children에 들어간 부모는 끝나지 않은 자식이 <strong>모두</strong> 끝나야 깨어나기 때문이다. 계획 job이 2세대의 그룹 id를 기다리는 동안 1세대의 발송까지 함께 기다리게 된다.
+
+그래서 리포트를 맡는 `batch.report`를 맨 위에 두고 계획 job을 그 자식으로 넣는다. 계획 job은 세대마다 `group.send` flow를 자기 부모인 리포트 job 밑에 붙인다(`opts.parent`). 계획 job의 자식은 `group.create`뿐이라 그룹 id만 기다리고, 앞 세대가 담기는 동안 다음 세대를 읽는다. 리포트 job은 계획 job과 모든 `group.send`가 끝나야 실행된다. 계획 job은 마지막 세대를 붙인 뒤에야 끝나므로 리포트가 일찍 깨어날 틈이 없다.
+
+```ts
+// 묶음을 시작하는 쪽: 리포트를 부모로, 계획 job을 자식으로 넣는다.
+await flows.add({
+  name: "batch.report",
+  queueName: "batches",
+  data: { batchId },
+  children: [
+    {
+      name: "batch.plan",
+      queueName: "batches",
+      data: { batchId, gen: 1, step: "create" },
+      opts: { failParentOnFailure: true },
+    },
+  ],
+});
+```
+
+세 세대가 다 붙은 뒤의 트리는 이렇다.
+
+<PlanFlowDiagram />
+
+### 실패는 트리를 따라 올라간다
+
+청크가 재시도를 다 쓰고도 실패하면 어떻게 될까. 자식의 실패는 기본값으로는 부모 상태에 영향을 주지 않는다. 아무 옵션도 없으면 부모는 오지 않을 자식을 계속 기다린다. 그래서 실패를 어디까지 올릴지 자리마다 정한다.
+
+- <strong>`group.stage`에는 `failParentOnFailure`</strong> — 청크 하나가 끝내 실패하면 그 세대의 `group.send`도 실패한다. 그룹이 트리거되지 않으니 덜 담긴 채 나가는 일이 없다.
+- <strong>`group.send`에는 `ignoreDependencyOnFailure`</strong> — 한 세대가 실패해도 리포트 job은 나머지 세대를 기다렸다가 실행된다. 실패한 세대는 `getIgnoredChildrenFailures()`로 읽어 리포트에 적는다.
+- <strong>`group.create`와 `batch.plan`에는 `failParentOnFailure`</strong> — 그룹을 만들지 못하거나 대상을 읽지 못하면 묶음 전체를 실패로 드러낸다. 이미 붙은 세대는 그대로 나가고, 나머지 세대는 나가지 않는다.
+
+<details>
+<summary>자식이 실패했을 때 부모를 다루는 옵션</summary>
+
+BullMQ에는 자식 쪽에 거는 옵션이 넷 있다. `failParentOnFailure`는 부모도 실패시키고, 실패는 그 위의 부모로도 이어진다. `ignoreDependencyOnFailure`는 실패한 자식을 기다림에서 빼고, 남은 자식이 없으면 부모를 실행한다. `removeDependencyOnFailure`도 기다림에서 빼지만 실패 내역을 남기지 않는다. v5.58.0부터 있는 `continueParentOnFailure`는 자식이 실패하는 즉시 부모를 실행한다. `ignoreDependencyOnFailure`나 `continueParentOnFailure`로 빠진 자식의 실패 내역은 부모에서 `getIgnoredChildrenFailures()`로 읽는다. 자세한 동작은 [Fail Parent](https://docs.bullmq.io/guide/flows/fail-parent)와 [Ignore Dependency](https://docs.bullmq.io/guide/flows/ignore-dependency) 문서에 있다.
+
+</details>
+
+### 사라진 것
+
+설계 A의 여덟 자리를 설계 B와 나란히 놓으면 이렇다.
+
+| 경합이 나는 자리 | 설계 A | 설계 B |
+| --- | --- | --- |
+| 그룹 생성 | `SET NX`, 진 쪽은 빈 그룹 삭제 | 계획 job이 세대마다 한 번 만든다 |
+| 도착 순서 역전 | 건수 판정 | 부모가 자식 전부를 기다린다 |
+| 발송 트리거 | `send-${groupId}` jobId | 세대마다 부모가 하나다 |
+| 세대를 닫는 쪽 | `SET NX` | 계획 job이 읽으면서 나눈다 |
+| 닫힌 세대의 늦은 청크 | 반납하지 않는 `HINCRBY` | 자리를 잡을 일이 없다 |
+| 넘김 뒤의 재시도 | 배정을 담기보다 먼저 기록 | 세대가 job data에 들어 있다 |
+| 담는 중인 청크 | 발송 job이 오류를 던지고 재시도 | 부모가 자식 전부를 기다린다 |
+| 리포트 | `SET NX` | 리포트 job이 하나다 |
+
+Redis에 따로 두던 상태도 대부분 사라진다. 그룹 id, 담기 기록, 세대 번호와 자리 카운터, 닫는 쪽과 리포트의 게이트가 없어지고, 남는 것은 뒤에서 볼 발송 마커 하나다. 자리 잡기와 배정 기록 사이의 틈도 함께 없어진다. 그 두 기록이 처음부터 없기 때문이다.
+
+## 두 설계에 똑같이 남는 것
+
+정할 일을 한 곳에 모아도 없어지지 않는 경합이 있다. 같은 job이 두 번 실행되는 경우다. 역할을 모으는 것으로는 이것을 막을 수 없다.
+
+### 담기 재시도
+
+담기 요청의 응답이 끊기면 재시도가 같은 1,000건을 다시 담는다. 가정한 API는 같은 그룹의 같은 수신자를 걸러 내므로 등록 수는 늘지 않는다. 설계 B에서는 재시도가 다른 세대로 갈 수 없으니 이 거르기가 항상 작동한다. API에 이런 거르기가 없다면 수신자마다 멱등 키를 붙이는 식으로 따로 막아야 한다.
+
+### 발송 재시도
+
+발송 트리거는 성공했는데 응답만 끊기면, `group.send`가 실패로 기록되고 재시도가 한 번 더 트리거하려 든다. 여기서 jobId는 도움이 되지 않는다. jobId 중복 제거는 <strong>넣는 시점의 장치</strong>라 job이 둘 생기는 것을 막을 뿐, 이미 있는 job이 다시 실행되는 것은 막지 않는다. 완료된 job이 보존 기간을 넘겨 지워진 뒤에 같은 jobId로 다시 넣는 것도 막지 못한다. 계획 job이 재진입하면서 같은 세대를 다시 붙이는 경우가 그렇다.
+
+그래서 발송의 "한 번"은 실행 시점의 확인 두 겹이 지킨다. 첫째는 발송 마커다. 트리거가 성공하면 `SET NX`로 표시를 남기고, 실행할 때마다 먼저 확인한다. 둘째는 API의 그룹 상태 조회다. 응답만 끊긴 재시도는 마커를 남기기 전에 끊겼으니 마커가 없는 채로 돌아오는데, 이때는 API가 보는 그룹 상태로 판단한다. 마커만 믿으면 Redis가 기록을 잃었을 때 두 번 나가고, 조회만 믿으면 실행할 때마다 외부 호출이 하나 더 붙으니 둘을 겹친다.
+
+<ResendGuardDemo client:visible />
+
+### 멈춘 워커의 이중 실행
+
+마지막은 stalled다. BullMQ 워커는 처리 중인 job에 잠금을 걸고 주기적으로 갱신한다. 기본값으로 잠금은 30초(`lockDuration`)이고 그 절반마다 갱신하며, 30초마다(`stalledInterval`) 잠금이 풀린 job을 찾는다. 이벤트 루프가 오래 막히거나 프로세스가 멈춰 잠금을 갱신하지 못하면, 다음 점검에서 그 job은 stalled로 판정되어 다른 워커가 다시 처리한다. 원래 워커가 아직 살아 있었다면 같은 job이 동시에 두 번 돈다. stalled에서 되살아나는 횟수는 기본값으로 한 번(`maxStalledCount`)이고, 넘으면 job은 실패한다.
+
+`group.send`가 동시에 두 번 돌면 발송 마커도 소용이 없다. 둘 다 마커가 없는 것을 보고 들어갈 수 있다. 확인과 실행 사이의 이 틈은 Redis 쪽 장치를 아무리 겹쳐도 닫히지 않는다. 마지막 방어선은 가정한 API의 성질, "이미 트리거된 그룹은 다시 트리거되지 않는다"다. 이 성질이 있으면 그룹 id가 곧 멱등 키가 되고, 마커와 상태 조회는 쓸데없는 호출을 줄이는 장치가 된다. "정확히 한 번"은 중간의 장치가 아니라 끝단의 확인으로 완성된다는 end-to-end argument와 같은 결론이다. 실제 API로 이 설계를 만든다면 <strong>이 성질부터 문서나 실측으로 확인해야 한다.</strong> 그런 성질이 없다면 어느 설계를 골라도 두 번 나갈 틈이 남는다.
+
+## 무엇으로 고를까
+
+설계 B가 경합을 크게 줄이지만 공짜는 아니다.
+
+- <strong>세대 하나를 다 읽어야 넣을 수 있다.</strong> FlowProducer는 자식을 전부 알아야 트리를 넣으므로, 한 세대의 담기는 계획 job이 그 세대를 다 읽은 뒤에야 시작한다. 계획 job은 그동안 한 세대 분량을 들고 있어야 한다.
+- <strong>계획 job이 오래 살아야 한다.</strong> 세대마다 잠들었다 깨면서 단계를 저장하고, 깨어날 때마다 처음부터 다시 실행되는 코드를 견뎌야 한다.
+- <strong>대상 목록이 고정되어야 한다.</strong> 재진입한 계획 job이 같은 세대를 다시 읽을 때 같은 청크가 나와야 jobId 중복 제거가 맞게 작동한다.
+- <strong>묶음 전체가 한 job에 달린다.</strong> 계획 job이 끝내 실패하면 이미 붙은 세대만 나간다.
+
+설계 A가 필요한 때도 있다. 정할 일을 한 곳에 모으려면, 청크가 어느 그룹에 들어갈지를 청크를 만들 때 계산할 수 있어야 한다. 여러 곳에서 따로 들어온 발송이 같은 분류라는 이유로 한 그룹에 모여야 하거나, 청크를 만드는 쪽을 고칠 수 없다면 미리 정할 자리가 없다. 그때는 설계 A의 장치를 하나씩 들여야 한다.
+
+| 조건 | 맞는 설계 |
+| --- | --- |
+| 청크가 들어갈 그룹을 청크를 만들 때 계산할 수 있다 | 설계 B |
+| 여러 곳에서 들어온 청크가 한 그룹에 섞인다 | 설계 A |
+| 청크를 만드는 쪽을 바꿀 수 없다 | 설계 A |
+| 세대 하나를 다 읽기 전에 담기를 시작해야 한다 | 설계 A |
+
+두 기능의 자리도 여기서 정리된다. waiting-children은 <strong>처리 중에 결과를 받아 이어 가야 하는 부모가 하나일 때</strong> 맞는다. 설계 B의 계획 job이 그렇다. 설계 A처럼 여러 job이 같은 결과를 기다리면 jobId 함정과 생성 경합이 따라온다. FlowProducer는 <strong>자식을 미리 다 알 때</strong> 결과를 모으는 도구다. 기다릴 결과가 없는 일에는 둘 다 필요 없고, 독립 job과 jobId로 충분하다.
+
+## 마치며
+
+같은 요구를 두 번 만들어 보면 경합의 수는 기능이 아니라 <strong>정하는 자리</strong>가 정한다. 청크 전부가 정하면 같은 역할을 여럿이 맡아 경합이 여덟 자리로 늘고, 계획 job 하나가 정하면 그 자리들이 처음부터 없다. 어느 쪽이든 남는 것은 같은 job이 두 번 실행되는 경우이고, 그 마지막 방어선은 큐 바깥, 발송 API의 성질에 있다.
+
+BullMQ의 기능도 그 자리에 맞춰 고르면 된다. 처리 중에 결과를 기다려야 하는 부모가 하나라면 waiting-children을, 자식을 미리 다 안다면 FlowProducer를 쓴다. 여러 job이 같은 것을 기다리는 구조가 보이면, 장치를 더하기 전에 정하는 자리를 옮길 수 있는지부터 묻는 편이 낫다.
+
+## 참고
+
+- [BullMQ - Flows](https://docs.bullmq.io/guide/flows)
+- [BullMQ - Fail Parent](https://docs.bullmq.io/guide/flows/fail-parent)
+- [BullMQ - Ignore Dependency](https://docs.bullmq.io/guide/flows/ignore-dependency)
+- [BullMQ - Process Step Jobs](https://docs.bullmq.io/patterns/process-step-jobs)
+- [BullMQ - Stalled Jobs](https://docs.bullmq.io/guide/jobs/stalled)
+- [BullMQ - handleDuplicatedJob.lua](https://github.com/taskforcesh/bullmq/blob/master/src/commands/includes/handleDuplicatedJob.lua)
+- [Martin Thompson - Single Writer Principle](https://mechanical-sympathy.blogspot.com/2011/09/single-writer-principle.html)
+- [Saltzer, Reed, Clark - End-to-End Arguments in System Design](https://web.mit.edu/Saltzer/www/publications/endtoend/endtoend.pdf)

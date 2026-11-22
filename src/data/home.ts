@@ -41,12 +41,12 @@ export const topicHubs: TopicHub[] = [
 		series: { en: 'Concurrency Control', ko: '동시성 제어' },
 	},
 	{
-		title: { en: 'Notifications with BullMQ', ko: 'BullMQ로 알림 시스템 운영하기' },
+		title: { en: 'Designing a Notification Server', ko: '알림 서버 설계하기' },
 		summary: {
-			en: 'The series on running notification delivery with BullMQ: what the queue takes on, rate limits, where delivery history lives and how to read it, and group sends that do not keep order.',
-			ko: '알림 발송을 BullMQ로 운영하는 연재입니다. 큐가 맡는 일, rate limit, 발송 이력을 쌓고 읽는 방법, 순서가 섞이는 그룹 발송을 다룹니다.',
+			en: 'The series on the trade-offs behind a notification server: where to hand off delivery, how to respect rate limits, and where delivery history lives and how to read it.',
+			ko: '알림 서버를 설계하며 따지는 트레이드오프를 다루는 연재입니다. 발송을 어디에 맡길지, 외부 API의 한도를 어떻게 지킬지, 발송 이력을 어디에 쌓고 어떻게 읽을지를 다룹니다.',
 		},
-		series: { en: 'Running a Notification System with BullMQ', ko: 'BullMQ로 알림 시스템 운영하기' },
+		series: { en: 'Designing a Notification Server', ko: '알림 서버 설계하기' },
 	},
 	{
 		title: { en: 'Parquet and S3', ko: 'Parquet와 S3' },
@@ -66,14 +66,14 @@ export const topicHubs: TopicHub[] = [
  * Seeded to cover the themes a new reader actually finds here:
  * - llm-gateway: opens the LLM gateway comparison (series order 1)
  * - concurrency-single-update: the first post in the concurrency series
- * - bullmq-notification-part-1-what-is-bullmq: opens the notification series
+ * - notification-server-part-1-delegating-delivery: opens the notification series
  * - exclusion-constraint-booking: database locking, outside that series
  * - passwordless-db-access-least-privilege: a pod reaching RDS without a password
  */
 export const startHereSlugs = [
 	'llm-gateway',
 	'concurrency-single-update',
-	'bullmq-notification-part-1-what-is-bullmq',
+	'notification-server-part-1-delegating-delivery',
 	'exclusion-constraint-booking',
 	'passwordless-db-access-least-privilege',
 ] as const;

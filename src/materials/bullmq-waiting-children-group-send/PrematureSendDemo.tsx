@@ -16,7 +16,7 @@ const CHUNKS = [
 const LABELS = {
 	ko: {
 		captions: [
-			"① batch 서버가 청크 셋을 큐에 넣는다",
+			"① 청크 셋이 큐에 들어간다",
 			"② 워커들이 비동기로 소비한다, 속도는 제각각이다",
 			"③ 마지막 표시가 붙은 청크 2가 청크 1보다 먼저 끝난다",
 			"④ 마지막이 끝났다는 판정이 발송을 트리거한다",
@@ -38,7 +38,7 @@ const LABELS = {
 	},
 	en: {
 		captions: [
-			"① The batch server queues three chunks",
+			"① Three chunks enter the queue",
 			"② Workers consume them asynchronously, at varying speeds",
 			"③ Chunk 2, marked last, finishes before chunk 1",
 			"④ The last-chunk-done rule triggers the send",

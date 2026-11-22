@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 560" role="img" aria-labelledby="wa-title wa-desc">
   <title id="wa-title">Notification webhook ingestion (application)</title>
-  <desc id="wa-desc">A third-party messaging provider sends delivery report webhooks over HTTPS to a shared Application Load Balancer. In this variant the ALB uses an IP target group and routes straight into the EKS cluster, so a NestJS worker pod receives the webhook itself. Kubernetes manages the whole entry path through the Ingress: the listener, the IP target group and pod registration. The pod verifies the HMAC secret, drops non-terminal status codes and returns 200 immediately, then uses IRSA to put the record into Amazon Data Firehose, which buffers records into the History S3 bucket. From S3 onward it reuses the existing delivery-history pipeline of SQS, Lambda and the analysis platform. Because the pod handles the traffic, it shares node CPU headroom and scales with the HPA. Firehose and S3 are defined and deployed with IaC such as Pulumi or Terraform.</desc>
+  <desc id="wa-desc">A third-party messaging provider sends delivery report webhooks over HTTPS to a shared Application Load Balancer. In this variant the ALB uses an IP target group and routes straight into the EKS cluster, so a worker pod receives the webhook itself. Kubernetes manages the whole entry path through the Ingress: the listener, the IP target group and pod registration. The pod verifies the HMAC secret, drops non-terminal status codes and returns 200 immediately, then uses IRSA to put the record into Amazon Data Firehose, which buffers records into the History S3 bucket. From S3 onward it reuses the existing delivery-history pipeline of SQS, Lambda and the analysis platform. Because the pod handles the traffic, it shares node CPU headroom and scales with the HPA. Firehose and S3 are defined and deployed with IaC such as Pulumi or Terraform.</desc>
 
   <defs>
     <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -73,7 +73,7 @@
   <rect width="1120" height="560" fill="#F8FAFC"/>
 
   <text class="title" x="40" y="46">Notification Webhook Ingestion &#183; Application</text>
-  <text class="subtitle" x="40" y="72">Third-party messaging &#8594; shared ALB (IP target) &#8594; NestJS worker pod (verify &#183; filter) &#8594; Firehose &#8594; History S3</text>
+  <text class="subtitle" x="40" y="72">Third-party messaging &#8594; shared ALB (IP target) &#8594; worker pod (verify &#183; filter) &#8594; Firehose &#8594; History S3</text>
 
   <!-- EKS boundary: traffic enters the cluster; the pod handles the webhook -->
   <rect x="445" y="86" width="240" height="178" rx="16" fill="#FFF9F4" stroke="#ED7100" stroke-width="1.8" stroke-dasharray="7 5"/>
@@ -114,7 +114,7 @@
       <rect x="0" y="12" width="50" height="45" rx="8" fill="#326CE5"/>
       <path d="M13 29 h24 M13 36 h18 M13 43 h10" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round"/>
     </g>
-    <text class="node-title" x="545" y="160">NestJS worker</text>
+    <text class="node-title" x="545" y="160">worker pod</text>
     <text class="small" x="545" y="181">verify &#183; 200 OK</text>
   </g>
 

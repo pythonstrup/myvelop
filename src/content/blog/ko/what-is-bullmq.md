@@ -1,11 +1,12 @@
 ---
-title: "BullMQ로 알림 시스템 운영하기 1편 - BullMQ란"
-description: "알림톡, 이메일, 푸시를 HTTP 호출로만 보내면 금세 한계에 부딪힌다. 1편에서는 발송 모듈, rate limit, 스케줄, 이력 저장을 BullMQ 하나에 맡기는 이유를 정리한다."
+title: "BullMQ란 - 구조, 핵심 기능, 이벤트 드리븐과의 차이"
+description: "알림톡, 이메일, 푸시를 HTTP 호출로만 보내면 금세 한계에 부딪힌다. 이 글에서는 발송 모듈, rate limit, 스케줄, 이력 저장을 BullMQ 하나에 맡기는 이유를 정리한다."
 pubDate: "2026-05-18T23:35:46+09:00"
 updatedDate: "2026-06-04T22:32:30+09:00"
-socialImage: "../../../assets/blog/bullmq-notification-part-1-what-is-bullmq/01.png"
+socialImage: "../../../assets/blog/what-is-bullmq/01.png"
 tags: ["BullMQ","nodejs","redis","typescript"]
-series: "BullMQ로 알림 시스템 운영하기"
+series: "BullMQ 다루기"
+seriesOrder: 1
 ---
 
 ## 들어가며
@@ -53,7 +54,7 @@ BullMQ의 핵심은 <strong>Redis가 큐의 모든 상태를 보관한다</stron
 
 Job은 큐 안에서 몇 가지 상태를 거친다.
 
-![BullMQ로 알림 시스템 운영하기 1편 - BullMQ란 이미지 1](../../../assets/blog/bullmq-notification-part-1-what-is-bullmq/01.png)
+![BullMQ란 이미지 1](../../../assets/blog/what-is-bullmq/01.png)
 
 wait는 처리 대기, delayed는 시점 분기 대기, active는 처리 중, completed/failed는 종착점이다. 이 상태들은 Redis의 자료구조(list, sorted set, hash) 위에 표현되어 있고, 상태 전환은 Lua 스크립트로 원자적으로 처리된다 — 여러 Worker가 동시에 같은 Job을 픽업하지 못하게 막는 안전장치다.
 
@@ -62,13 +63,13 @@ wait는 처리 대기, delayed는 시점 분기 대기, active는 처리 중, co
 -   Queue.add()로 추가한 Job이 어떤 경로로 흘러가는지에 대한 lifecycle
 -   delayed에 있던 Job은 시간이 도래하면 곧장 active로 가는 게 아니라 <strong>내부적으로 wait 또는 prioritized로 승격(promote)된 후</strong> active로 진입한다.
 
-![BullMQ로 알림 시스템 운영하기 1편 - BullMQ란 이미지 2](../../../assets/blog/bullmq-notification-part-1-what-is-bullmq/02.png)
+![BullMQ란 이미지 2](../../../assets/blog/what-is-bullmq/02.png)
 
 -   FlowProducer.add()로 추가된 Job의 lifecycle
 -   waiting-children은 "<strong>다른 누군가의 처리를 기다리는</strong>" 상태다.
 -   마지막 자식이 완료되는 순간, 부노가 wait / prioritized / delayed 중 하나로 승격된다.
 
-![BullMQ로 알림 시스템 운영하기 1편 - BullMQ란 이미지 3](../../../assets/blog/bullmq-notification-part-1-what-is-bullmq/03.png)
+![BullMQ란 이미지 3](../../../assets/blog/what-is-bullmq/03.png)
 
 BullMQ에서 Job은 상태 머신이다.
 
@@ -217,7 +218,7 @@ API 서버, 어드민, 배치 등 발송 트리거는 사방에서 일어난다.
 
 모두 동일한 notification 큐에 적재하고, 발송 책임은 별도의 Worker 서비스 하나에 위임한다.
 
-![BullMQ로 알림 시스템 운영하기 1편 - BullMQ란 이미지 4](../../../assets/blog/bullmq-notification-part-1-what-is-bullmq/04.png)
+![BullMQ란 이미지 4](../../../assets/blog/what-is-bullmq/04.png)
 
 발송 로직(템플릿 매핑, 전화번호 정규화, 외부 API 호출)을 한 곳에서만 관리한다.
 
@@ -261,7 +262,7 @@ const worker = new WorkerPro('alimtalk-queue', async (job: JobPro) => {
 
 BullMQ가 무엇인지 알아보고, 기능을 활용해 Notification 서버를 간단하게 설계해봤다.
 
-뒤이어 작성될 글에서는 운영하면서 마주친 사고와 트레이드오프들을 살펴볼 것이다.
+알림 서버를 설계하며 따진 트레이드오프는 [알림 서버 설계하기](/ko/blog/notification-server-part-1-delegating-delivery) 시리즈에서 이어서 다룬다.
 
 ## 참고
 

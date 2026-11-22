@@ -1,11 +1,12 @@
 ---
-title: "Operating a Notification System with BullMQ, Part 1: What Is BullMQ?"
+title: "What Is BullMQ - Structure, Core Features, Work Queues vs. Events"
 description: "Sending AlimTalk, email, and push as HTTP calls hits limits fast. Why BullMQ takes on rate limits, scheduling, and delivery history."
 pubDate: "2026-05-18T23:35:46+09:00"
 updatedDate: "2026-06-04T22:32:30+09:00"
-socialImage: "../../../assets/blog/bullmq-notification-part-1-what-is-bullmq/01.png"
+socialImage: "../../../assets/blog/what-is-bullmq/01.png"
 tags: ["BullMQ","nodejs","redis","typescript"]
-series: "Running a Notification System with BullMQ"
+series: "Working with BullMQ"
+seriesOrder: 1
 ---
 
 ## Introduction
@@ -339,7 +340,7 @@ Be sure to evaluate tradeoffs such as partial failures and a larger retry unit.
 
 We have learned what BullMQ is and used its features to sketch a simple Notification server design.
 
-The next article will examine the incidents and tradeoffs I encountered while operating it.
+The tradeoffs I weighed while designing the notification server continue in the [Designing a Notification Server](/blog/notification-server-part-1-delegating-delivery) series.
 
 ## References
 
