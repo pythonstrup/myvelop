@@ -1,6 +1,6 @@
 // Aurora 클러스터에서 ACU로 세는 계산 부분과, 두 저장소(인스턴스마다 붙은 로컬 저장소, 모두가 함께 쓰는 클러스터 저장소)를 나눠 보여주는 정적 그림.
 const ARIA =
-	"Aurora 클러스터의 구성도. 위에 writer와 reader 인스턴스가 나란히 있고, 각 인스턴스 안에는 ACU로 세는 CPU와 메모리 칸과, 점선으로 그린 로컬 저장소 칸이 있다. 로컬 저장소는 임시 파일을 두는 작업용 공간이다. 아래에는 두 인스턴스가 함께 쓰는 클러스터 저장소가 넓게 있고, 테이블과 인덱스를 세 가용 영역에 두 벌씩, 모두 여섯 벌로 담는다. ACU로 늘고 주는 것은 위쪽의 CPU와 메모리뿐이다.";
+	"Aurora 클러스터의 구성도. 위에 writer와 reader 인스턴스가 나란히 있고, 각 인스턴스 안에는 ACU로 세는 CPU와 메모리 칸과, 점선으로 그린 로컬 저장소 칸이 있다. 로컬 저장소는 임시 파일을 두는 작업용 공간이다. 아래에는 두 인스턴스가 함께 쓰는 클러스터 저장소가 넓게 있고, 테이블과 인덱스를 세 가용 영역에 두 벌씩, 모두 여섯 벌로 담는다. ACU로 세는 것은 위쪽의 CPU와 메모리다.";
 
 function Instance({ x, name }: { x: number; name: string }) {
 	return (
@@ -68,7 +68,7 @@ export default function StorageLayoutDiagram() {
 			<Zone cx={380} name="가용 영역 C" />
 
 			<text x="240" y="318" textAnchor="middle" fontSize="12.5" fill="var(--muted-foreground)">
-				ACU로 늘고 주는 것은 파란 칸뿐이다
+				ACU로 세는 것은 파란 칸이다
 			</text>
 		</svg>
 	);
