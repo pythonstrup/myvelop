@@ -55,7 +55,7 @@ export default function ClusterAverageDiagram() {
 				</g>
 			))}
 			<text x="390" y={BASE - h(11) - 30} textAnchor="middle" fontSize="12" fill="var(--muted-foreground)">
-				최대에 닿은 writer가 가려진다
+				최댓값에 닿은 writer가 가려진다
 			</text>
 		</svg>
 	);

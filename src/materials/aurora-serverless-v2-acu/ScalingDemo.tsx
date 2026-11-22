@@ -12,7 +12,7 @@ const MIN = 1;
 const MAX = 20;
 const Y_MAX = 28;
 const ARIA =
-	"가로축은 시간, 세로축은 ACU인 그래프 애니메이션. 평소 용량은 최소 1 ACU에 머문다. 최대를 넘는 큰 작업이 들어오면 용량이 계단을 밟아 오르는데, 낮을 때는 계단이 낮고 높아질수록 계단이 커진다. 용량이 따라 오르는 동안과 최대 20 ACU에 닿은 뒤에는 필요한 용량과의 차이가 모자란 몫으로 칠해진다. 작업이 끝나면 용량도 계단을 밟아 내려온다.";
+	"가로축은 시간, 세로축은 ACU인 그래프 애니메이션. 평소 용량은 최소 1 ACU에 머문다. 최대를 넘는 큰 작업이 들어오면 용량이 조금씩 늘어나는데, 작을 때는 한 번에 느는 폭이 작고 커질수록 폭도 커진다. 용량이 따라 오르는 동안과 최대 20 ACU에 닿은 뒤에는 필요한 용량과의 차이가 모자란 용량으로 칠해진다. 작업이 끝나면 용량도 조금씩 줄어든다.";
 
 // 필요한 용량. 그림을 위해 고른 가상의 값이다.
 function demandAt(i: number) {
@@ -42,9 +42,9 @@ const SIM = (() => {
 function captionAt(i: number) {
 	const s = i / N;
 	if (s < 0.12) return "① 평소에는 최소에 머문다";
-	if (s >= 0.62) return "④ 작업이 끝나면 용량도 계단을 밟아 내려온다";
-	if (SIM.cap[i] < MAX) return "② 계단을 밟아 오른다. 낮을 때는 계단도 낮다";
-	return "③ 최대에 닿으면 더 늘지 않는다. 빨간 몫만큼 느려진다";
+	if (s >= 0.62) return "④ 작업이 끝나면 용량도 조금씩 줄어든다";
+	if (SIM.cap[i] < MAX) return "② 조금씩 늘어난다. 작을 때는 느는 폭도 작다";
+	return "③ 최댓값에 닿으면 더 늘지 않는다. 모자란 만큼 느려진다";
 }
 
 function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) {
@@ -59,7 +59,7 @@ function scene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolea
 
 	let lx = legend(ctx, left, 16, c.blue, c.text, "용량(ACU)");
 	lx = legend(ctx, lx, 16, c.amber, c.text, "필요한 용량");
-	legend(ctx, lx, 16, c.redFill, c.text, "모자란 몫", true);
+	legend(ctx, lx, 16, c.redFill, c.text, "모자란 용량", true);
 
 	// 최대·최소 안내선과 바닥
 	ctx.save();
