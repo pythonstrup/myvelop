@@ -29,12 +29,12 @@ export const llmGatewayGuide: {
 		ko: 'LLM 게이트웨이와 프록시 운영',
 	},
 	description: {
-		en: 'Reading order for the Running LLM APIs series: choosing an LLM gateway, monitoring a LiteLLM proxy, and when prompt caching pays off.',
-		ko: '연재 「LLM API 운영」을 읽는 순서다. LLM 게이트웨이를 고르고, LiteLLM 프록시를 모니터링하고, 프롬프트 캐시가 언제 이득인지 따진다.',
+		en: 'Reading order for the Running LLM APIs series: choosing an LLM gateway, monitoring a LiteLLM proxy, when prompt caching pays off, and where not to use a semantic cache.',
+		ko: '연재 「LLM API 운영」을 읽는 순서다. LLM 게이트웨이를 고르고, LiteLLM 프록시를 모니터링하고, 프롬프트 캐시가 언제 이득인지 따지고, 시맨틱 캐시를 쓰면 안 되는 곳을 살펴본다.',
 	},
 	lead: {
-		en: 'Three posts from the series Running LLM APIs. The first asks what an LLM gateway takes on when service code stops calling providers itself. The second runs a LiteLLM proxy and records what the Admin UI shows, and what shows up only with Grafana and Langfuse. The third separates prompt caching from a response cache and asks when the cache pays for itself.',
-		ko: '연재 「LLM API 운영」의 글 세 편이다. 첫 글은 서비스 코드가 프로바이더를 직접 부르지 않을 때 LLM 게이트웨이가 무엇을 맡는지를 본다. 둘째는 LiteLLM 프록시를 띄워, Admin UI가 보여주는 것과 Grafana와 Langfuse가 있어야 보이는 것을 적는다. 셋째는 프롬프트 캐시와 응답 캐시를 가르고, 캐시가 언제 이득인지 따진다.',
+		en: 'Four posts from the series Running LLM APIs. The first asks what an LLM gateway takes on when service code stops calling providers itself. The second runs a LiteLLM proxy and records what the Admin UI shows, and what shows up only with Grafana and Langfuse. The third separates prompt caching from a response cache and asks when the cache pays for itself. The fourth looks at a semantic cache, which returns a stored answer to a question with a close meaning, and asks how to set its threshold and which requests it should not serve.',
+		ko: '연재 「LLM API 운영」의 글 네 편이다. 첫 글은 서비스 코드가 프로바이더를 직접 부르지 않을 때 LLM 게이트웨이가 무엇을 맡는지를 본다. 둘째는 LiteLLM 프록시를 띄워, Admin UI가 보여주는 것과 Grafana와 Langfuse가 있어야 보이는 것을 적는다. 셋째는 프롬프트 캐시와 응답 캐시를 가르고, 캐시가 언제 이득인지 따진다. 넷째는 뜻이 가까운 질문에 저장해 둔 답을 돌려주는 시맨틱 캐시에서 문턱값을 어떻게 정하고, 어떤 요청에 쓰면 안 되는지를 본다.',
 	},
 	orderNote: {
 		en: 'The number is the reading order. The date is only when the post was published.',
@@ -60,6 +60,13 @@ export const llmGatewayGuide: {
 			blurb: {
 				en: 'A cache hit on an AI API does not hand back a stored answer. It reuses the KV computed for the start of the input. The post works out which requests hit, how high the hit rate has to be to break even once write costs are counted, and compares an agent with a chatbot using Claude Code measurements and production logs from a Slack chatbot. In the agent sessions, 97.6% of input tokens were cache reads.',
 				ko: 'AI API의 캐시 히트는 저장해 둔 답을 돌려주는 응답 캐시가 아니다. 입력 앞부분을 계산해 둔 KV를 다시 쓴다. 어떤 요청이 적중하는지, 쓰기 비용을 감안하면 적중률이 얼마여야 본전인지 따지고, Claude Code 실측과 슬랙 챗봇 운영 로그로 에이전트와 챗봇을 비교한다. 에이전트 세션은 입력의 97.6%가 캐시 읽기였다.',
+			},
+		},
+		{
+			slug: 'llm-semantic-caching',
+			blurb: {
+				en: 'A semantic cache finds a question with a close meaning, not the same text, and returns its stored answer. The post shows what goes wrong when the system prompt and earlier conversation mix into the embedding and when the answer depends on the person or the time, and lays out the order for using it alongside a response cache and prompt caching. Measuring 14 question pairs showed that the pairs that may share an answer and the pairs that may not overlap in similarity.',
+				ko: '시맨틱 캐시는 글자가 아니라 뜻이 가까운 질문을 찾아 저장해 둔 답을 돌려준다. 시스템 프롬프트와 앞선 대화가 임베딩에 섞일 때, 사람이나 시점에 따라 답이 다를 때 무엇이 어긋나는지 짚고, 응답 캐시, 프롬프트 캐시와 함께 쓰는 순서를 정리한다. 질문 14쌍의 유사도를 재 보니 같은 답을 줘도 되는 쌍과 안 되는 쌍이 겹쳤다.',
 			},
 		},
 	],

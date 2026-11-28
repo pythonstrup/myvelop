@@ -25,8 +25,8 @@ export const topicHubs: TopicHub[] = [
 	{
 		title: { en: 'LLM gateway and proxy', ko: 'LLM 게이트웨이와 프록시' },
 		summary: {
-			en: 'How a gateway gathers repeated provider calls into one layer, what a LiteLLM proxy shows once calls go through it, and when prompt caching pays off.',
-			ko: '프로바이더 API를 직접 부를 때 반복되는 일을 게이트웨이가 어디로 모으는지, LiteLLM 프록시에 호출을 모으면 무엇이 보이는지, 프롬프트 캐시가 언제 이득인지를 이어서 읽습니다.',
+			en: 'How a gateway gathers repeated provider calls into one layer, what a LiteLLM proxy shows once calls go through it, when prompt caching pays off, and where a semantic cache should not be used.',
+			ko: '프로바이더 API를 직접 부를 때 반복되는 일을 게이트웨이가 어디로 모으는지, LiteLLM 프록시에 호출을 모으면 무엇이 보이는지, 프롬프트 캐시가 언제 이득인지, 시맨틱 캐시를 어디에 쓰면 안 되는지를 이어서 읽습니다.',
 		},
 		series: { en: 'Running LLM APIs', ko: 'LLM API 운영' },
 		href: LLM_GATEWAY_GUIDE_PATH,
