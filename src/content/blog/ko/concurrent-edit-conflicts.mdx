@@ -1,6 +1,6 @@
 ---
 title: "동시 편집 충돌 처리 - 잠금, 버전 비교, 3-way 병합, CRDT"
-description: "여러 사람이 같은 표의 셀을 동시에 고칠 때 수정이 사라지는 문제를 다룬다. 마지막 저장, 편집 잠금, 버전 비교, 3-way 병합, CRDT가 각각 무엇을 얻고 내주는지 비교하고, 요구사항에 따라 고르는 기준을 정리한다."
+description: "여러 사람이 같은 표의 칸을 동시에 고칠 때 수정이 사라지는 문제를 다룬다. 마지막 저장, 편집 잠금, 버전 비교, 3-way 병합, CRDT가 각각 무엇을 얻고 내주는지 비교하고, 요구사항에 따라 고르는 기준을 정리한다."
 pubDate: "2026-11-18T09:00:00+09:00"
 socialImage: "../../../assets/blog/concurrent-edit-conflicts/og.png"
 tags: ["동시성 제어", "낙관적 락", "3-way 병합", "CRDT"]
@@ -16,6 +16,7 @@ import EditLockDiagram from "@/materials/concurrent-edit-conflicts/EditLockDiagr
 import LinkedCellsDiagram from "@/materials/concurrent-edit-conflicts/LinkedCellsDiagram";
 import ProductTableDiagram from "@/materials/concurrent-edit-conflicts/ProductTableDiagram";
 import RowVersionDiagram from "@/materials/concurrent-edit-conflicts/RowVersionDiagram";
+import SaveByFieldDiagram from "@/materials/concurrent-edit-conflicts/SaveByFieldDiagram";
 import ScreenLagDiagram from "@/materials/concurrent-edit-conflicts/ScreenLagDiagram";
 import TagMergeDiagram from "@/materials/concurrent-edit-conflicts/TagMergeDiagram";
 import { ListOrderDiagram, MergedResultDiagram, MergedRuleDiagram } from "@/materials/concurrent-edit-conflicts/ListMergeLimits";
@@ -25,7 +26,7 @@ import { OtStateDemo } from "@/materials/concurrent-edit-conflicts/OtStateDemo";
 import ThreeValueDiagram from "@/materials/concurrent-edit-conflicts/ThreeValueDiagram";
 import VersionRejectDiagram from "@/materials/concurrent-edit-conflicts/VersionRejectDiagram";
 
-여러 사람이 같은 표를 열어 두고 각자 셀을 고치는 웹 앱을 만든다고 하자. 쇼핑몰 운영자들이 함께 쓰는 상품 표다. 한 행은 상품 하나이고, 열은 상품명, 가격, 재고, 판매 상태, 태그, 상품 설명 여섯 필드다. 운영자는 셀을 눌러 값을 고치고 저장한다. 관리자 화면에서 이 표는 아래처럼 보인다.
+여러 사람이 같은 표를 열어 두고 각자 칸을 고치는 웹 앱을 만든다고 하자. 쇼핑몰 운영자들이 함께 쓰는 상품 표다. 한 행은 상품 하나이고, 열은 상품명, 가격, 재고, 판매 상태, 태그, 상품 설명 여섯 필드다. 운영자는 칸을 눌러 값을 고치고 저장한다. 관리자 화면에서 이 표는 아래처럼 보인다.
 
 <ProductTableDiagram />
 
@@ -39,10 +40,10 @@ A가 베이직 린넨 셔츠의 가격을 고치는 동안 B가 같은 상품의
 
 예시 앱은 많이 쓰는 구성대로 관계형 DB에 데이터를 두고 SQL로 읽고 쓴다고 하자. 다른 저장소를 써도 원리는 같다.
 
-가장 단순한 구현부터 보자. 화면은 행을 통째로 읽어 오고, 사용자가 셀을 고치면 행 전체를 서버로 보내 덮어쓴다.
+가장 단순한 구현부터 보자. 화면은 행을 통째로 읽어 오고, 사용자가 칸을 고치면 행 전체를 서버로 보내 덮어쓴다.
 
 ```ts
-// 화면: 고친 셀을 반영한 행 전체를 보낸다
+// 화면: 고친 칸을 반영한 행 전체를 보낸다
 await fetch(`/products/${product.id}`, {
   method: "PUT",
   body: JSON.stringify({ ...product, [field]: value }),
@@ -84,7 +85,7 @@ WHERE id = 1;
 
 같은 쇼핑몰에서 주문이 재고를 깎을 때도 잃어버린 수정이 생긴다. [UPDATE 한 줄로 끝내는 동시성 문제](/ko/blog/concurrency-single-update)에서 다룬 문제다. 그때는 요청 하나가 재고를 읽고 쓰는 사이가 몇 밀리초라서 `UPDATE` 한 줄로 읽기와 쓰기를 붙이거나 [비관적 락](/ko/blog/pessimistic-lock-like-feature)으로 그 사이를 막으면 됐다.
 
-사람의 편집은 다르다. 화면을 여는 순간 값을 읽고, 몇 초에서 몇 분이 지나서야 저장한다. 그 시간 내내 트랜잭션이나 락을 쥐고 있을 수는 없다. 누군가 셀을 연 채 점심을 먹으러 가면, 그동안 아무도 그 행을 고치지 못한다.
+사람의 편집은 다르다. 화면을 여는 순간 값을 읽고, 몇 초에서 몇 분이 지나서야 저장한다. 그 시간 내내 트랜잭션이나 락을 쥐고 있을 수는 없다. 누군가 칸을 연 채 점심을 먹으러 가면, 그동안 아무도 그 행을 고치지 못한다.
 
 그래서 읽기와 쓰기 사이에 끼어든 변경을 <strong>저장하는 순간에</strong> 알아내야 한다.
 
@@ -108,9 +109,9 @@ WHERE id = 1;
 
 가장 단순한 방법은 아무것도 하지 않는 것이다. 나중에 도착한 저장이 앞의 저장을 덮는다. 마지막 쓰기가 이긴다는 뜻으로 Last-Write-Wins, 줄여서 LWW라고 부른다. 앞에서 본 구현이 바로 이 방식이다.
 
-생각보다 많은 제품이 이 방식을 쓰되, 덮는 단위를 행이 아니라 셀로 좁힌다. Smartsheet는 같은 셀을 거의 동시에 고치면 마지막으로 저장된 값을 보여 주고, 앞선 값은 셀 기록에서만 볼 수 있다고 안내한다. Baserow도 문서에 마지막 저장이 이기는 방식을 쓴다고 적어 두었다.
+생각보다 많은 제품이 이 방식을 쓰되, 덮는 단위를 행이 아니라 칸으로 좁힌다. Smartsheet는 같은 칸을 거의 동시에 고치면 마지막으로 저장된 값을 보여 주고, 앞선 값은 Cell History 기능에서만 볼 수 있다고 안내한다. Baserow도 문서에 마지막 저장이 이기는 방식을 쓴다고 적어 두었다.
 
-셀 단위로 덮으면 앞의 사고처럼 서로 다른 칸을 고친 경우는 부딪히지 않고, 같은 칸을 고친 경우에만 앞 사람의 값이 사라진다. 이 차이는 뒤에서 비교 단위를 다룰 때 자세히 본다.
+칸 단위로 덮으면 앞의 사고처럼 서로 다른 칸을 고친 경우는 부딪히지 않고, 같은 칸을 고친 경우에만 앞 사람의 값이 사라진다. 이 차이는 뒤에서 비교 단위를 다룰 때 자세히 본다.
 
 A가 가격을 29,000원으로 내린 직후, 할인 소식을 모르는 B가 같은 칸에 35,000원을 넣었다고 하자. 두 사람 모두 저장했다는 알림을 받지만, 남는 값은 마지막에 저장한 B의 35,000원이다.
 
@@ -609,4 +610,110 @@ desc.insert(desc.length, ". 찬물 손세탁 권장");
 
 `desc.insert`는 겉으로는 위치를 받지만, Yjs는 안에서 앞뒤 글자의 번호로 바꿔 저장한다. 서버는 `Y.encodeStateAsUpdate(doc)`로 문서를 바이너리로 저장하고, 검색과 목록에 쓸 평문은 `desc.toString()`으로 뽑아 `description` 칸에 둔다. 연결과 동기화는 y-websocket 같은 라이브러리가 맡는다.
 
-여기까지 Last-Write-Wins, 편집 잠금, 버전 비교, 자동 병합에 OT와 CRDT까지 다섯 가지 방법을 봤다. 상품 표의 칸은 성격이 제각각이라 한 방법으로 모두 다루기 어렵다. 다음 장에서는 칸마다 어떤 방법을 쓸지 정한다.
+여기까지 Last-Write-Wins, 편집 잠금, 버전 비교, 자동 병합에 OT와 CRDT까지 여섯 가지 방법을 봤다. 상품 표의 칸은 성격이 제각각이라 한 방법으로 모두 다루기 어렵다. 다음 장에서는 칸마다 어떤 방법을 쓸지 정한다.
+
+## 상품 표에 적용하기
+
+여섯 방법을 한 표에 놓으면 이렇다.
+
+| 방법 | 수정 손실 | 사용자 부담 | 구현 비용 | 맞는 경우 |
+| --- | --- | --- | --- | --- |
+| Last-Write-Wins | 같은 칸이면 조용히 사라진다 | 없다 | 낮다 | 동시 수정이 드물고 기록으로 되살릴 수 있을 때 |
+| 편집 잠금 | 없다 | 풀릴 때까지 기다린다 | 중간 | 오래 고치고 되돌리기 어려울 때 |
+| 버전 비교 | 없다 | 거절되면 다시 입력한다 | 낮다 | 충돌이 드물고 덮어쓰면 안 될 때 |
+| 자동 병합 | 없다 | 진짜 충돌만 고른다 | 중간 | 같은 레코드를 자주 함께 고칠 때 |
+| OT | 없지만 뜻이 어긋날 수 있다 | 없다 | 높다 | 긴 글을 실시간으로 함께 쓸 때 |
+| CRDT | 없지만 뜻이 어긋날 수 있다 | 없다 | 높다 | 긴 글을 함께 쓰거나 오프라인 편집이 필요할 때 |
+
+어느 방법도 모든 열에서 앞서지 않는다. 수정을 더 단단히 지키려면 사용자의 수고나 구현 비용을 더 내야 한다. 상품 표의 칸도 바뀌는 방식과 틀렸을 때의 손해가 제각각이라, 표 전체에 방법 하나를 정하지 않고 칸마다 고른다.
+
+| 칸 | 고른 방법 | 이유 |
+| --- | --- | --- |
+| 상품명 | 세 값 판정 | 짧은 글이라 글자 단위로 합치면 뜻이 섞인다 |
+| 가격 | 세 값 판정 | 틀린 값이 곧 손해라서 둘 중 하나를 사람이 골라야 한다 |
+| 재고 | 증감 연산 | 주문이 쉬지 않고 바꾸는 칸이라 값을 비교하면 충돌이 잦다 |
+| 판매 상태 | 세 값 판정과 규칙 검사 | 재고와 함께 맞아야 한다 |
+| 태그 | 항목 단위 병합 | 순서가 없는 목록이라 묻지 않고 합칠 수 있다 |
+| 상품 설명 | 세 값 판정 | 동시에 고치는 일이 드물고, 잦아지면 OT나 CRDT로 옮긴다 |
+
+### 재고는 값 대신 증감을 보낸다
+
+재고는 운영자만 고치는 칸이 아니다. 주문이 들어올 때마다 서버가 재고를 줄인다. 운영자가 입고된 30개를 반영하려고 재고 120을 150으로 고치는 사이 주문 세 건이 들어왔다고 하자. 세 값 판정은 읽은 값 120, 최신 값 117, 보낸 값 150이 모두 달라 충돌로 본다. 맞는 값은 147인데, 충돌 창은 117과 150 가운데 하나를 고르라고 묻는다. 주문이 잦은 상품일수록 이 창이 자주 뜬다.
+
+그래서 재고 칸은 태그처럼 값 대신 바꾼 내용을 보낸다. 화면은 입고 수량 30을 받아 증감으로 보내고, 서버는 지금 값에 더한다.
+
+```sql
+-- 입고 30개: 그사이 주문이 줄인 재고 위에 더한다
+UPDATE products SET stock = stock + 30 WHERE id = 1;
+```
+
+이 문장은 주문이 재고를 줄이는 문장과 모양이 같아서, [UPDATE 한 줄로 끝내는 동시성 문제](/ko/blog/concurrency-single-update)에서 본 것처럼 읽기와 쓰기 사이에 끼어들 틈이 없다. 117에 30을 더해 147이 남는다.
+
+이렇게 하면 주문과 운영자가 같은 칸을 고쳐도 묻지 않는다. 대신 값을 정해 넣는 수정은 이 방식으로 다룰 수 없다. 창고에서 세어 보니 110개였다면, 그사이 팔린 3개가 센 수에 들어 있는지는 운영자만 안다. 이런 실사 수정은 증감으로 바꾸지 않고 세 값 판정으로 보내, 그사이 주문이 들어왔으면 충돌 창으로 묻는다.
+
+주문 쪽도 앞에서 건 제약과 맞춰야 한다. 판매 중인 상품의 마지막 하나가 팔리면 재고가 0이 되어 `on_sale_needs_stock`에 걸리고, 주문이 실패한다. 그래서 주문은 마지막 하나를 팔 때 판매 상태도 함께 품절로 바꾼다.
+
+```sql
+-- 주문: 마지막 하나를 팔면 품절로 바꾼다. SET 오른쪽의 stock은 바꾸기 전 값이다
+UPDATE products
+SET stock = stock - 1,
+    status = CASE WHEN stock = 1 THEN '품절' ELSE status END
+WHERE id = 1 AND stock >= 1;
+```
+
+PostgreSQL 17에서 돌려 보면 재고만 줄이는 문장은 제약 위반으로 실패하고, 이 문장은 재고 0에 품절인 행을 남긴다.
+
+### 상품 설명은 세 값 판정에서 시작한다
+
+상품 설명은 OT와 CRDT가 노리는 긴 글이다. 그래도 처음에는 세 값 판정을 고른다. 관리자 화면에서 같은 상품의 설명을 두 사람이 동시에 고치는 일은 드물다. OT나 CRDT를 붙이면 충돌이 없는 날에도 비용을 낸다. 지난 연산이나 지운 글자의 기록이 쌓이고, 연산을 주고받을 연결을 유지해야 하고, 일괄 수정도 연산으로 넣어야 한다. 세 값 판정은 두 사람이 같은 설명을 고쳤을 때만 충돌 창을 띄운다. 창은 두 글을 나란히 보여 주고, 합치는 일은 사용자에게 맡긴다.
+
+줄 단위 3-way 병합을 더하면 서로 다른 줄을 고친 경우는 묻지 않고 합칠 수 있다. 다만 예시의 설명처럼 한 줄짜리 글이면 누가 어디를 고치든 같은 줄이라 얻는 것이 없다. 여러 줄로 쓰는 상세 설명이라면 검토할 만하다.
+
+여럿이 설명을 함께 써 나가기 시작해 충돌 창이 잦아지면 그때 OT나 CRDT로 옮긴다. 둘 가운데서는 오프라인 편집이 필요한지로 고른다. 옮기기 전에 설명 칸을 쓰는 경로부터 모두 찾아 연산을 거치게 바꿔야 한다. 그러지 않으면 CRDT에서는 평문을 직접 고친 수정이 앞 장에서 본 것처럼 다음 편집에 덮인다.
+
+### 고르지 않은 방법
+
+세 방법은 어느 칸에도 쓰지 않았다.
+
+- <strong>Last-Write-Wins</strong> — 이 표에는 덮여도 괜찮은 칸이 없다. 가격과 재고는 매출과 바로 이어지고, 상품명과 설명은 손님이 보는 글이다. 다만 이 방식을 쓰는 제품이 함께 남기는 변경 기록은 이 표에도 남긴다. 충돌 창에 누가 언제 바꿨는지 보여 주려면 칸마다 기록이 있어야 한다.
+- <strong>편집 잠금</strong> — 칸 하나를 고치는 데는 몇 초면 된다. 잠금이 막아 주는 충돌보다 남을 기다리게 하는 손해가 더 크다. 막지 않고 알리기만 하는 편집 중 표시는 모든 칸에 붙인다.
+- <strong>행 단위 버전 비교</strong> — 여러 사람이 한 표에서 서로 다른 칸을 고치니 오탐이 잦다. 읽은 것을 조건으로 다는 생각은 칸 단위 세 값 판정에 그대로 남아 있다.
+
+### 처음의 사고 다시 보기
+
+처음 장의 상황에 수정 몇 개를 더해 이 규칙으로 다시 돌려 보자. A는 가격을 29,000원으로 내리고 태그에 세일을 더해 저장한다. 그사이 주문 세 건이 들어와 재고가 117로 줄어든다. B는 처음 연 화면 그대로 설명에 세탁 방법을 덧붙이고, 태그에서 신상을 빼고, 입고된 30개를 재고에 더해 저장한다.
+
+<SaveByFieldDiagram />
+
+충돌 창은 뜨지 않는다. 처음 장의 구현에서는 B의 저장 하나가 가격과 재고를 되돌렸지만, 칸마다 방법을 정하면 A의 두 수정과 주문 세 건, B의 세 수정이 모두 남는다.
+
+서버의 저장은 앞에서 만든 조각을 칸마다 골라 쓴다.
+
+```ts
+// 서버: 행을 잠근 트랜잭션 안에서 칸마다 정한 방법으로 합치고, 합친 행을 검사한 뒤 쓴다
+const current = await lockRow(productId);
+const next = { ...current };
+const conflicts: string[] = [];
+for (const field of ["name", "price", "stock", "status", "description"] as const) {
+  if (!(field in changes)) continue;
+  const verdict = judge(seen[field], current[field], changes[field], eqFor(field));
+  if (verdict === "write") next[field] = changes[field];
+  if (verdict === "conflict") conflicts.push(field);
+}
+if (changes.tags) next.tags = mergeTags(seen.tags, current.tags, changes.tags);
+if (stockDelta) next.stock += stockDelta; // 입고와 출고는 증감으로, 실사는 위의 판정으로 온다
+if (conflicts.length > 0) throw new ConflictError(conflicts, current);
+checkRules(next); // 판매 중이면 재고가 있어야 하고, 태그는 5개까지
+await updateRow(productId, next);
+return next; // 화면은 이 행으로 칸을 다시 그린다
+```
+
+행을 잠근 채 더하므로 앞의 `stock = stock + 30`과 결과가 같다. 규칙은 칸마다가 아니라 합친 행에서 검사한다. 칸마다 맞는 수정도 합치면 규칙을 어길 수 있기 때문이다.
+
+## 마치며
+
+동시 편집에서 막아야 할 것은 아무도 모르게 사라지는 수정이다. 화면을 실시간으로 맞춰도 늦게 도착하는 값은 생기므로, 수정을 지키는 일은 저장하는 순간 서버가 맡는다.
+
+그다음은 사람에게 묻는 일을 줄이는 과정이었다. 비교 단위를 행에서 칸으로 좁히고 칸마다 세 값을 보면, 묻는 경우는 같은 칸을 서로 다르게 고쳤을 때만 남는다. 태그와 재고처럼 합칠 수 있는 값은 값 대신 바꾼 내용을 보내 묻지 않고 합친다. 이 생각을 글자 하나하나까지 밀고 간 것이 OT와 CRDT다.
+
+어느 단계도 공짜는 아니었다. 충돌 창은 사용자의 판단을 빌리고, 병합은 합친 결과를 다시 검사하게 하고, OT와 CRDT는 저장하는 모양까지 바꾼다. 그래서 방법은 표 전체가 아니라 칸마다 고른다. 그 칸이 어떻게 바뀌는지, 수정이 사라지면 얼마나 아픈지를 먼저 따지고, 거기에 맞는 가장 단순한 방법을 고른다.
