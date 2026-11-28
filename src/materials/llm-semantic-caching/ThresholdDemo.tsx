@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BGE_M3, GROUPS, type GroupKey, WRONG_PAIRS } from "./data";
+import { BGE_M3, GROUPS, type GroupKey, type Lang, WRONG_PAIRS } from "./data";
 import { MARK_STYLE, Mark } from "./marks";
 
 // 문턱값을 움직이면 질문 14쌍 가운데 무엇이 적중하고 그중 무엇이 오답인지 보여준다. 값은 bge-m3로 잰 것이다.
@@ -13,10 +13,39 @@ const ROW_Y: Record<GroupKey, number> = { same: 52, different: 104, unrelated: 1
 const AXIS_Y = 186;
 const TICKS = [0.5, 0.6, 0.7, 0.8, 0.9, 1];
 
-const ARIA =
-	"질문 14쌍의 유사도를 무리별로 한 줄씩 찍은 점 그래프. 뜻이 같은 질문은 0.699에서 0.959, 답이 다른 질문은 0.822에서 0.970, 상관없는 질문은 0.479와 0.560이다. 아래 막대로 문턱값을 움직이면 문턱값을 넘은 점이 채워진다. 문턱값 0.80에서는 뜻이 같은 질문 6쌍 가운데 5쌍, 답이 다른 질문 6쌍 전부가 적중하고, 0.95에서는 각각 1쌍씩만 적중한다. 0.98에서는 하나도 적중하지 않는다.";
+const LABELS = {
+	ko: {
+		aria: "질문 14쌍의 유사도를 무리별로 한 줄씩 찍은 점 그래프. 뜻이 같은 질문은 0.699에서 0.959, 답이 다른 질문은 0.822에서 0.970, 상관없는 질문은 0.479와 0.560이다. 아래 막대로 문턱값을 움직이면 문턱값을 넘은 점이 채워진다. 문턱값 0.80에서는 뜻이 같은 질문 6쌍 가운데 5쌍, 답이 다른 질문 6쌍 전부가 적중하고, 0.95에서는 각각 1쌍씩만 적중한다. 0.98에서는 하나도 적중하지 않는다.",
+		hit: "적중",
+		axis: "유사도",
+		threshold: "문턱값",
+		summary: (same: number, wrong: number) => (
+			<>
+				뜻이 같은 6쌍 가운데 <strong>{same}쌍</strong> 적중, 나머지 8쌍 가운데 <strong>{wrong}쌍</strong>에 엉뚱한 답
+			</>
+		),
+		wrong: "오답",
+		miss: "놓침",
+		stored: "저장된 질문: ",
+	},
+	en: {
+		aria: "Dot plot of the similarity of 14 question pairs, one row per group. Same-meaning pairs range from 0.699 to 0.959, different-answer pairs from 0.822 to 0.970, and the unrelated pairs are 0.479 and 0.560. Moving the slider below changes the threshold, and dots at or above it fill in. At 0.80, five of the six same-meaning pairs and all six different-answer pairs hit. At 0.95, only one pair in each of those groups hits. At 0.98, nothing hits.",
+		hit: "Hit",
+		axis: "Similarity",
+		threshold: "Threshold",
+		summary: (same: number, wrong: number) => (
+			<>
+				<strong>{same} of 6</strong> same-meaning pairs hit. <strong>{wrong} of the other 8</strong> get a wrong answer.
+			</>
+		),
+		wrong: "Wrong",
+		miss: "Miss",
+		stored: "Stored: ",
+	},
+};
 
-export default function ThresholdDemo() {
+export default function ThresholdDemo({ lang = "ko" }: { lang?: Lang }) {
+	const l = LABELS[lang];
 	const [threshold, setThreshold] = useState(0.8);
 	const hits = (group: GroupKey) => BGE_M3[group].filter((v) => v >= threshold).length;
 	const wrong = hits("different") + hits("unrelated");
@@ -25,13 +54,13 @@ export default function ThresholdDemo() {
 	return (
 		<div style={{ margin: "2rem 0" }}>
 			<div style={{ maxWidth: 480, margin: "0 auto" }}>
-			<svg viewBox="0 0 400 216" role="img" aria-label={ARIA} style={{ display: "block", width: "100%" }}>
+			<svg viewBox="0 0 400 216" role="img" aria-label={l.aria} style={{ display: "block", width: "100%" }}>
 				<style>{MARK_STYLE}</style>
 
 				{/* 문턱값을 넘은 영역 */}
 				<rect x={tx} y="20" width={X1 - tx} height={AXIS_Y - 20} fill="var(--accent)" fillOpacity="0.08" />
 				<text x={X1} y="14" textAnchor="end" fontSize="11.5" fill="var(--muted-foreground)">
-					적중
+					{l.hit}
 				</text>
 
 				{GROUPS.map(({ key, name }) => {
@@ -42,7 +71,7 @@ export default function ThresholdDemo() {
 							<line x1={X0} x2={X1} y1={y} y2={y} stroke="var(--border)" />
 							<Mark group={key} x={X0 + 5} y={y - 20} />
 							<text x={X0 + 15} y={y - 16} fontSize="12" fill="var(--foreground)">
-								{name}
+								{name[lang]}
 							</text>
 							{BGE_M3[key].map((v, i) => {
 								// 값이 같은 점은 위아래로 조금 벌린다
@@ -65,12 +94,14 @@ export default function ThresholdDemo() {
 					</text>
 				))}
 				<text x={X0} y={AXIS_Y + 28} fontSize="11" fill="var(--muted-foreground)">
-					유사도
+					{l.axis}
 				</text>
 			</svg>
 
 			<label style={{ display: "flex", alignItems: "center", gap: 12, fontSize: "0.9rem", marginTop: 4 }}>
-				<span style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>문턱값 {threshold.toFixed(2)}</span>
+				<span style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+					{l.threshold} {threshold.toFixed(2)}
+				</span>
 				<input
 					type="range"
 					min={0.5}
@@ -82,7 +113,7 @@ export default function ThresholdDemo() {
 				/>
 			</label>
 			<p aria-live="polite" style={{ margin: "0.4rem 0 0", fontSize: "0.9rem", fontVariantNumeric: "tabular-nums" }}>
-				뜻이 같은 6쌍 가운데 <strong>{hits("same")}쌍</strong> 적중, 나머지 8쌍 가운데 <strong>{wrong}쌍</strong>에 엉뚱한 답
+				{l.summary(hits("same"), wrong)}
 			</p>
 			</div>
 
@@ -95,7 +126,7 @@ export default function ThresholdDemo() {
 					const hit = p.sim >= threshold;
 					return (
 						<div
-							key={p.incoming + p.stored}
+							key={p.incoming.ko + p.stored.ko}
 							role="listitem"
 							className={`sc-${p.group}`}
 							style={{
@@ -109,12 +140,15 @@ export default function ThresholdDemo() {
 							<span style={{ flexShrink: 0, width: 46, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", fontWeight: hit ? 700 : 400 }}>
 								{p.sim.toFixed(3)}
 								<br />
-								{hit ? "오답" : "놓침"}
+								{hit ? l.wrong : l.miss}
 							</span>
 							<span>
-								{p.incoming}
+								{p.incoming[lang]}
 								<br />
-								<span style={{ color: "var(--muted-foreground)" }}>저장된 질문: {p.stored}</span>
+								<span style={{ color: "var(--muted-foreground)" }}>
+									{l.stored}
+									{p.stored[lang]}
+								</span>
 							</span>
 						</div>
 					);

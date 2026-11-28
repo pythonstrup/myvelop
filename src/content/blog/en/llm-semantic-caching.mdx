@@ -1,0 +1,284 @@
+---
+title: "LLM Semantic Caching - Embeddings, Thresholds, and Where Not to Use It"
+description: "Semantic caching returns a stored answer to a question with a similar meaning. I measure 14 question pairs, then cover thresholds and where not to use it."
+pubDate: "2026-11-24T14:53:21+09:00"
+tags: ["llm", "llm-gateway", "semantic-caching", "embedding", "litellm"]
+series: "Running LLM APIs"
+seriesOrder: 4
+socialImage: "../../../assets/blog/llm-semantic-caching/og.png"
+---
+import AngleDiagram from "@/materials/llm-semantic-caching/AngleDiagram";
+import CachePathDemo from "@/materials/llm-semantic-caching/CachePathDemo";
+import CacheScopeDiagram from "@/materials/llm-semantic-caching/CacheScopeDiagram";
+import ExactKeyDiagram from "@/materials/llm-semantic-caching/ExactKeyDiagram";
+import LookupFlowDemo from "@/materials/llm-semantic-caching/LookupFlowDemo";
+import SimilarityRowsDiagram from "@/materials/llm-semantic-caching/SimilarityRowsDiagram";
+import ThresholdDemo from "@/materials/llm-semantic-caching/ThresholdDemo";
+import TurnReplayDemo from "@/materials/llm-semantic-caching/TurnReplayDemo";
+import TurnSimilarityDiagram from "@/materials/llm-semantic-caching/TurnSimilarityDiagram";
+
+## Introduction
+
+I heard that an LLM gateway can apply semantic caching. It is a cache that, when a question with a similar meaning comes in, returns a stored answer without calling the model.
+
+The response cache in [When AI Caching Pays Off](/blog/llm-prompt-caching/) hit only when the whole request was identical. People ask the same thing in different words each time, so a cache like that rarely hits. Matching on meaning instead of on text seemed like it would solve this. But I did not know what decides whether two meanings are close, or what happens when a question looks similar but needs a different answer.
+
+There were three things I wanted to know.
+
+1. What decides that two questions mean the same thing.
+2. How similar two questions must be to count as the same.
+3. Which requests it should not be used for.
+
+## Response caches hit only on identical text
+
+Say an online store has a support chatbot. One person asks "How do I get a refund?" and another asks "What do I need to do to get a refund?" The two questions have the same answer, but a response cache misses the second one.
+
+A response cache uses a hash of the request as its key. Cloudflare AI Gateway, for example, joins the provider, path, model, auth header, and the whole request body and hashes them with SHA-256. If the input differs by even one character, the hash is a completely different value. Here is what you get when you hash only the text of the two questions.
+
+<ExactKeyDiagram lang="en" />
+
+So a response cache works well when the text being sent is fixed. The Cloudflare docs also use the example of a support bot that has users pick from fixed options. They say a cache that uses semantic search is planned.
+
+## Semantic caches hit on close meaning
+
+### Turning questions into vectors
+
+A semantic cache uses embeddings instead of a hash. An embedding model turns text into a vector of hundreds to thousands of numbers, and it is trained so that texts with closer meanings get vectors that point in closer directions. How close two vectors' directions are is measured with cosine similarity. It is 1 when the directions are identical and gets smaller as they spread apart.
+
+I measured the similarity of two question pairs with bge-m3, a public embedding model. The questions in this post were written and measured in Korean, as customers of a Korean online store would ask them, and the English you see is a translation. This model's vectors have 1,024 dimensions, that is, 1,024 numbers, so they are hard to draw on screen as they are. Instead, I carried over only the angle between the two vectors onto a plane.
+
+<AngleDiagram variant="basic" lang="en" />
+
+When a request comes in, the gateway works in this order.
+
+1. Send the question to the embedding model and get a vector.
+2. Find the closest of the stored question vectors.
+3. If the similarity is at or above a preset threshold, return the answer attached to that question. The model is not called.
+4. If it falls short of the threshold, call the model, then store the question vector and the answer.
+
+Say the threshold is 0.9 and three questions are stored. A question that hits and a question that misses come in one after the other.
+
+<LookupFlowDemo client:visible lang="en" />
+
+The thing to notice is the answer that goes out on a hit. What the user receives is not the answer to their own question but the answer to <strong>a different question</strong> that is closest to theirs. A response cache, which hits only when requests are identical, never does this.
+
+In LiteLLM, you turn on the semantic cache by writing the cache type, the threshold, and the embedding model in the config file.
+
+```yaml
+litellm_settings:
+  cache: true
+  cache_params:
+    type: redis-semantic
+    similarity_threshold: 0.8
+    redis_semantic_cache_embedding_model: my-embedding-model
+```
+
+Responses served from the cache carry an `x-litellm-semantic-similarity` header. Its value tells you how similar the question was whose answer went out.
+
+### Embedding cost and break-even
+
+On a hit, the model is not called at all, so you save not only the input and output token charges but also the time it takes to generate the answer. In exchange, every request gets an embedding call and a vector search in front of it, so a request that misses finishes that much later than it would with no cache.
+
+Say embedding and search take 50ms and the model takes 2 seconds to produce an answer. Every request spends an extra 50ms and every hit saves 2 seconds, so once the hit rate passes 2.5%, the average time goes down.
+
+If the embedding server slows down, this math breaks, because the model can be called only after embedding finishes. That is why LiteLLM waits at most 5 seconds for the embedding. After that, it treats the request as a miss and calls the model.
+
+With a break-even this low, lowering the threshold to raise the hit rate looks like a good deal. But the hits of a semantic cache include wrong hits.
+
+## Thresholds trade hits for wrong answers
+
+### Similarity of 14 question pairs
+
+I wrote 14 pairs of questions that could come up in online store support and measured their similarity with bge-m3. The goal was to see whether an incoming question would get a stored question's answer. As noted above, the questions are Korean and the table shows English translations. I fixed the questions before measuring and did not drop or change any after seeing the results.
+
+| Group | Stored question | Incoming question | Similarity |
+| --- | --- | --- | --- |
+| Same meaning | How do I get a refund? | What do I need to do to get a refund? | 0.959 |
+| | How many days does shipping take? | If I order, when can I get it? | 0.881 |
+| | I forgot my password | I can't remember my login password | 0.849 |
+| | Where do I get a receipt? | Tell me how to get a payment receipt issued | 0.827 |
+| | How do I cancel my membership? | I want to delete my account | 0.699 |
+| | When are points added? | When does my reward credit come in? | 0.849 |
+| Different answer | Which items can be returned? | Which items cannot be returned? | 0.921 |
+| | What is the fee if I cancel within 3 days? | What is the fee if I cancel within 30 days? | 0.931 |
+| | What are the Seoul store's hours? | What are the Busan store's hours? | 0.822 |
+| | How do I convert dollars to won? | How do I convert won to dollars? | 0.970 |
+| | Tell me last month's payment amount | Tell me this month's payment amount | 0.944 |
+| | Tell me how to turn on automatic payment | Tell me how to turn off automatic payment | 0.898 |
+| Unrelated | How do I get a refund? | What are the Seoul store's hours? | 0.560 |
+| | I forgot my password | How many days does shipping take? | 0.479 |
+
+I picked the six different-answer pairs on purpose as tricky questions with similar wording, so the ratios here should not be read as the wrong-answer rate of a real service. What matters is which questions cross the threshold. Move the slider, and the questions that would get a wrong answer turn dark in the list below.
+
+<ThresholdDemo client:visible lang="en" />
+
+At a threshold of 0.80, five of the six same-meaning pairs hit, but all six different-answer pairs hit as well and get a wrong answer. Raise it to 0.95 and the wrong answers drop to one pair, but only one correct hit is left too. At 0.98, the hits disappear along with the wrong answers. For these questions, no threshold filters out every wrong answer while keeping any hits.
+
+### Similar wording raises similarity
+
+The pair with the highest similarity is "dollars to won" and "won to dollars", which use the same words in swapped places. The lowest among the same-meaning pairs is "How do I cancel my membership?" and "I want to delete my account", which share no words in the Korean original.
+
+<AngleDiagram variant="trap" lang="en" />
+
+Embeddings capture well what a question is about. The two unrelated pairs stayed below 0.6. But whether something is allowed or not, whether it is 3 days or 30, whether to turn something on or off, shows up only faintly in the similarity. Yet it is this small difference that decides the answer.
+
+The [vCache paper](https://arxiv.org/abs/2502.03771) points at the same problem. It says the similarity distributions of correct and incorrect hits overlap heavily, so a single threshold for every request cannot guarantee accuracy. So vCache learns a separate threshold for each stored question, and the user sets an acceptable error rate instead of a threshold.
+
+### What 0.8 means depends on the model
+
+The example in the LiteLLM docs sets the threshold to 0.8. What happens if you take that value as is? I measured the same 14 pairs with two more public models.
+
+<SimilarityRowsDiagram variant="models" lang="en" />
+
+| Model | Same meaning | Different answer | Unrelated |
+| --- | --- | --- | --- |
+| paraphrase-multilingual-MiniLM-L12-v2 | 0.466\~0.890 | 0.900\~0.991 | 0.244\~0.375 |
+| multilingual-e5-small | 0.835\~0.972 | 0.935\~0.994 | 0.799\~0.810 |
+| bge-m3 | 0.699\~0.959 | 0.822\~0.970 | 0.479\~0.560 |
+
+> <strong>How I measured</strong>  
+> I ran the models locally with Transformers.js 4.3.2. For bge-m3 I used an 8-bit quantized model, and the other two were not quantized. For e5-small, I put `query: ` in front of each question, as the model card instructs. All vectors were normalized to length 1. The input was the Korean questions.
+
+With MiniLM, every different-answer pair scores higher than every same-meaning pair. At a threshold of 0.8, only two same-meaning pairs hit, while all six different-answer pairs hit. With e5-small, even the unrelated "I forgot my password" and "How many days does shipping take?" hit at 0.810. The person who asked how long shipping takes would get the password guidance. The e5-small [model card](https://huggingface.co/intfloat/multilingual-e5-small) explains that similarity clustering between 0.7 and 1.0 is an expected result of how the model was trained.
+
+So you cannot carry over a threshold used somewhere else. If you change the embedding model, you have to set the threshold again from scratch. You also need to check the direction of the value. Some tools get stricter as you raise it, and others get stricter as you lower it.
+
+| Tool | Setting | What it measures | Stricter when |
+| --- | --- | --- | --- |
+| LiteLLM | `similarity_threshold` | Cosine similarity | Raised |
+| Portkey | `SEMANTIC_CACHE_SIMILARITY_THRESHOLD` | Cosine similarity | Raised |
+| Azure API Management | `score-threshold` | Score from 0.0 to 1.0 | Lowered |
+| Kong AI Gateway | `vectordb.threshold` | The configured distance metric | Lowered |
+| RedisVL | `distance_threshold` | Cosine distance from 0 to 2 | Lowered |
+
+The Azure docs recommend starting with a low value such as 0.05 and warn that above 0.2, wrong answers may go out. If you carry over the 0.8 from LiteLLM, you get four times the value Azure warns about. Even when the direction is the same, the values differ. Both use cosine similarity, yet the LiteLLM docs example is 0.8 and Portkey's default is 0.95.
+
+## Why only the question should go into the embedding
+
+So far, I embedded a single question. Real requests, though, also carry a system prompt and the earlier conversation. According to the [LiteLLM docs](https://docs.litellm.ai/docs/proxy/caching_semantic), LiteLLM's semantic cache embeds the text of the whole `messages`, including the system prompt.
+
+### A system prompt buries the question
+
+I put the same system prompt in front of each question in the same 14 pairs and measured again with bge-m3. I used two prompts: one of 37 tokens and one of 261 tokens, about ten lines of instructions. I counted the tokens of the Korean prompts with bge-m3's tokenizer.
+
+<SimilarityRowsDiagram variant="system" lang="en" />
+
+The longer the system prompt, the further all the points crowd to the right. Most of the two texts are the same sentences, so the vectors point in nearly the same direction. At 261 tokens, even the two unrelated pairs rise to 0.974 and 0.976, so all 14 pairs hit even with the threshold raised to 0.95. The person who asked about shipping time gets the password guidance here too.
+
+That is why some tools can leave the system prompt out of the comparison. Their defaults differ, though.
+
+| Tool | System prompt | Earlier conversation |
+| --- | --- | --- |
+| LiteLLM | Included. I could not find a setting in the docs to leave it out | Includes all of `messages` |
+| Azure API Management | Left out with `ignore-system-messages`. The docs recommend `true`, but the default is `false` | Skips the cache when the message count exceeds `max-message-count` |
+| Kong AI Gateway | Left out with `ignore_system_prompts`. The default is `false` | `message_countback` sets how many messages to include. The default is 1 |
+| Portkey | Left out | Used only for requests with four or fewer messages |
+
+Leaving out the system prompt brings the opposite problem. The Portkey docs say that changing the system prompt does not affect hits. Then, when two features with different prompts share a cache, one feature's answer can go out in the other. To prevent that, split the cache per feature. Portkey splits it with namespaces, and Azure with `vary-by`.
+
+### Conversations look more alike as they grow
+
+A conversational request sends the whole earlier conversation again every time. Compared with the previous request, what is new is the chatbot's last answer and the current question. I built a support conversation that starts with the 37-token system prompt and measured the similarity between consecutive requests.
+
+<TurnSimilarityDiagram lang="en" />
+
+As the conversation grows, the newly added text makes up a smaller share, and the similarity approaches 1.
+
+Next, I replayed this conversation from the start, imitating the order in which a semantic cache works. I fixed in advance what the user would say. On a hit, I put the stored answer into the conversation, and on a miss, the proper answer. First, with a threshold of 0.8.
+
+<TurnReplayDemo client:visible lang="en" />
+
+Only the first request is answered by the model. After that, the first answer repeats no matter what the user says. The repeated answers pile up in the conversation too, but the similarity to the first request does not drop below 0.8.
+
+Raising the threshold to 0.95 fixes only half of it. The first, second, and fourth requests get new answers, but the third gets the second's answer and the fifth gets the fourth's. The person who said "Then just give me a refund" gets the answer about the exchange shipping fee again.
+
+The LiteLLM docs explain that in agents this problem shows up as the same tool call repeating. The assistant's `tool_calls` are not even embedded, which makes consecutive turns even harder to tell apart. Because raising the threshold does not reliably fix it, the docs recommend leaving agent traffic out of the semantic cache. You do this by putting `"cache": {"no-cache": true}` in the metadata of the key the agent uses. If you still need a cache, use a response cache that hashes the whole request.
+
+## When the same question needs different answers
+
+The wrong answers so far came from questions that were different. But sometimes the answer must differ even when the question is identical down to the last character. Then the similarity is 1, and no threshold can stop it.
+
+### Different answers for different people
+
+"Tell me this month's payment amount" has a different answer depending on who asks. If you store one person's answer and serve it, the next person sees someone else's payment amount. That goes beyond a wrong answer. It is a data leak. Say A's amount is ₩42,000 and B's is ₩15,000.
+
+<CacheScopeDiagram lang="en" />
+
+By default, LiteLLM splits the cache only by virtual key, team, and organization. If a service sends every user's requests with one key, those users share the cache. To split it per user, set `semantic_cache_scope: end_user`. But a request without a user ID falls back to grouping by key, team, and organization, so you also need to check that the user ID is always sent. In Azure, you write an expression in `vary-by` that separates users or groups.
+
+Once the cache is split per user, nobody gets another person's answer, but people who ask the same thing can no longer use each other's answers either. The benefit of a semantic cache comes precisely from sharing answers that way. So for a feature whose answers differ by person, it is better not to use the cache at all than to split it.
+
+### Answers that change over time
+
+For stock, prices, shipping status, and notices, yesterday's correct answer can be wrong today. So you need to set an expiry time when you store an answer. LiteLLM takes it in `ttl` and Azure in the store policy's `duration`, both in seconds. If you change a guidance document such as the refund policy, clear the cache instead of waiting for the expiry.
+
+## Three caches that cannot replace each other
+
+### How the three differ
+
+Here are the three caches with similar names side by side.
+
+| | Response cache | Semantic cache | Prompt caching |
+| --- | --- | --- | --- |
+| What it stores | Request and answer | Question vector and answer | KV for the input prefix |
+| Hit condition | The whole request is identical | Similarity is at or above the threshold | The prefix is identical |
+| Answer | The stored answer | The closest question's answer | Generated fresh every time |
+| What it saves | The whole model call | The whole model call | Computing the input prefix |
+| On a miss | About the same | Slower by the embedding and search | A write charge may be added |
+| Risk of another question's answer | None | Yes | None |
+| Fits best | Where fixed text repeats | Where many people ask the same thing in different words | Long instructions and conversation history |
+
+### The order when using them together
+
+When you use the three together, pass through the ones that cannot be wrong first. As in the earlier flow figure, say the threshold is 0.9 and "How do I get a refund?" is stored.
+
+<CachePathDemo client:visible lang="en" />
+
+A request that matches down to the last character ends at the response cache, so there is no need to call the embedding model. Only requests the response cache misses go on to the semantic cache, and only requests both caches miss reach the model. At that point, if the input prefix is still in the prompt cache, the model provider reuses that computation.
+
+Portkey's semantic cache looks for an exact match first and runs a semantic search only on a miss. Kong also looks for an exact match first when `exact_caching` is on, but it is off by default. LiteLLM picks the cache type with a single `type`, and I could not find a setting in the docs to turn both caches on together.
+
+### Check whether the other two are enough first
+
+Of the three, only the semantic cache can send out another question's answer. Even if the response cache's low hit rate is disappointing, check whether the other two are enough before reaching for a semantic cache. If requests are expensive because the input is long, prompt caching cuts the cost without changing the answers. If the questions fall into a few fixed kinds, it is safer to let users pick with buttons and use a response cache.
+
+## What to check before turning it on
+
+If you have decided that a semantic cache fits, check these in order before turning it on.
+
+1. Collect questions that actually came in, pair them up, and sort the pairs into those that may get the same answer and those that may not. Be sure to include pairs whose wording is alike but whose answers differ.
+2. Measure the similarity with the embedding model you will use. If the gateway embeds the system prompt too, include that text when you measure.
+3. See whether some threshold separates the two groups. If none does, do not turn it on.
+4. At first, do not send the stored answer even on a hit, and only log it. Compare that answer with a freshly generated one and count the wrong-answer rate.
+5. After turning it on, log the similarity, and start reading from the requests that barely crossed the threshold.
+
+Stopping at step 3 is not a loss. Like the 14 pairs above, it shows you that the two groups overlap before you turn it on.
+
+## Summary
+
+Back to the three questions from the introduction.
+
+- <strong>What decides it</strong> — Turn the questions into vectors and measure the cosine similarity. It captures well what a question is about, but differences that decide the answer, such as whether something is allowed or not, show up only faintly.
+- <strong>How similar is similar enough</strong> — There is no fixed value. Lower the threshold and wrong answers increase. Raise it and hits decrease. Change the embedding model, and the same number means something else.
+- <strong>Requests not to use it for</strong> — Ongoing conversations, agents, and questions whose answer differs by person. For questions whose answers change over time, set an expiry.
+
+When deciding whether to turn on semantic caching, use these five criteria.
+
+1. <strong>Check whether a wrong answer is acceptable there.</strong> A semantic cache returns the answer of the closest other question. If the guidance cannot be undone when it is wrong, do not use it.
+2. <strong>Decide the wrong-answer rate before the hit rate.</strong> Under the earlier assumptions, a 2.5% hit rate is enough to break even. Decide first how often it may be wrong, then raise the hit rate within that.
+3. <strong>Set the threshold with your own questions and model.</strong> The example values in the docs were not measured on your questions. Also check whether raising or lowering the value makes it stricter.
+4. <strong>Check what goes into the embedding.</strong> If the system prompt and earlier conversation go in, the question gets buried. If you cannot make it compare only the question, do not use it. If you left out the system prompt, split the cache per feature.
+5. <strong>Check who you share the cache with.</strong> The default setup may not separate users. Leave features whose answers differ by person out of the cache.
+
+## References
+
+- LiteLLM, [Semantic Caching](https://docs.litellm.ai/docs/proxy/caching_semantic)
+- LiteLLM, [Cache Controls](https://docs.litellm.ai/docs/proxy/caching_controls)
+- Microsoft, [Get cached responses of LLM API requests (llm-semantic-cache-lookup)](https://learn.microsoft.com/en-us/azure/api-management/llm-semantic-cache-lookup-policy)
+- Microsoft, [llm-semantic-cache-store policy](https://learn.microsoft.com/en-us/azure/api-management/llm-semantic-cache-store-policy)
+- Cloudflare, [AI Gateway - Caching](https://developers.cloudflare.com/ai-gateway/features/caching/)
+- Portkey, [Cache (Simple & Semantic)](https://portkey.ai/docs/product/ai-gateway/cache-simple-and-semantic)
+- Kong, [AI Semantic Cache configuration reference](https://developer.konghq.com/plugins/ai-semantic-cache/reference/)
+- Redis, [RedisVL - LLM Caching](https://docs.redisvl.com/en/latest/user_guide/03_llmcache.html)
+- Schroeder et al., [vCache: Verified Semantic Prompt Caching](https://arxiv.org/abs/2502.03771) (ICLR 2026)
+- intfloat, [multilingual-e5-small model card](https://huggingface.co/intfloat/multilingual-e5-small)

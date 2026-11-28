@@ -1,7 +1,8 @@
 import { type Colors, clamp01, drawBadge, ease, FONT, lerp, palette, useCanvasScene } from "@/materials/shared";
+import type { Lang } from "./data";
 
 // 질문 하나가 시맨틱 캐시를 지나는 길. 1부는 적중, 2부는 놓친 뒤 저장하는 모습이다.
-// 유사도는 bge-m3로 잰 값이고 문턱값 0.9는 가정이다. 매 사이클 같은 장면을 재생한다.
+// 유사도는 bge-m3로 잰 값이고 문턱값 0.9는 가정이다. 매 사이클 같은 장면을 재생한다. 질문은 한국어로 쟀고 영어는 번역이다.
 const STEPS = [1800, 3600, 5400, 7200]; // 한 부의 단계가 끝나는 시점(ms)
 const PART = 7600;
 const CYCLE = PART * 2;
@@ -13,14 +14,22 @@ const LIST_Y = 122;
 const ROW_H = 26;
 const END_Y = 224;
 
-const STORED = ["환불은 어떻게 하나요?", "배송은 며칠 걸려요?", "포인트는 언제 적립되나요?"];
-const PARTS = [
+const SIMS = [
+	{ sims: ["0.959", "0.597", "0.539"], best: 0, hit: true },
+	{ sims: ["0.529", "0.552", "0.474"], best: 1, hit: false },
+];
+
+const LABELS = {
+	ko: {
+		stored: ["환불은 어떻게 하나요?", "배송은 며칠 걸려요?", "포인트는 언제 적립되나요?"],
+		embedding: "임베딩 모델",
+		cached: "저장된 답",
+		model: "모델 호출",
+		saved: "새로 저장",
+		parts: [
 	{
 		title: "적중",
 		question: "환불하려면 어떻게 해야 하나요?",
-		sims: ["0.959", "0.597", "0.539"],
-		best: 0,
-		hit: true,
 		captions: [
 			"① 질문을 벡터로 바꾼다",
 			"② 저장된 질문과의 유사도를 잰다",
@@ -31,9 +40,6 @@ const PARTS = [
 	{
 		title: "놓침",
 		question: "매장에 주차할 수 있나요?",
-		sims: ["0.529", "0.552", "0.474"],
-		best: 1,
-		hit: false,
 		captions: [
 			"① 질문을 벡터로 바꾼다",
 			"② 저장된 질문과의 유사도를 잰다",
@@ -41,10 +47,41 @@ const PARTS = [
 			"④ 모델을 부르고 질문과 답을 저장한다",
 		],
 	},
-];
-
-const ARIA =
-	"질문이 시맨틱 캐시를 지나는 두 경우를 이어서 재생하는 애니메이션. 캐시에는 환불, 배송, 포인트 질문이 저장되어 있고 문턱값은 0.9라고 가정한다. 「환불하려면 어떻게 해야 하나요?」가 오면 벡터로 바꿔 유사도를 재고, 가장 높은 「환불은 어떻게 하나요?」의 0.959가 문턱값을 넘어 저장된 답을 돌려준다. 「매장에 주차할 수 있나요?」는 가장 높은 값이 0.552라 문턱값에 못 미치므로, 모델을 불러 답을 만들고 질문과 답을 캐시에 저장한다.";
+		],
+		aria: "질문이 시맨틱 캐시를 지나는 두 경우를 이어서 재생하는 애니메이션. 캐시에는 환불, 배송, 포인트 질문이 저장되어 있고 문턱값은 0.9라고 가정한다. 「환불하려면 어떻게 해야 하나요?」가 오면 벡터로 바꿔 유사도를 재고, 가장 높은 「환불은 어떻게 하나요?」의 0.959가 문턱값을 넘어 저장된 답을 돌려준다. 「매장에 주차할 수 있나요?」는 가장 높은 값이 0.552라 문턱값에 못 미치므로, 모델을 불러 답을 만들고 질문과 답을 캐시에 저장한다.",
+	},
+	en: {
+		stored: ["How do I get a refund?", "How many days does shipping take?", "When are points added?"],
+		embedding: "Embedding model",
+		cached: "Stored answer",
+		model: "Call the model",
+		saved: "Newly stored",
+		parts: [
+			{
+				title: "Hit",
+				question: "What do I need to do to get a refund?",
+				captions: [
+					"① Turn the question into a vector",
+					"② Measure similarity to the stored questions",
+					"③ The top score, 0.959, clears the 0.9 threshold",
+					"④ Return the answer stored with that question",
+				],
+			},
+			{
+				title: "Miss",
+				question: "Can I park at the store?",
+				captions: [
+					"① Turn the question into a vector",
+					"② Measure similarity to the stored questions",
+					"③ The top score, 0.552, falls short of 0.9",
+					"④ Call the model, then store question and answer",
+				],
+			},
+		],
+		aria: "Animation that plays two paths through a semantic cache in turn. The cache holds a refund question, a shipping question, and a points question, and the threshold is assumed to be 0.9. When \"What do I need to do to get a refund?\" comes in, it is turned into a vector and compared, and the top match, \"How do I get a refund?\" at 0.959, clears the threshold, so the stored answer is returned. For \"Can I park at the store?\", the top score is 0.552, below the threshold, so the model is called to make an answer and the question and answer are stored in the cache. The questions were measured in Korean and are shown translated.",
+	},
+};
+type Labels = (typeof LABELS)["ko"];
 
 function drawText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string, font: string, align: CanvasTextAlign = "center") {
 	ctx.textAlign = align;
@@ -73,9 +110,10 @@ function drawLine(ctx: CanvasRenderingContext2D, c: Colors, x0: number, y0: numb
 	ctx.stroke();
 }
 
-function drawScene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) {
+const makeScene = (l: Labels) => (ctx: CanvasRenderingContext2D, w: number, t: number, dark: boolean) => {
 	const c = palette(dark);
-	const part = PARTS[t < PART ? 0 : 1];
+	const n = t < PART ? 0 : 1;
+	const part = { ...l.parts[n], ...SIMS[n] };
 	const local = t % PART;
 	const found = STEPS.findIndex((end) => local < end);
 	const step = found === -1 ? 3 : found;
@@ -106,11 +144,11 @@ function drawScene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: bo
 
 	// 임베딩 모델
 	drawBox(ctx, cx - 62, EMB_Y - 13, 124, 26, c.boxFill, step === 0 && p > 0.6 ? c.blue : c.boxStroke);
-	drawText(ctx, "임베딩 모델", cx, EMB_Y + 0.5, c.text, `500 12px ${FONT}`);
+	drawText(ctx, l.embedding, cx, EMB_Y + 0.5, c.text, `500 12px ${FONT}`);
 
 	// 저장된 질문 목록
 	drawBox(ctx, listX, LIST_Y - 4, listW, ROW_H * 3 + 12, c.boxFill, c.boxStroke);
-	STORED.forEach((q, i) => {
+	l.stored.forEach((q, i) => {
 		const y = LIST_Y + 2 + ROW_H * i + ROW_H / 2;
 		const isBest = i === part.best && step >= 2;
 		if (isBest) {
@@ -130,10 +168,10 @@ function drawScene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: bo
 	// 결과: 저장된 답 / 모델
 	const done = step === 3 && p > 0.45;
 	drawBox(ctx, cacheX, END_Y, endW, 30, done && part.hit ? c.greenFill : c.boxFill, done && part.hit ? c.green : c.boxStroke);
-	drawText(ctx, "저장된 답", cacheX + endW / 2, END_Y + 15.5, c.text, `600 12px ${FONT}`);
+	drawText(ctx, l.cached, cacheX + endW / 2, END_Y + 15.5, c.text, `600 12px ${FONT}`);
 	drawBox(ctx, modelX, END_Y, endW, 30, done && !part.hit ? c.amberFill : c.boxFill, done && !part.hit ? c.amber : c.boxStroke);
-	drawText(ctx, "모델 호출", modelX + endW / 2, END_Y + 15.5, c.text, `600 12px ${FONT}`);
-	if (done && !part.hit) drawBadge(ctx, cacheX + endW / 2, END_Y + 42, "새로 저장", c.amberFill, c.amber, clamp01((p - 0.45) / 0.2));
+	drawText(ctx, l.model, modelX + endW / 2, END_Y + 15.5, c.text, `600 12px ${FONT}`);
+	if (done && !part.hit) drawBadge(ctx, cacheX + endW / 2, END_Y + 42, l.saved, c.amberFill, c.amber, clamp01((p - 0.45) / 0.2));
 
 	// 움직이는 점
 	if (step === 0) drawDot(ctx, c, cx, lerp(Q_Y + 13, EMB_Y - 13, ease(clamp01(p / 0.6))));
@@ -144,7 +182,9 @@ function drawScene(ctx: CanvasRenderingContext2D, w: number, t: number, dark: bo
 	}
 
 	drawText(ctx, part.captions[step], cx, HEIGHT - 12, c.text, `500 12px ${FONT}`);
-}
+};
+
+const SCENES = { ko: makeScene(LABELS.ko), en: makeScene(LABELS.en) };
 
 function drawDot(ctx: CanvasRenderingContext2D, c: Colors, x: number, y: number) {
 	ctx.beginPath();
@@ -153,11 +193,11 @@ function drawDot(ctx: CanvasRenderingContext2D, c: Colors, x: number, y: number)
 	ctx.fill();
 }
 
-export default function LookupFlowDemo() {
-	const { containerRef, canvasRef } = useCanvasScene(HEIGHT, CYCLE, drawScene);
+export default function LookupFlowDemo({ lang = "ko" }: { lang?: Lang }) {
+	const { containerRef, canvasRef } = useCanvasScene(HEIGHT, CYCLE, SCENES[lang]);
 	return (
 		<div ref={containerRef} style={{ margin: "1.5rem 0" }}>
-			<canvas ref={canvasRef} role="img" aria-label={ARIA} style={{ display: "block", width: "100%" }} />
+			<canvas ref={canvasRef} role="img" aria-label={LABELS[lang].aria} style={{ display: "block", width: "100%" }} />
 		</div>
 	);
 }

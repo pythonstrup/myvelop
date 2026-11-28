@@ -15,9 +15,7 @@ export async function getLlmGatewayGuide(lang: 'en' | 'ko') {
 	const seriesName = guide.series[lang];
 	const seriesPosts = posts.filter((post) => post.data.series === seriesName);
 
-	const steps: GuideEntry[] = guide.steps.flatMap((step, index) => {
-		const blurb = step.blurb[lang];
-		if (!blurb) return [];
+	const steps: GuideEntry[] = guide.steps.map((step, index) => {
 		const post = bySlug.get(step.slug);
 		const order = index + 1;
 		if (!post) throw new Error(`LLM gateway guide is missing ${lang} post ${step.slug}`);
@@ -29,10 +27,15 @@ export async function getLlmGatewayGuide(lang: 'en' | 'ko') {
 				`${step.slug} has seriesOrder ${String(post.data.seriesOrder)}, but the guide lists it as step ${order}`,
 			);
 		}
-		return [{ title: post.data.title, href: postHref(post), date: post.data.pubDate, blurb }];
+		return {
+			title: post.data.title,
+			href: postHref(post),
+			date: post.data.pubDate,
+			blurb: step.blurb[lang],
+		};
 	});
 
-	const stepSlugs = new Set(guide.steps.filter((step) => step.blurb[lang]).map((step) => step.slug));
+	const stepSlugs = new Set(guide.steps.map((step) => step.slug));
 	for (const post of seriesPosts) {
 		const slug = postSlug(post);
 		if (!stepSlugs.has(slug)) {

@@ -37,25 +37,54 @@ export const MINILM: Sims = {
 	unrelated: [0.244, 0.375],
 };
 
+export type Lang = "ko" | "en";
+
+// 질문은 한국어로 쓰고 한국어로 쟀다. 영어는 영어 글에 보이는 번역이다.
 export const GROUPS = [
-	{ key: "same", name: "뜻이 같은 질문" },
-	{ key: "different", name: "답이 다른 질문" },
-	{ key: "unrelated", name: "상관없는 질문" },
+	{ key: "same", name: { ko: "뜻이 같은 질문", en: "Same meaning" } },
+	{ key: "different", name: { ko: "답이 다른 질문", en: "Different answer" } },
+	{ key: "unrelated", name: { ko: "상관없는 질문", en: "Unrelated" } },
 ] as const;
 export type GroupKey = (typeof GROUPS)[number]["key"];
 
+export type Text = Record<Lang, string>;
+type Pair = [stored: Text, incoming: Text];
+const REFUND: Text = { ko: "환불은 어떻게 하나요?", en: "How do I get a refund?" };
+const SEOUL: Text = { ko: "서울 매장 영업시간이 어떻게 되나요?", en: "What are the Seoul store's hours?" };
+
 // 엉뚱한 답이 나갈 수 있는 8쌍의 문장. 순서는 BGE_M3의 different 6쌍, unrelated 2쌍과 같다.
-export const WRONG_PAIRS: { group: GroupKey; stored: string; incoming: string; sim: number }[] = [
-	...[
-		["반품이 되는 상품은 무엇인가요?", "반품이 안 되는 상품은 무엇인가요?"],
-		["3일 안에 취소하면 수수료가 얼마인가요?", "30일 안에 취소하면 수수료가 얼마인가요?"],
-		["서울 매장 영업시간이 어떻게 되나요?", "부산 매장 영업시간이 어떻게 되나요?"],
-		["달러를 원화로 바꾸려면 어떻게 하나요?", "원화를 달러로 바꾸려면 어떻게 하나요?"],
-		["지난달 결제 금액 알려 주세요", "이번 달 결제 금액 알려 주세요"],
-		["자동 결제를 켜는 방법 알려 주세요", "자동 결제를 끄는 방법 알려 주세요"],
-	].map(([stored, incoming], i) => ({ group: "different" as const, stored, incoming, sim: BGE_M3.different[i] })),
-	...[
-		["환불은 어떻게 하나요?", "서울 매장 영업시간이 어떻게 되나요?"],
-		["비밀번호를 잊어버렸어요", "배송은 며칠 걸려요?"],
-	].map(([stored, incoming], i) => ({ group: "unrelated" as const, stored, incoming, sim: BGE_M3.unrelated[i] })),
+const DIFFERENT_PAIRS: Pair[] = [
+	[
+		{ ko: "반품이 되는 상품은 무엇인가요?", en: "Which items can be returned?" },
+		{ ko: "반품이 안 되는 상품은 무엇인가요?", en: "Which items cannot be returned?" },
+	],
+	[
+		{ ko: "3일 안에 취소하면 수수료가 얼마인가요?", en: "What is the fee if I cancel within 3 days?" },
+		{ ko: "30일 안에 취소하면 수수료가 얼마인가요?", en: "What is the fee if I cancel within 30 days?" },
+	],
+	[SEOUL, { ko: "부산 매장 영업시간이 어떻게 되나요?", en: "What are the Busan store's hours?" }],
+	[
+		{ ko: "달러를 원화로 바꾸려면 어떻게 하나요?", en: "How do I convert dollars to won?" },
+		{ ko: "원화를 달러로 바꾸려면 어떻게 하나요?", en: "How do I convert won to dollars?" },
+	],
+	[
+		{ ko: "지난달 결제 금액 알려 주세요", en: "Tell me last month's payment amount" },
+		{ ko: "이번 달 결제 금액 알려 주세요", en: "Tell me this month's payment amount" },
+	],
+	[
+		{ ko: "자동 결제를 켜는 방법 알려 주세요", en: "Tell me how to turn on automatic payment" },
+		{ ko: "자동 결제를 끄는 방법 알려 주세요", en: "Tell me how to turn off automatic payment" },
+	],
+];
+const UNRELATED_PAIRS: Pair[] = [
+	[REFUND, SEOUL],
+	[
+		{ ko: "비밀번호를 잊어버렸어요", en: "I forgot my password" },
+		{ ko: "배송은 며칠 걸려요?", en: "How many days does shipping take?" },
+	],
+];
+
+export const WRONG_PAIRS: { group: GroupKey; stored: Text; incoming: Text; sim: number }[] = [
+	...DIFFERENT_PAIRS.map(([stored, incoming], i) => ({ group: "different" as const, stored, incoming, sim: BGE_M3.different[i] })),
+	...UNRELATED_PAIRS.map(([stored, incoming], i) => ({ group: "unrelated" as const, stored, incoming, sim: BGE_M3.unrelated[i] })),
 ];
